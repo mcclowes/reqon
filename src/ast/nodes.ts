@@ -50,10 +50,44 @@ export interface StoreDefinition {
   target: string; // collection/table name
 }
 
+// Schedule configuration for missions
+// schedule: every 6 hours
+// schedule: cron "0 */6 * * *"
+// schedule: at "2025-01-20 09:00 UTC"
+export interface ScheduleDefinition {
+  type: 'ScheduleDefinition';
+  scheduleType: 'interval' | 'cron' | 'once';
+  // For interval-based scheduling
+  interval?: IntervalSchedule;
+  // For cron-based scheduling
+  cronExpression?: string;
+  // For one-time scheduling
+  runAt?: string; // ISO 8601 datetime or parseable date string
+  // Optional timezone (defaults to UTC)
+  timezone?: string;
+  // Maximum concurrent executions (default: 1)
+  maxConcurrency?: number;
+  // Skip execution if previous run is still running (default: true)
+  skipIfRunning?: boolean;
+  // Retry configuration for failed scheduled runs
+  retryOnFailure?: ScheduleRetryConfig;
+}
+
+export interface IntervalSchedule {
+  value: number;
+  unit: 'seconds' | 'minutes' | 'hours' | 'days' | 'weeks';
+}
+
+export interface ScheduleRetryConfig {
+  maxRetries: number;
+  delaySeconds: number;
+}
+
 // mission SyncXeroInvoices { ... }
 export interface MissionDefinition {
   type: 'MissionDefinition';
   name: string;
+  schedule?: ScheduleDefinition;
   sources: SourceDefinition[];
   stores: StoreDefinition[];
   schemas: SchemaDefinition[];
