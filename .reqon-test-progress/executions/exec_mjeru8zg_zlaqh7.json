@@ -1,0 +1,18 @@
+{
+  "id": "exec_mjeru8zg_zlaqh7",
+  "mission": "TestMission",
+  "status": "completed",
+  "startedAt": "2025-12-20T20:49:21.916Z",
+  "stages": [
+    {
+      "action": "StepA",
+      "status": "completed",
+      "attempt": 0,
+      "startedAt": "2025-12-20T20:49:21.919Z",
+      "completedAt": "2025-12-20T20:49:21.919Z"
+    }
+  ],
+  "errors": [],
+  "completedAt": "2025-12-20T20:49:21.919Z",
+  "duration": 3
+}

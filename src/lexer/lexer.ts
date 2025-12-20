@@ -1,5 +1,6 @@
 import { Lexer as VagueLexer, Token, TokenType } from 'vague-lang';
 import { REQON_KEYWORDS, ReqonTokenType, type ReqonToken } from './tokens.js';
+import { LexerError } from '../errors/index.js';
 
 export class ReqonLexer {
   private source: string;
@@ -91,7 +92,11 @@ export class ReqonLexer {
     }
 
     if (this.isAtEnd()) {
-      throw new Error(`Unterminated string at line ${this.line}`);
+      throw new LexerError(
+        'Unterminated string',
+        { line: this.line, column: startColumn },
+        { source: this.source }
+      );
     }
 
     this.advance(); // consume closing quote
@@ -245,7 +250,11 @@ export class ReqonLexer {
       return { type, value: char, line: this.line, column: startColumn };
     }
 
-    throw new Error(`Unexpected character '${char}' at line ${this.line}, column ${startColumn}`);
+    throw new LexerError(
+      `Unexpected character '${char}'`,
+      { line: this.line, column: startColumn },
+      { source: this.source }
+    );
   }
 
   private skipWhitespace(): void {

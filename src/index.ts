@@ -61,6 +61,18 @@ export {
   type SyncCheckpoint,
   type SyncStore,
 } from './sync/index.js';
+export {
+  ReqonError,
+  ParseError,
+  LexerError,
+  RuntimeError,
+  ValidationError,
+  formatErrors,
+  getSourceLine,
+  getSourceContext,
+  type SourceLocation,
+  type ErrorContext,
+} from './errors/index.js';
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -69,10 +81,10 @@ import { ReqonParser } from './parser/index.js';
 import { MissionExecutor, type ExecutorConfig } from './interpreter/index.js';
 import type { ReqonProgram } from './ast/index.js';
 
-export function parse(source: string): ReqonProgram {
+export function parse(source: string, filePath?: string): ReqonProgram {
   const lexer = new ReqonLexer(source);
   const tokens = lexer.tokenize();
-  const parser = new ReqonParser(tokens);
+  const parser = new ReqonParser(tokens, source, filePath);
   return parser.parse();
 }
 
@@ -91,7 +103,9 @@ export async function fromFile(
 ): Promise<import('./interpreter/index.js').ExecutionResult> {
   const absolutePath = resolve(filePath);
   const source = await readFile(absolutePath, 'utf-8');
-  return execute(source, config);
+  const program = parse(source, absolutePath);
+  const executor = new MissionExecutor(config);
+  return executor.execute(program);
 }
 
 // Tagged template literal for inline missions

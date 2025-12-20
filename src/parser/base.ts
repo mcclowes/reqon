@@ -1,13 +1,18 @@
 import { TokenType } from 'vague-lang';
 import type { ReqonToken, TokenType as CombinedTokenType } from '../lexer/tokens.js';
 import { ReqonTokenType } from '../lexer/tokens.js';
+import { ParseError, type ErrorContext } from '../errors/index.js';
 
 export class ReqonParserBase {
   protected tokens: ReqonToken[];
   protected pos = 0;
+  protected source?: string;
+  protected filePath?: string;
 
-  constructor(tokens: ReqonToken[]) {
+  constructor(tokens: ReqonToken[], source?: string, filePath?: string) {
     this.tokens = tokens.filter((t) => t.type !== TokenType.NEWLINE);
+    this.source = source;
+    this.filePath = filePath;
   }
 
   protected peek(): ReqonToken {
@@ -58,9 +63,18 @@ export class ReqonParserBase {
     return this.peek().type === TokenType.EOF;
   }
 
-  protected error(message: string): Error {
+  protected error(message: string): ParseError {
     const token = this.peek();
-    return new Error(`Parse error at line ${token.line}, column ${token.column}: ${message}`);
+    const context: ErrorContext | undefined = this.source
+      ? { source: this.source, filePath: this.filePath }
+      : undefined;
+
+    return new ParseError(
+      message,
+      { line: token.line, column: token.column },
+      context,
+      token.value
+    );
   }
 
   protected savePosition(): number {

@@ -32,8 +32,8 @@ import type {
 } from '../ast/nodes.js';
 
 export class ReqonParser extends ReqonExpressionParser {
-  constructor(tokens: ReqonToken[]) {
-    super(tokens);
+  constructor(tokens: ReqonToken[], source?: string, filePath?: string) {
+    super(tokens, source, filePath);
   }
 
   parse(): ReqonProgram {

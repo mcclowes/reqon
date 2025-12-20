@@ -30,7 +30,7 @@
 
 ## Developer Experience
 
-- [ ] **Better error messages** - Line numbers and context in parse/runtime errors
+- [x] **Better error messages** - Line numbers, column, source context with pointer in parse/lexer/runtime errors
 - [ ] **VS Code extension** - Syntax highlighting and LSP for `.reqon` files
 - [ ] **Debug mode** - Step-through execution with state inspection
 - [ ] **Dry run improvements** - Mock responses based on schema
