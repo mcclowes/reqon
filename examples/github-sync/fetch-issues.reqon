@@ -2,7 +2,7 @@
 // External action file - automatically merged into mission
 
 action FetchIssues {
-  fetch GET "/repos/{GITHUB_OWNER}/{GITHUB_REPO}/issues" {
+  get "/repos/{GITHUB_OWNER}/{GITHUB_REPO}/issues" {
     source: GitHub,
     body: {
       "state": "all",

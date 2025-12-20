@@ -2,7 +2,7 @@
 // External action file - automatically merged into mission
 
 action FetchPRs {
-  fetch GET "/repos/{GITHUB_OWNER}/{GITHUB_REPO}/pulls" {
+  get "/repos/{GITHUB_OWNER}/{GITHUB_REPO}/pulls" {
     source: GitHub,
     body: {
       "state": "all",

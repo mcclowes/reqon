@@ -27,7 +27,7 @@ describe('Mission Loader', () => {
           store data: memory("items")
 
           action Fetch {
-            fetch GET "/items" { source: Api }
+            get "/items" { source: Api }
             store response -> data
           }
 
@@ -72,7 +72,7 @@ describe('Mission Loader', () => {
       // Action files
       await writeFile(join(missionDir, 'fetch-list.reqon'), `
         action FetchList {
-          fetch GET "/invoices" { source: Xero }
+          get "/invoices" { source: Xero }
           store response -> invoices
         }
       `);
@@ -80,7 +80,7 @@ describe('Mission Loader', () => {
       await writeFile(join(missionDir, 'hydrate.reqon'), `
         action Hydrate {
           for invoice in invoices {
-            fetch GET "/invoices/{invoice.id}" { source: Xero }
+            get "/invoices/{invoice.id}" { source: Xero }
             store response -> details
           }
         }
@@ -109,7 +109,7 @@ describe('Mission Loader', () => {
 
       await writeFile(join(missionDir, 'action.reqon'), `
         action SomeAction {
-          fetch GET "/test" { source: Api }
+          get "/test" { source: Api }
         }
       `);
 
@@ -153,7 +153,7 @@ describe('Mission Loader', () => {
           store data: memory("data")
 
           action Fetch {
-            fetch GET "/a" { source: Api }
+            get "/a" { source: Api }
           }
 
           run Fetch
@@ -162,7 +162,7 @@ describe('Mission Loader', () => {
 
       await writeFile(join(missionDir, 'fetch.reqon'), `
         action Fetch {
-          fetch GET "/b" { source: Api }
+          get "/b" { source: Api }
         }
       `);
 
@@ -181,7 +181,7 @@ describe('Mission Loader', () => {
           store data: memory("data")
 
           action Fetch {
-            fetch GET "/items" { source: Api }
+            get "/items" { source: Api }
           }
 
           run Fetch then NonExistent
@@ -203,7 +203,7 @@ describe('Mission Loader', () => {
           store data: memory("data")
 
           action InlineAction {
-            fetch GET "/inline" { source: Api }
+            get "/inline" { source: Api }
           }
 
           run InlineAction then ExternalAction
@@ -212,7 +212,7 @@ describe('Mission Loader', () => {
 
       await writeFile(join(missionDir, 'external.reqon'), `
         action ExternalAction {
-          fetch GET "/external" { source: Api }
+          get "/external" { source: Api }
           store response -> data
         }
       `);

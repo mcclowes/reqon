@@ -21,7 +21,7 @@ describe('ReqonParser', () => {
         store items: memory("items")
 
         action FetchItems {
-          fetch GET "/items"
+          get "/items"
 
           store response -> items {
             key: .id
@@ -60,7 +60,7 @@ describe('ReqonParser', () => {
         store items: memory("items")
 
         action FetchAll {
-          fetch GET "/items" {
+          get "/items" {
             paginate: offset(page, 50),
             until: response.items.length == 0
           }
@@ -102,7 +102,7 @@ describe('ReqonParser', () => {
 
         action ProcessItems {
           for item in items where .status == "pending" {
-            fetch GET "/items/{item.id}"
+            get "/items/{item.id}"
 
             store response -> items {
               key: .id,
@@ -190,7 +190,7 @@ describe('ReqonParser', () => {
         store data: memory("data")
 
         action Fetch {
-          fetch GET "/data"
+          get "/data"
 
           validate response {
             assume length(.items) > 0,
@@ -230,17 +230,17 @@ describe('ReqonParser', () => {
         store data: memory("data")
 
         action Step1 {
-          fetch GET "/step1"
+          get "/step1"
           store response -> data { key: .id }
         }
 
         action Step2 {
-          fetch GET "/step2"
+          get "/step2"
           store response -> data { key: .id }
         }
 
         action Step3 {
-          fetch GET "/step3"
+          get "/step3"
           store response -> data { key: .id }
         }
 
@@ -272,17 +272,17 @@ describe('ReqonParser', () => {
         store reconciled: memory("reconciled")
 
         action FetchOrders {
-          fetch GET "/orders"
+          get "/orders"
           store response -> orders { key: .id }
         }
 
         action FetchPayments {
-          fetch GET "/payments"
+          get "/payments"
           store response -> payments { key: .id }
         }
 
         action Reconcile {
-          fetch GET "/reconcile"
+          get "/reconcile"
           store response -> reconciled { key: .id }
         }
 
@@ -319,11 +319,11 @@ describe('ReqonParser', () => {
 
         store data: memory("data")
 
-        action A { fetch GET "/a" }
-        action B { fetch GET "/b" }
-        action C { fetch GET "/c" }
-        action D { fetch GET "/d" }
-        action E { fetch GET "/e" }
+        action A { get "/a" }
+        action B { get "/b" }
+        action C { get "/c" }
+        action D { get "/d" }
+        action E { get "/e" }
 
         run A then [B, C, D] then E
       }
@@ -351,9 +351,9 @@ describe('ReqonParser', () => {
 
         store data: memory("data")
 
-        action X { fetch GET "/x" }
-        action Y { fetch GET "/y" }
-        action Z { fetch GET "/z" }
+        action X { get "/x" }
+        action Y { get "/y" }
+        action Z { get "/z" }
 
         run [X, Y, Z]
       }

@@ -47,7 +47,7 @@ mission SyncXeroInvoices {
   // ============================================================
 
   action FetchInvoiceList {
-    fetch GET "/Invoices" {
+    get "/Invoices" {
       paginate: offset(page, 100),
       until: length(response.Invoices) == 0
     }
@@ -84,7 +84,7 @@ mission SyncXeroInvoices {
 
   action HydrateInvoices {
     for invoice in invoices_cache where ._partial == true {
-      fetch GET "/Invoices/{invoice.InvoiceID}"
+      get "/Invoices/{invoice.InvoiceID}"
 
       // Handle individual invoice fetch responses
       match response {
@@ -128,7 +128,7 @@ mission SyncXeroInvoices {
   // ============================================================
 
   action RefreshToken {
-    fetch POST "/oauth2/token" {
+    post "/oauth2/token" {
       source: Xero,
       body: {
         "grant_type": "refresh_token",

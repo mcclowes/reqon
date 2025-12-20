@@ -183,7 +183,7 @@ describe('OAS Parser Integration', () => {
         store pets: memory("pets")
 
         action Fetch {
-          fetch GET "/custom-path"
+          get "/custom-path"
           store response -> pets { key: .id }
         }
 
@@ -219,7 +219,7 @@ describe('OAS Parser Integration', () => {
         }
 
         action FetchFromLegacy {
-          fetch GET "/old-endpoint" {
+          get "/old-endpoint" {
             source: Legacy
           }
           store response -> pets { key: .id }

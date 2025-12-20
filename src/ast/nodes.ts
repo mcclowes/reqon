@@ -129,9 +129,9 @@ export interface MatchArm {
   flow?: FlowDirective;
 }
 
-// fetch GET "/Invoices" { paginate: ..., until: ... }
+// get "/Invoices" { paginate: ..., until: ... }
 // fetch Xero.getInvoices { paginate: ... }  -- OAS operationId reference
-// fetch GET "/Invoices" { since: lastSync }  -- Incremental sync
+// get "/Invoices" { since: lastSync }  -- Incremental sync
 export interface FetchStep {
   type: 'FetchStep';
   // Traditional: explicit method + path

@@ -19,7 +19,7 @@ mission SyncXeroInvoices {
   store normalized: memory("normalized")
 
   action FetchInvoices {
-    fetch GET "/Invoices" {
+    get "/Invoices" {
       paginate: offset(page, 100),
       until: length(response.Invoices) == 0
     }
@@ -80,7 +80,7 @@ const program = parse(`
     source API { auth: bearer, base: "https://api.example.com" }
     store items: memory("items")
     action Fetch {
-      fetch GET "/items"
+      get "/items"
       store response -> items { key: .id }
     }
     run Fetch
@@ -136,7 +136,7 @@ Two styles are supported:
 
 ```reqon
 // Traditional: explicit HTTP method and path
-fetch GET "/path" {
+get "/path" {
   paginate: offset(page, 100),
   until: response.items.length == 0,
   retry: { maxAttempts: 3, backoff: exponential }

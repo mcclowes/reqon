@@ -22,7 +22,7 @@ node dist/cli.js examples/jsonplaceholder/posts.reqon --output output.json
 ## Features demonstrated
 
 - `auth: none` for public APIs
-- `fetch GET` for simple requests
+- `get` for simple requests
 - `map` for schema transformation
 - `for...in` iteration over stored items
 - `run...then` for action sequencing

@@ -21,7 +21,7 @@ describe('Schedule parsing', () => {
         mission Test {
           schedule: every 6 hours
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -38,7 +38,7 @@ describe('Schedule parsing', () => {
         mission Test {
           schedule: every 30 minutes
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -55,7 +55,7 @@ describe('Schedule parsing', () => {
         mission Test {
           schedule: every 60 seconds
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -72,7 +72,7 @@ describe('Schedule parsing', () => {
         mission Test {
           schedule: every 1 days
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -89,7 +89,7 @@ describe('Schedule parsing', () => {
         mission Test {
           schedule: every 2 weeks
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -108,7 +108,7 @@ describe('Schedule parsing', () => {
         mission Test {
           schedule: cron "0 */6 * * *"
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -125,7 +125,7 @@ describe('Schedule parsing', () => {
         mission Test {
           schedule: cron "30 9 15 * 1-5"
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -144,7 +144,7 @@ describe('Schedule parsing', () => {
         mission Test {
           schedule: at "2025-01-25T15:00:00Z"
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -165,7 +165,7 @@ describe('Schedule parsing', () => {
             timezone: "America/New_York"
           }
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -183,7 +183,7 @@ describe('Schedule parsing', () => {
             maxConcurrency: 2
           }
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -201,7 +201,7 @@ describe('Schedule parsing', () => {
             skipIfRunning: false
           }
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -222,7 +222,7 @@ describe('Schedule parsing', () => {
             }
           }
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -249,7 +249,7 @@ describe('Schedule parsing', () => {
             }
           }
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
@@ -274,7 +274,7 @@ describe('Schedule parsing', () => {
       const source = `
         mission Test {
           source API { auth: none, base: "http://api.example.com" }
-          action Sync { fetch GET "/data" }
+          action Sync { get "/data" }
           run Sync
         }
       `;
