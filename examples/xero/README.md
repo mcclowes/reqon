@@ -1,12 +1,13 @@
 # Xero Invoice Sync Example
 
-Demonstrates a real-world sync pipeline with OAuth2 authentication, pagination, hydration, and normalization.
+Demonstrates a real-world sync pipeline with OAuth2 authentication, pagination, hydration, normalization, and comprehensive error handling.
 
 ## What it does
 
-1. **FetchInvoiceList**: Fetches paginated invoice summaries (shallow data)
-2. **HydrateInvoices**: Fetches full details for each invoice marked as partial
-3. **NormalizeInvoices**: Maps Xero schema to a vendor-agnostic `StandardInvoice` format
+1. **FetchInvoiceList**: Fetches paginated invoice summaries with error handling
+2. **HydrateInvoices**: Fetches full details for each invoice, handling individual failures
+3. **RefreshToken**: OAuth token refresh (called via `jump` directive on auth errors)
+4. **NormalizeInvoices**: Maps Xero schema to a vendor-agnostic `StandardInvoice` format
 
 ## Run
 
@@ -26,11 +27,62 @@ Requires a `credentials.json`:
 
 ## Features demonstrated
 
-- `auth: oauth2` for OAuth2 authentication
-- Offset-based pagination with `until` condition
-- `partial: true` to mark items needing hydration
-- `where` clause filtering (`._partial == true`)
-- Path interpolation (`/Invoices/{invoice.InvoiceID}`)
-- `upsert: true` for updating existing records
-- `match` expressions for status mapping
-- Multi-action pipelines with `run...then`
+### OAuth2 Authentication
+```reqon
+source Xero {
+  auth: oauth2,
+  base: "https://api.xero.com/api.xro/2.0"
+}
+```
+
+### Pagination with Until Condition
+```reqon
+fetch GET "/Invoices" {
+  paginate: offset(page, 100),
+  until: length(response.Invoices) == 0
+}
+```
+
+### Schema Overloading with Match Steps
+Handle different API response types declaratively:
+```reqon
+match response {
+  XeroInvoiceList -> { store response.Invoices -> cache },
+  XeroRateLimitError -> retry { maxAttempts: 5, backoff: exponential },
+  XeroUnauthorizedError -> jump RefreshToken then retry,
+  _ -> abort "Unexpected response"
+}
+```
+
+### Flow Control Directives
+
+| Directive | Usage | Description |
+|-----------|-------|-------------|
+| `continue` | `Schema -> continue` | Proceed to next step |
+| `skip` | `Schema -> skip` | Skip remaining steps in action |
+| `abort` | `Schema -> abort "message"` | Halt mission with error |
+| `retry` | `Schema -> retry { ... }` | Retry with backoff config |
+| `queue` | `Schema -> queue target` | Send to dead-letter queue |
+| `jump` | `Schema -> jump Action then retry` | Execute action, then continue |
+
+### Partial Record Hydration
+```reqon
+store response.Invoices -> invoices_cache {
+  key: .InvoiceID,
+  partial: true  // Mark as needing hydration
+}
+
+for invoice in invoices_cache where ._partial == true {
+  // Fetch full details
+}
+```
+
+### Match Expressions for Field Mapping
+```reqon
+status: match .Status {
+  "PAID" => "paid",
+  "AUTHORISED" => "approved",
+  "SUBMITTED" => "pending",
+  _ => "unknown"
+}
+```

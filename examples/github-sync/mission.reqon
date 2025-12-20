@@ -1,0 +1,101 @@
+// GitHub Issues & PRs Sync Mission
+// Demonstrates multi-file missions, parallel execution, and error handling
+//
+// This mission is organized as a folder:
+//   github-sync/
+//   ├── mission.reqon       # This file: sources, stores, schemas, pipeline
+//   ├── fetch-issues.reqon  # Fetches issues with pagination
+//   ├── fetch-prs.reqon     # Fetches pull requests
+//   └── normalize.reqon     # Normalizes to unified schema
+
+mission SyncGitHub {
+
+  // ============================================================
+  // SOURCE
+  // ============================================================
+
+  source GitHub {
+    auth: bearer,
+    base: "https://api.github.com",
+    headers: {
+      "Accept": "application/vnd.github.v3+json",
+      "User-Agent": "reqon-sync"
+    },
+    rateLimit: {
+      strategy: "pause",
+      maxWait: 60,
+      fallbackRpm: 60
+    }
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  store issues_raw: memory("issues_raw")
+  store prs_raw: memory("prs_raw")
+  store work_items: sql("work_items")
+  store errors: memory("sync_errors")
+
+  // ============================================================
+  // SCHEMAS - For response type matching
+  // ============================================================
+
+  schema GitHubIssue {
+    id: int,
+    number: int,
+    title: string,
+    body: string?,
+    state: string,
+    user: object,
+    labels: array,
+    created_at: date,
+    updated_at: date
+  }
+
+  schema GitHubPR {
+    id: int,
+    number: int,
+    title: string,
+    body: string?,
+    state: string,
+    user: object,
+    head: object,
+    base: object,
+    merged: boolean?,
+    created_at: date,
+    updated_at: date
+  }
+
+  schema RateLimitError {
+    message: string,
+    documentation_url: string
+  }
+
+  schema NotFoundError {
+    message: string,
+    documentation_url: string
+  }
+
+  schema UnifiedWorkItem {
+    id: string,
+    source: string,
+    type: string,
+    number: int,
+    title: string,
+    description: string?,
+    status: string,
+    author: string,
+    labels: array,
+    created_at: date,
+    updated_at: date,
+    synced_at: date
+  }
+
+  // ============================================================
+  // PIPELINE - Parallel fetch, then normalize
+  // ============================================================
+
+  // FetchIssues and FetchPRs run in parallel, then Normalize runs after both complete
+  run [FetchIssues, FetchPRs] then Normalize
+}

@@ -1,5 +1,6 @@
 // Xero Invoice Sync Mission
 // Fetches all invoices from Xero, hydrates them, and normalizes to a standard schema
+// Demonstrates: OAuth2, pagination, hydration, error handling with match steps
 
 mission SyncXeroInvoices {
   // Define the API source
@@ -11,44 +12,143 @@ mission SyncXeroInvoices {
   // Define storage destinations
   store invoices_cache: sql("invoices")
   store invoices_normalized: sql("invoices_normalized")
+  store failed_invoices: memory("failed_invoices")
 
+  // ============================================================
+  // SCHEMAS - For response type matching
+  // ============================================================
+
+  schema XeroInvoiceList {
+    Invoices: array,
+    Status: string?
+  }
+
+  schema XeroInvoiceDetail {
+    Invoices: array
+  }
+
+  schema XeroRateLimitError {
+    Message: string,
+    Type: string
+  }
+
+  schema XeroNotFoundError {
+    Message: string,
+    Type: string
+  }
+
+  schema XeroUnauthorizedError {
+    Message: string,
+    Type: string
+  }
+
+  // ============================================================
   // Step 1: Fetch list of invoices (shallow/summary data)
+  // ============================================================
+
   action FetchInvoiceList {
     fetch GET "/Invoices" {
       paginate: offset(page, 100),
       until: length(response.Invoices) == 0
     }
 
-    validate response {
-      assume length(.Invoices) > 0
-    }
+    // Handle different response scenarios
+    match response {
+      XeroInvoiceList -> {
+        validate response {
+          assume length(.Invoices) > 0
+        }
 
-    store response.Invoices -> invoices_cache {
-      key: .InvoiceID,
-      partial: true
+        store response.Invoices -> invoices_cache {
+          key: .InvoiceID,
+          partial: true
+        }
+      },
+
+      XeroRateLimitError -> retry {
+        maxAttempts: 5,
+        backoff: exponential,
+        initialDelay: 60000,
+        maxDelay: 300000
+      },
+
+      XeroUnauthorizedError -> jump RefreshToken then retry,
+
+      _ -> abort "Unexpected response from Xero API"
     }
   }
 
+  // ============================================================
   // Step 2: Hydrate each invoice with full details
+  // ============================================================
+
   action HydrateInvoices {
     for invoice in invoices_cache where ._partial == true {
       fetch GET "/Invoices/{invoice.InvoiceID}"
 
-      validate response {
-        assume length(.Invoices) == 1
-      }
+      // Handle individual invoice fetch responses
+      match response {
+        XeroInvoiceDetail -> {
+          validate response {
+            assume length(.Invoices) == 1
+          }
 
-      store response.Invoices -> invoices_cache {
-        key: .InvoiceID,
-        partial: false,
-        upsert: true
+          store response.Invoices -> invoices_cache {
+            key: .InvoiceID,
+            partial: false,
+            upsert: true
+          }
+        },
+
+        XeroNotFoundError -> {
+          // Invoice deleted since list was fetched - log and skip
+          store {
+            invoice_id: invoice.InvoiceID,
+            error: "Invoice not found during hydration",
+            timestamp: now()
+          } -> failed_invoices { key: invoice.InvoiceID }
+        },
+
+        XeroRateLimitError -> retry {
+          maxAttempts: 3,
+          backoff: exponential,
+          initialDelay: 30000
+        },
+
+        XeroUnauthorizedError -> jump RefreshToken then retry,
+
+        // Unknown error - queue for manual review
+        _ -> queue failed_invoices
       }
     }
   }
 
-  // Step 3: Map to standard schema
+  // ============================================================
+  // Step 3: Refresh OAuth token (called via jump directive)
+  // ============================================================
+
+  action RefreshToken {
+    fetch POST "/oauth2/token" {
+      source: Xero,
+      body: {
+        "grant_type": "refresh_token",
+        "refresh_token": env("XERO_REFRESH_TOKEN")
+      }
+    }
+
+    // Token refresh is critical - abort on failure
+    match response {
+      _ where .access_token != null -> continue,
+      _ -> abort "Failed to refresh Xero OAuth token"
+    }
+  }
+
+  // ============================================================
+  // Step 4: Map to standard schema
+  // ============================================================
+
   action NormalizeInvoices {
-    for invoice in invoices_cache {
+    for invoice in invoices_cache where ._partial == false {
       map invoice -> StandardInvoice {
         id: .InvoiceID,
         vendor: "xero",
@@ -60,6 +160,7 @@ mission SyncXeroInvoices {
           "AUTHORISED" => "approved",
           "SUBMITTED" => "pending",
           "DRAFT" => "draft",
+          "VOIDED" => "voided",
           _ => "unknown"
         },
         issued_at: .Date,
@@ -78,7 +179,10 @@ mission SyncXeroInvoices {
     }
   }
 
+  // ============================================================
   // Pipeline: run actions in sequence
+  // ============================================================
+
   run FetchInvoiceList
     then HydrateInvoices
     then NormalizeInvoices

@@ -162,15 +162,15 @@ export async function validateOrdersHavePayments(
 }
 ```
 
-### 5. Pipeline Orchestration
+### 5. Pipeline Orchestration with Parallel Execution
 
-**Reqon** (4 lines):
+**Reqon** (3 lines):
 ```reqon
-run SyncShopifyOrders
-  then SyncStripePayments
-  then SyncShipStationShipments
+// Fetch from all three APIs in parallel, then validate
+run [SyncShopifyOrders, SyncStripePayments, SyncShipStationShipments]
   then ValidateReconciliation
 ```
+Brackets indicate parallel execution - all three sync actions run concurrently for maximum performance.
 
 **Temporal** (100+ lines):
 ```typescript

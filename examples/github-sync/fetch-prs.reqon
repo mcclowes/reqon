@@ -1,0 +1,40 @@
+// Fetch GitHub Pull Requests with error handling
+// External action file - automatically merged into mission
+
+action FetchPRs {
+  fetch GET "/repos/{GITHUB_OWNER}/{GITHUB_REPO}/pulls" {
+    source: GitHub,
+    body: {
+      "state": "all",
+      "per_page": 100
+    },
+    paginate: page(page, 100),
+    until: length(response) == 0,
+    retry: {
+      maxAttempts: 3,
+      backoff: "exponential",
+      initialDelay: 1000
+    }
+  }
+
+  // Handle different response types
+  match response {
+    // Success - store PRs
+    [GitHubPR] -> {
+      store response -> prs_raw { key: .id }
+    },
+
+    // Rate limited - retry
+    RateLimitError -> retry {
+      maxAttempts: 5,
+      backoff: exponential,
+      initialDelay: 60000
+    },
+
+    // Not found - abort
+    NotFoundError -> abort "Repository not found",
+
+    // Fallback - log error and skip
+    _ -> skip
+  }
+}
