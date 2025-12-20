@@ -126,11 +126,11 @@ store name: nosql("collection")
 
 ```reqon
 action Name {
-  // Steps: fetch, for, map, validate, store
+  // Steps: get/post/put/patch/delete, call, for, map, validate, store
 }
 ```
 
-### Fetch
+### HTTP Requests
 
 Two styles are supported:
 
@@ -143,13 +143,13 @@ get "/path" {
 }
 
 // OAS-based: reference by Source.operationId
-fetch Petstore.listPets {
+call Petstore.listPets {
   paginate: cursor(cursor, 20, "nextCursor"),
   until: response.pets.length == 0
 }
 ```
 
-When using OAS-based fetch, the HTTP method and path are resolved from the OpenAPI spec automatically.
+When using OAS-based `call`, the HTTP method and path are resolved from the OpenAPI spec automatically.
 
 ### Iteration
 
@@ -207,7 +207,7 @@ mission SyncPets {
 
   action FetchPets {
     // Use operationId from spec - method and path are resolved automatically
-    fetch Petstore.listPets
+    call Petstore.listPets
 
     store response.pets -> pets { key: .id }
   }

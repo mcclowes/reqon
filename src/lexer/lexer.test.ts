@@ -76,14 +76,14 @@ describe('ReqonLexer', () => {
 
   describe('keyword tokenization', () => {
     it('recognizes Reqon keywords', () => {
-      const lexer = new ReqonLexer('mission action source store fetch run');
+      const lexer = new ReqonLexer('mission action source store call run');
       const tokens = lexer.tokenize();
 
       expect(tokens[0].type).toBe(ReqonTokenType.MISSION);
       expect(tokens[1].type).toBe(ReqonTokenType.ACTION);
       expect(tokens[2].type).toBe(ReqonTokenType.SOURCE);
       expect(tokens[3].type).toBe(ReqonTokenType.STORE);
-      expect(tokens[4].type).toBe(ReqonTokenType.FETCH);
+      expect(tokens[4].type).toBe(ReqonTokenType.CALL);
       expect(tokens[5].type).toBe(ReqonTokenType.RUN);
     });
 
@@ -269,7 +269,6 @@ describe('ReqonLexer', () => {
       expect(tokenTypes).toContain(ReqonTokenType.SOURCE);
       expect(tokenTypes).toContain(ReqonTokenType.STORE);
       expect(tokenTypes).toContain(ReqonTokenType.ACTION);
-      expect(tokenTypes).toContain(ReqonTokenType.FETCH);
       expect(tokenTypes).toContain(ReqonTokenType.GET);
       expect(tokenTypes).toContain(ReqonTokenType.RUN);
     });

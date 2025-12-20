@@ -3,7 +3,7 @@
  *
  * Enables "only fetch changed since last run" patterns:
  * - get "/invoices" { since: lastSync }
- * - fetch Xero.getInvoices { since: lastSync("invoices") }
+ * - call Xero.getInvoices { since: lastSync("invoices") }
  */
 
 /**

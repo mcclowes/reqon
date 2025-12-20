@@ -413,7 +413,7 @@ export class ReqonParser extends ReqonExpressionParser {
   }
 
   private parseActionStep(): ActionStep {
-    if (this.check(ReqonTokenType.FETCH)) return this.parseFetchStep();
+    if (this.check(ReqonTokenType.CALL)) return this.parseCallStep();
     // Shorthand: get "/path", post "/path", etc.
     if (this.checkHttpMethod()) return this.parseHttpMethodStep();
     if (this.check(ReqonTokenType.FOR)) return this.parseForStep();
@@ -540,17 +540,17 @@ export class ReqonParser extends ReqonExpressionParser {
   }
 
   // ============================================
-  // Fetch step
+  // Call step (OAS operationId)
   // ============================================
 
   /**
-   * Parse OAS-style fetch: fetch Source.operationId { options }
+   * Parse OAS-style call: call Source.operationId { options }
    * For direct HTTP requests, use: get "/path", post "/path", etc.
    */
-  private parseFetchStep(): FetchStep {
-    this.consume(ReqonTokenType.FETCH, "Expected 'fetch'");
+  private parseCallStep(): FetchStep {
+    this.consume(ReqonTokenType.CALL, "Expected 'call'");
 
-    // OAS-style: fetch Source.operationId
+    // OAS-style: call Source.operationId
     const sourceName = this.consume(TokenType.IDENTIFIER, 'Expected source name').value;
     this.consume(TokenType.DOT, "Expected '.'");
     const opId = this.consume(TokenType.IDENTIFIER, 'Expected operationId').value;
