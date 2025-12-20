@@ -492,6 +492,175 @@ describe('evaluate', () => {
       expect(() => evaluate(expr, ctx)).toThrow('Unknown function: unknownFn');
     });
   });
+
+  describe('is expressions (type checking)', () => {
+    it('checks is array - true case', () => {
+      const ctx = createContext();
+      ctx.response = [1, 2, 3];
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'response' },
+        typeCheck: 'array',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is array - false case', () => {
+      const ctx = createContext();
+      ctx.response = { items: [1, 2, 3] };
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'response' },
+        typeCheck: 'array',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(false);
+    });
+
+    it('checks is object - true case', () => {
+      const ctx = createContext();
+      ctx.response = { name: 'test' };
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'response' },
+        typeCheck: 'object',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is object - false for array', () => {
+      const ctx = createContext();
+      ctx.response = [1, 2, 3];
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'response' },
+        typeCheck: 'object',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(false);
+    });
+
+    it('checks is string', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'name', 'Alice');
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'name' },
+        typeCheck: 'string',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is number', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'count', 42);
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'count' },
+        typeCheck: 'number',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is int - true for integer', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'value', 42);
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'value' },
+        typeCheck: 'int',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is int - false for decimal', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'value', 42.5);
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'value' },
+        typeCheck: 'int',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(false);
+    });
+
+    it('checks is boolean', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'flag', true);
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'flag' },
+        typeCheck: 'boolean',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is null', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'value', null);
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'value' },
+        typeCheck: 'null',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is undefined', () => {
+      const ctx = createContext();
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'nonExistent' },
+        typeCheck: 'undefined',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is date - Date object', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'timestamp', new Date());
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'timestamp' },
+        typeCheck: 'date',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('checks is date - ISO string', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'timestamp', '2025-01-15T10:30:00Z');
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'timestamp' },
+        typeCheck: 'date',
+      };
+
+      expect(evaluate(expr as unknown as Expression, ctx)).toBe(true);
+    });
+
+    it('throws on unknown type', () => {
+      const ctx = createContext();
+      setVariable(ctx, 'value', 'test');
+      const expr = {
+        type: 'IsExpression',
+        operand: { type: 'Identifier', name: 'value' },
+        typeCheck: 'unknownType',
+      };
+
+      expect(() => evaluate(expr as unknown as Expression, ctx)).toThrow("Unknown type for 'is' check: unknownType");
+    });
+  });
 });
 
 describe('evaluateToString', () => {

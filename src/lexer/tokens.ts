@@ -68,6 +68,9 @@ export enum ReqonTokenType {
   ABORT = 'ABORT',
   QUEUE = 'QUEUE',
   JUMP = 'JUMP',
+
+  // Type checking
+  IS = 'IS',
 }
 
 // Combined token type
@@ -140,6 +143,9 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   abort: ReqonTokenType.ABORT,
   queue: ReqonTokenType.QUEUE,
   jump: ReqonTokenType.JUMP,
+
+  // Type checking
+  is: ReqonTokenType.IS,
 };
 
 export interface ReqonToken {

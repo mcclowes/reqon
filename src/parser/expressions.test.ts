@@ -432,6 +432,64 @@ describe('ReqonExpressionParser', () => {
     });
   });
 
+  describe('is type checking expressions', () => {
+    it('parses is array', () => {
+      const expr = parseExpr('items is array');
+
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect((expr as any).operand).toMatchObject({ type: 'Identifier', name: 'items' });
+        expect((expr as any).typeCheck).toBe('array');
+      }
+    });
+
+    it('parses is string', () => {
+      const expr = parseExpr('.name is string');
+
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect((expr as any).typeCheck).toBe('string');
+      }
+    });
+
+    it('parses is number', () => {
+      const expr = parseExpr('value is number');
+
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect((expr as any).typeCheck).toBe('number');
+      }
+    });
+
+    it('parses is object', () => {
+      const expr = parseExpr('data is object');
+
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect((expr as any).typeCheck).toBe('object');
+      }
+    });
+
+    it('parses is boolean', () => {
+      const expr = parseExpr('flag is boolean');
+
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect((expr as any).typeCheck).toBe('boolean');
+      }
+    });
+
+    it('parses is with property access', () => {
+      const expr = parseExpr('response.items is array');
+
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect((expr as any).operand.type).toBe('QualifiedName');
+        expect((expr as any).typeCheck).toBe('array');
+      }
+    });
+  });
+
   describe('complex expressions', () => {
     it('parses complex arithmetic with comparisons', () => {
       const expr = parseExpr('(a + b) * 2 > 100');
