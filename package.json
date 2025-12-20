@@ -20,6 +20,7 @@
   "author": "Max Clayton Clowes <max@mcclowes.com>",
   "license": "ISC",
   "dependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0",
     "vague-lang": "file:../vague"
   },
   "devDependencies": {

@@ -15,7 +15,7 @@
 
 ## API Integration
 
-- [ ] **OpenAPI import** - Auto-generate fetch configs from OpenAPI specs
+- [x] **OpenAPI integration** - Load sources from OAS, resolve operationIds, validate responses
 - [ ] **Rate limiting** - Respect API rate limits from response headers
 - [ ] **OAuth2 flow** - Full token refresh flow with automatic retry
 

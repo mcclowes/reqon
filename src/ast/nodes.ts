@@ -14,16 +14,19 @@ export interface ReqonProgram {
 }
 
 // source Xero { auth: oauth2, base: "https://api.xero.com/..." }
+// source Xero from "./xero-openapi.yaml" { auth: oauth2 }
 export interface SourceDefinition {
   type: 'SourceDefinition';
   name: string;
+  specPath?: string; // OAS spec path (URL or file path)
   config: SourceConfig;
 }
 
 export interface SourceConfig {
   auth: AuthConfig;
-  base: string;
+  base?: string; // Optional if using OAS (derived from spec)
   headers?: Record<string, Expression>;
+  validateResponses?: boolean; // Validate responses against OAS schema
 }
 
 export interface AuthConfig {
@@ -61,16 +64,25 @@ export interface ActionDefinition {
 export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep;
 
 // fetch GET "/Invoices" { paginate: ..., until: ... }
+// fetch Xero.getInvoices { paginate: ... }  -- OAS operationId reference
 export interface FetchStep {
   type: 'FetchStep';
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  path: Expression; // Can contain interpolations like "/Invoices/{id}"
+  // Traditional: explicit method + path
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path?: Expression; // Can contain interpolations like "/Invoices/{id}"
+  // OAS-based: source.operationId reference
+  operationRef?: OperationRef;
   source?: string; // Which source to use (defaults to first defined)
   body?: Expression;
   headers?: Record<string, Expression>;
   paginate?: PaginationConfig;
   until?: Expression; // Condition to stop pagination
   retry?: RetryConfig;
+}
+
+export interface OperationRef {
+  source: string; // Source name (e.g., "Xero")
+  operationId: string; // OAS operationId (e.g., "getInvoices")
 }
 
 export interface PaginationConfig {

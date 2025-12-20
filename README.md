@@ -98,10 +98,19 @@ console.log(result.stores.get('items').list());
 
 ### Sources
 
+Sources can be defined with explicit base URLs or by referencing an OpenAPI spec:
+
 ```reqon
+// Traditional: explicit base URL
 source Name {
   auth: oauth2 | bearer | basic | api_key,
   base: "https://api.example.com"
+}
+
+// OAS-based: load from OpenAPI spec (base URL derived from spec)
+source Petstore from "./petstore-openapi.yaml" {
+  auth: bearer,
+  validateResponses: true  // Optional: validate responses against OAS schema
 }
 ```
 
@@ -123,13 +132,24 @@ action Name {
 
 ### Fetch
 
+Two styles are supported:
+
 ```reqon
+// Traditional: explicit HTTP method and path
 fetch GET "/path" {
   paginate: offset(page, 100),
   until: response.items.length == 0,
   retry: { maxAttempts: 3, backoff: exponential }
 }
+
+// OAS-based: reference by Source.operationId
+fetch Petstore.listPets {
+  paginate: cursor(cursor, 20, "nextCursor"),
+  until: response.pets.length == 0
+}
 ```
+
+When using OAS-based fetch, the HTTP method and path are resolved from the OpenAPI spec automatically.
 
 ### Iteration
 
@@ -166,6 +186,37 @@ validate target {
 ```reqon
 run Step1 then Step2 then Step3
 ```
+
+## OpenAPI Integration
+
+Reqon can consume OpenAPI specs directly, eliminating the need for handwritten SDK code:
+
+```reqon
+mission SyncPets {
+  // Load API definition from OpenAPI spec
+  source Petstore from "./petstore.yaml" {
+    auth: bearer,
+    validateResponses: true
+  }
+
+  store pets: memory("pets")
+
+  action FetchPets {
+    // Use operationId from spec - method and path are resolved automatically
+    fetch Petstore.listPets
+
+    store response.pets -> pets { key: .id }
+  }
+
+  run FetchPets
+}
+```
+
+Benefits:
+- **No SDK required** - The OpenAPI spec *is* the SDK
+- **Always up-to-date** - Spec changes are picked up automatically
+- **Response validation** - Validate API responses against the spec's schemas
+- **Auto-discovery** - Base URLs, paths, and methods come from the spec
 
 ## Development
 

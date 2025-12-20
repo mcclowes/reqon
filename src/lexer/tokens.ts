@@ -44,6 +44,9 @@ export enum ReqonTokenType {
 
   // Additional operators
   RIGHT_ARROW = 'RIGHT_ARROW', // ->
+
+  // OAS integration
+  FROM = 'FROM',
 }
 
 // Combined token type
@@ -92,6 +95,9 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   offset: ReqonTokenType.OFFSET,
   cursor: ReqonTokenType.CURSOR,
   page: ReqonTokenType.PAGE,
+
+  // OAS integration
+  from: ReqonTokenType.FROM,
 };
 
 export interface ReqonToken {

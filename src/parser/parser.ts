@@ -24,6 +24,7 @@ import type {
   StoreOptions,
   PipelineDefinition,
   PipelineStage,
+  OperationRef,
 } from '../ast/nodes.js';
 
 export class ReqonParser extends ReqonExpressionParser {
@@ -114,16 +115,23 @@ export class ReqonParser extends ReqonExpressionParser {
     this.consume(ReqonTokenType.SOURCE, "Expected 'source'");
     const name = this.consume(TokenType.IDENTIFIER, 'Expected source name').value;
 
+    // Check for 'from' clause (OAS spec path)
+    let specPath: string | undefined;
+    if (this.match(ReqonTokenType.FROM)) {
+      specPath = this.consume(TokenType.STRING, 'Expected OAS spec path').value;
+    }
+
     this.consume(TokenType.LBRACE, "Expected '{'");
-    const config = this.parseSourceConfig();
+    const config = this.parseSourceConfig(specPath !== undefined);
     this.consume(TokenType.RBRACE, "Expected '}'");
 
-    return { type: 'SourceDefinition', name, config };
+    return { type: 'SourceDefinition', name, specPath, config };
   }
 
-  private parseSourceConfig(): SourceConfig {
+  private parseSourceConfig(hasOAS = false): SourceConfig {
     let auth: AuthConfig | undefined;
     let base: string | undefined;
+    let validateResponses: boolean | undefined;
     const headers: Record<string, Expression> = {};
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
@@ -134,6 +142,11 @@ export class ReqonParser extends ReqonExpressionParser {
         auth = this.parseAuthConfig();
       } else if (key === 'base') {
         base = this.consume(TokenType.STRING, 'Expected base URL string').value;
+      } else if (key === 'validateResponses') {
+        validateResponses = this.match(TokenType.TRUE);
+        if (!validateResponses) {
+          this.consume(TokenType.FALSE, "Expected 'true' or 'false'");
+        }
       } else if (key === 'headers') {
         this.consume(TokenType.LBRACE, "Expected '{'");
         while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
@@ -149,9 +162,15 @@ export class ReqonParser extends ReqonExpressionParser {
     }
 
     if (!auth) throw this.error('Source must have auth config');
-    if (!base) throw this.error('Source must have base URL');
+    // Base URL is only required if not using OAS
+    if (!base && !hasOAS) throw this.error('Source must have base URL (or use OAS spec)');
 
-    return { auth, base, headers: Object.keys(headers).length > 0 ? headers : undefined };
+    return {
+      auth,
+      base,
+      validateResponses,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+    };
   }
 
   private parseAuthConfig(): AuthConfig {
@@ -249,30 +268,49 @@ export class ReqonParser extends ReqonExpressionParser {
   private parseFetchStep(): FetchStep {
     this.consume(ReqonTokenType.FETCH, "Expected 'fetch'");
 
-    const methodToken = this.advance();
     let method: FetchStep['method'];
+    let path: Expression | undefined;
+    let operationRef: OperationRef | undefined;
 
-    switch (methodToken.type) {
-      case ReqonTokenType.GET:
-        method = 'GET';
-        break;
-      case ReqonTokenType.POST:
-        method = 'POST';
-        break;
-      case ReqonTokenType.PUT:
-        method = 'PUT';
-        break;
-      case ReqonTokenType.PATCH:
-        method = 'PATCH';
-        break;
-      case ReqonTokenType.DELETE:
-        method = 'DELETE';
-        break;
-      default:
-        throw this.error(`Expected HTTP method, got: ${methodToken.value}`);
+    // Check if next token is an HTTP method or an identifier (for Source.operationId)
+    const nextToken = this.peek();
+
+    if (
+      nextToken.type === ReqonTokenType.GET ||
+      nextToken.type === ReqonTokenType.POST ||
+      nextToken.type === ReqonTokenType.PUT ||
+      nextToken.type === ReqonTokenType.PATCH ||
+      nextToken.type === ReqonTokenType.DELETE
+    ) {
+      // Traditional: fetch GET "/path"
+      const methodToken = this.advance();
+      switch (methodToken.type) {
+        case ReqonTokenType.GET:
+          method = 'GET';
+          break;
+        case ReqonTokenType.POST:
+          method = 'POST';
+          break;
+        case ReqonTokenType.PUT:
+          method = 'PUT';
+          break;
+        case ReqonTokenType.PATCH:
+          method = 'PATCH';
+          break;
+        case ReqonTokenType.DELETE:
+          method = 'DELETE';
+          break;
+      }
+      path = this.parseExpression();
+    } else if (nextToken.type === TokenType.IDENTIFIER) {
+      // OAS-style: fetch Source.operationId
+      const sourceName = this.consume(TokenType.IDENTIFIER, 'Expected source name').value;
+      this.consume(TokenType.DOT, "Expected '.'");
+      const opId = this.consume(TokenType.IDENTIFIER, 'Expected operationId').value;
+      operationRef = { source: sourceName, operationId: opId };
+    } else {
+      throw this.error(`Expected HTTP method or Source.operationId, got: ${nextToken.value}`);
     }
-
-    const path = this.parseExpression();
 
     let source: string | undefined;
     let body: Expression | undefined;
@@ -331,6 +369,7 @@ export class ReqonParser extends ReqonExpressionParser {
       type: 'FetchStep',
       method,
       path,
+      operationRef,
       source,
       body,
       headers,

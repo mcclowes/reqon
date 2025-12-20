@@ -20,6 +20,8 @@ import { evaluate, interpolatePath } from './evaluator.js';
 import { HttpClient, BearerAuthProvider, OAuth2AuthProvider } from './http.js';
 import { MemoryStore } from '../stores/memory.js';
 import type { StoreAdapter } from '../stores/types.js';
+import { loadOAS, resolveOperation, getResponseSchema, validateResponse } from '../oas/index.js';
+import type { OASSource } from '../oas/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -62,6 +64,8 @@ export class MissionExecutor {
   private ctx: ExecutionContext;
   private errors: ExecutionError[] = [];
   private actionsRun: string[] = [];
+  private oasSources: Map<string, OASSource> = new Map();
+  private sourceConfigs: Map<string, SourceDefinition> = new Map();
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
@@ -147,6 +151,9 @@ export class MissionExecutor {
   }
 
   private async initializeSource(source: SourceDefinition): Promise<void> {
+    // Store source config for later reference
+    this.sourceConfigs.set(source.name, source);
+
     const authConfig = this.config.auth?.[source.name];
 
     let authProvider;
@@ -164,8 +171,28 @@ export class MissionExecutor {
       }
     }
 
+    // If source has OAS spec, load it
+    let baseUrl = source.config.base;
+    if (source.specPath) {
+      try {
+        const oasSource = await loadOAS(source.specPath);
+        this.oasSources.set(source.name, oasSource);
+        // Use base URL from OAS if not explicitly provided
+        if (!baseUrl) {
+          baseUrl = oasSource.baseUrl;
+        }
+        this.log(`Loaded OAS spec for ${source.name}: ${oasSource.operations.size} operations`);
+      } catch (error) {
+        throw new Error(`Failed to load OAS spec for ${source.name}: ${(error as Error).message}`);
+      }
+    }
+
+    if (!baseUrl) {
+      throw new Error(`Source ${source.name} has no base URL (provide 'base' or OAS spec with servers)`);
+    }
+
     const client = new HttpClient({
-      baseUrl: source.config.base,
+      baseUrl,
       auth: authProvider,
     });
 
@@ -225,23 +252,45 @@ export class MissionExecutor {
   }
 
   private async executeFetch(step: FetchStep): Promise<void> {
-    // Get the source client
-    const sourceName = step.source ?? this.ctx.sources.keys().next().value;
-    const client = this.ctx.sources.get(sourceName!);
+    let sourceName: string;
+    let method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    let pathValue: string;
+    let operationId: string | undefined;
 
+    // Resolve method and path - either from operationRef or explicit values
+    if (step.operationRef) {
+      // OAS-style: resolve from operationId
+      sourceName = step.operationRef.source;
+      operationId = step.operationRef.operationId;
+
+      const oasSource = this.oasSources.get(sourceName);
+      if (!oasSource) {
+        throw new Error(`Source '${sourceName}' does not have an OAS spec. Use 'source ${sourceName} from "spec.yaml"'`);
+      }
+
+      const operation = resolveOperation(oasSource, operationId);
+      method = operation.method;
+      pathValue = interpolatePath(operation.path, this.ctx);
+
+      this.log(`Fetching: ${sourceName}.${operationId} -> ${method} ${pathValue}`);
+    } else {
+      // Traditional: explicit method + path
+      sourceName = step.source ?? this.ctx.sources.keys().next().value!;
+      method = step.method!;
+
+      if (step.path!.type === 'Literal' && step.path!.dataType === 'string') {
+        pathValue = interpolatePath(step.path!.value as string, this.ctx);
+      } else {
+        pathValue = String(evaluate(step.path!, this.ctx));
+      }
+
+      this.log(`Fetching: ${method} ${pathValue}`);
+    }
+
+    const client = this.ctx.sources.get(sourceName);
     if (!client) {
       throw new Error(`Source not found: ${sourceName}`);
     }
-
-    // Evaluate and interpolate path
-    let pathValue: string;
-    if (step.path.type === 'Literal' && step.path.dataType === 'string') {
-      pathValue = interpolatePath(step.path.value as string, this.ctx);
-    } else {
-      pathValue = String(evaluate(step.path, this.ctx));
-    }
-
-    this.log(`Fetching: ${step.method} ${pathValue}`);
 
     if (this.config.dryRun) {
       this.log('(dry run - skipping actual request)');
@@ -251,22 +300,54 @@ export class MissionExecutor {
 
     // Handle pagination
     if (step.paginate) {
-      await this.executePaginatedFetch(step, client, pathValue);
+      await this.executePaginatedFetch(step, client, pathValue, method, sourceName, operationId);
     } else {
       const response = await client.request({
-        method: step.method,
+        method,
         path: pathValue,
         body: step.body ? evaluate(step.body, this.ctx) : undefined,
       }, step.retry);
 
+      // Validate response against OAS schema if enabled
+      await this.validateOASResponse(sourceName, operationId, response.data);
+
       this.ctx.response = response.data;
+    }
+  }
+
+  private async validateOASResponse(
+    sourceName: string,
+    operationId: string | undefined,
+    data: unknown
+  ): Promise<void> {
+    if (!operationId) return;
+
+    const sourceConfig = this.sourceConfigs.get(sourceName);
+    if (!sourceConfig?.config.validateResponses) return;
+
+    const oasSource = this.oasSources.get(sourceName);
+    if (!oasSource) return;
+
+    const schema = getResponseSchema(oasSource, operationId);
+    if (!schema) {
+      this.log(`No response schema found for ${operationId}`);
+      return;
+    }
+
+    const result = validateResponse(data, schema);
+    if (!result.valid) {
+      const errorMessages = result.errors.map(e => `  ${e.path}: ${e.message}`).join('\n');
+      this.log(`Response validation warnings for ${operationId}:\n${errorMessages}`);
     }
   }
 
   private async executePaginatedFetch(
     step: FetchStep,
     client: HttpClient,
-    basePath: string
+    basePath: string,
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    sourceName: string,
+    operationId?: string
   ): Promise<void> {
     const allResults: unknown[] = [];
     let page = 0;
@@ -293,10 +374,13 @@ export class MissionExecutor {
       this.log(`Fetching page ${page + 1}...`);
 
       const response = await client.request({
-        method: step.method,
+        method,
         path: basePath,
         query,
       }, step.retry);
+
+      // Validate response against OAS schema if enabled
+      await this.validateOASResponse(sourceName, operationId, response.data);
 
       this.ctx.response = response.data;
 
