@@ -1,9 +1,10 @@
 import type { StoreAdapter } from './types.js';
 import { MemoryStore } from './memory.js';
 import { FileStore, type FileStoreOptions } from './file.js';
+import { PostgRESTStore, type PostgRESTOptions } from './postgrest.js';
 import { type Logger, createLogger } from '../utils/logger.js';
 
-export type StoreType = 'memory' | 'file' | 'sql' | 'nosql';
+export type StoreType = 'memory' | 'file' | 'sql' | 'nosql' | 'postgrest';
 
 export interface CreateStoreOptions {
   /** Store type */
@@ -14,6 +15,8 @@ export interface CreateStoreOptions {
   baseDir?: string;
   /** File store options */
   fileOptions?: FileStoreOptions;
+  /** PostgREST/Supabase options */
+  postgrest?: Omit<PostgRESTOptions, 'table'>;
   /** Logger instance */
   logger?: Logger;
 }
@@ -42,8 +45,24 @@ export function createStore(options: CreateStoreOptions): StoreAdapter {
         baseDir: options.baseDir ?? '.reqon-data',
       });
 
+    case 'postgrest':
+      if (!options.postgrest) {
+        throw new Error(`PostgREST store requires 'postgrest' options with url and apiKey`);
+      }
+      return new PostgRESTStore({
+        ...options.postgrest,
+        table: options.name,
+      });
+
     case 'sql':
-      // TODO: Implement SQL adapter
+      // If postgrest options provided, use PostgREST adapter (works with Supabase)
+      if (options.postgrest) {
+        return new PostgRESTStore({
+          ...options.postgrest,
+          table: options.name,
+        });
+      }
+      // TODO: Implement raw SQL adapter (pg, mysql2, etc.)
       logger.warn(`SQL store not yet implemented, falling back to file store for '${options.name}'`);
       return new FileStore(options.name, {
         ...options.fileOptions,
