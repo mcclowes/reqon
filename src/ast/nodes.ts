@@ -210,15 +210,31 @@ export interface StoreOptions {
 }
 
 // run FetchInvoiceList then HydrateInvoices then NormalizeInvoices
+// run [FetchOrders, FetchPayments] then ReconcileData  -- parallel stages
 export interface PipelineDefinition {
   type: 'PipelineDefinition';
   stages: PipelineStage[];
 }
 
 export interface PipelineStage {
-  action: string;
-  condition?: Expression; // Optional: only run if condition true
-  parallel?: boolean; // Run in parallel with previous stage
+  /** Single action name (for sequential stages) */
+  action?: string;
+  /** Multiple action names (for parallel stages with bracket syntax) */
+  actions?: string[];
+  /** Optional: only run if condition true */
+  condition?: Expression;
+}
+
+/** Helper to check if a stage is parallel */
+export function isParallelStage(stage: PipelineStage): stage is PipelineStage & { actions: string[] } {
+  return Array.isArray(stage.actions) && stage.actions.length > 0;
+}
+
+/** Helper to get action names from a stage (works for both single and parallel) */
+export function getStageActions(stage: PipelineStage): string[] {
+  if (stage.actions) return stage.actions;
+  if (stage.action) return [stage.action];
+  return [];
 }
 
 // Re-export Vague types for convenience

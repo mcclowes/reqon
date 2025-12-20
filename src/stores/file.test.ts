@@ -1,285 +1,222 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
+import { existsSync, rmSync, mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { FileStore } from './file.js';
 
 describe('FileStore', () => {
-  let tempDir: string;
+  const TEST_DIR = '.reqon-test-stores';
 
-  beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'filestore-test-'));
+  beforeEach(() => {
+    if (existsSync(TEST_DIR)) {
+      rmSync(TEST_DIR, { recursive: true, force: true });
+    }
   });
 
-  afterEach(async () => {
-    await fs.rm(tempDir, { recursive: true, force: true });
+  afterEach(() => {
+    if (existsSync(TEST_DIR)) {
+      rmSync(TEST_DIR, { recursive: true, force: true });
+    }
   });
 
-  describe('JSON format', () => {
-    it('should create file on first write', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
+  it('should create directory and file on first write', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-      await store.set('1', { id: '1', name: 'Alice' });
+    await store.set('1', { id: '1', name: 'Alice' });
 
-      const content = await fs.readFile(filePath, 'utf-8');
-      const parsed = JSON.parse(content);
-      expect(parsed).toHaveLength(1);
-      expect(parsed[0]).toEqual({ id: '1', name: 'Alice' });
-    });
-
-    it('should get a record by key', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
-
-      await store.set('1', { id: '1', name: 'Alice' });
-      const record = await store.get('1');
-
-      expect(record).toEqual({ id: '1', name: 'Alice' });
-    });
-
-    it('should return null for non-existent key', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
-
-      const record = await store.get('nonexistent');
-      expect(record).toBeNull();
-    });
-
-    it('should update existing record', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
-
-      await store.set('1', { id: '1', name: 'Alice', age: 30 });
-      await store.update('1', { age: 31 });
-
-      const record = await store.get('1');
-      expect(record).toEqual({ id: '1', name: 'Alice', age: 31 });
-    });
-
-    it('should delete a record', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
-
-      await store.set('1', { id: '1', name: 'Alice' });
-      await store.delete('1');
-
-      const record = await store.get('1');
-      expect(record).toBeNull();
-    });
-
-    it('should list all records', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
-
-      await store.set('1', { id: '1', name: 'Alice' });
-      await store.set('2', { id: '2', name: 'Bob' });
-
-      const records = await store.list();
-      expect(records).toHaveLength(2);
-    });
-
-    it('should filter records with where clause', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
-
-      await store.set('1', { id: '1', name: 'Alice', active: true });
-      await store.set('2', { id: '2', name: 'Bob', active: false });
-      await store.set('3', { id: '3', name: 'Charlie', active: true });
-
-      const records = await store.list({ where: { active: true } });
-      expect(records).toHaveLength(2);
-      expect(records.map(r => r.name)).toContain('Alice');
-      expect(records.map(r => r.name)).toContain('Charlie');
-    });
-
-    it('should support limit and offset', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
-
-      await store.set('1', { id: '1', name: 'Alice' });
-      await store.set('2', { id: '2', name: 'Bob' });
-      await store.set('3', { id: '3', name: 'Charlie' });
-
-      const records = await store.list({ offset: 1, limit: 1 });
-      expect(records).toHaveLength(1);
-    });
-
-    it('should clear all records', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-      const store = new FileStore(filePath);
-
-      await store.set('1', { id: '1', name: 'Alice' });
-      await store.set('2', { id: '2', name: 'Bob' });
-      await store.clear();
-
-      const records = await store.list();
-      expect(records).toHaveLength(0);
-    });
-
-    it('should load existing JSON array file', async () => {
-      const filePath = path.join(tempDir, 'existing.json');
-      await fs.writeFile(filePath, JSON.stringify([
-        { id: '1', name: 'Alice' },
-        { id: '2', name: 'Bob' }
-      ]));
-
-      const store = new FileStore(filePath);
-      const records = await store.list();
-
-      expect(records).toHaveLength(2);
-      expect(records[0].name).toBe('Alice');
-    });
-
-    it('should load existing JSON object file', async () => {
-      const filePath = path.join(tempDir, 'existing.json');
-      await fs.writeFile(filePath, JSON.stringify({
-        user1: { id: 'user1', name: 'Alice' },
-        user2: { id: 'user2', name: 'Bob' }
-      }));
-
-      const store = new FileStore(filePath);
-      const records = await store.list();
-
-      expect(records).toHaveLength(2);
-    });
+    expect(existsSync(join(TEST_DIR, 'test-store.json'))).toBe(true);
   });
 
-  describe('CSV format', () => {
-    it('should create CSV file on first write', async () => {
-      const filePath = path.join(tempDir, 'data.csv');
-      const store = new FileStore(filePath);
+  it('should create .gitignore in data directory', () => {
+    new FileStore('test-store', { baseDir: TEST_DIR });
 
-      await store.set('1', { id: '1', name: 'Alice', age: 30 });
+    const gitignorePath = join(TEST_DIR, '.gitignore');
+    expect(existsSync(gitignorePath)).toBe(true);
+    const content = readFileSync(gitignorePath, 'utf-8');
+    expect(content).toContain('*.json');
+  });
 
-      const content = await fs.readFile(filePath, 'utf-8');
-      expect(content).toContain('id');
-      expect(content).toContain('name');
-      expect(content).toContain('Alice');
-    });
+  it('should get a record by key', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-    it('should infer CSV format from extension', async () => {
-      const filePath = path.join(tempDir, 'data.csv');
-      const store = new FileStore(filePath);
+    await store.set('1', { id: '1', name: 'Alice' });
+    const record = await store.get('1');
 
-      expect(store.getFormat()).toBe('csv');
-    });
+    expect(record).toEqual({ id: '1', name: 'Alice' });
+  });
 
-    it('should get a record by key', async () => {
-      const filePath = path.join(tempDir, 'data.csv');
-      const store = new FileStore(filePath);
+  it('should return null for non-existent key', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-      await store.set('1', { id: '1', name: 'Alice', age: 30 });
-      const record = await store.get('1');
+    const record = await store.get('nonexistent');
+    expect(record).toBeNull();
+  });
 
-      expect(record).toEqual({ id: '1', name: 'Alice', age: 30 });
-    });
+  it('should update existing record', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-    it('should load existing CSV file', async () => {
-      const filePath = path.join(tempDir, 'existing.csv');
-      await fs.writeFile(filePath, 'id,name,age\n1,Alice,30\n2,Bob,25');
+    await store.set('1', { id: '1', name: 'Alice', age: 30 });
+    await store.update('1', { age: 31 });
 
-      const store = new FileStore(filePath);
-      const records = await store.list();
+    const record = await store.get('1');
+    expect(record).toEqual({ id: '1', name: 'Alice', age: 31 });
+  });
 
-      expect(records).toHaveLength(2);
-      expect(records[0]).toEqual({ id: 1, name: 'Alice', age: 30 });
-      expect(records[1]).toEqual({ id: 2, name: 'Bob', age: 25 });
-    });
+  it('should create record on update if not exists', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-    it('should handle quoted values with commas', async () => {
-      const filePath = path.join(tempDir, 'existing.csv');
-      await fs.writeFile(filePath, 'id,name,bio\n1,"Smith, John","Hello, world"');
+    await store.update('1', { name: 'Alice' });
 
-      const store = new FileStore(filePath);
-      const record = await store.get('1');
+    const record = await store.get('1');
+    expect(record).toEqual({ name: 'Alice' });
+  });
 
-      expect(record?.name).toBe('Smith, John');
-      expect(record?.bio).toBe('Hello, world');
-    });
+  it('should delete a record', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-    it('should handle quoted values with escaped quotes', async () => {
-      const filePath = path.join(tempDir, 'existing.csv');
-      await fs.writeFile(filePath, 'id,name,quote\n1,Alice,"She said ""Hello"""');
+    await store.set('1', { id: '1', name: 'Alice' });
+    await store.delete('1');
 
-      const store = new FileStore(filePath);
-      const record = await store.get('1');
+    const record = await store.get('1');
+    expect(record).toBeNull();
+  });
 
-      expect(record?.quote).toBe('She said "Hello"');
-    });
+  it('should list all records', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-    it('should parse boolean and null values', async () => {
-      const filePath = path.join(tempDir, 'existing.csv');
-      await fs.writeFile(filePath, 'id,active,deleted,notes\n1,true,false,null');
+    await store.set('1', { id: '1', name: 'Alice' });
+    await store.set('2', { id: '2', name: 'Bob' });
 
-      const store = new FileStore(filePath);
-      const record = await store.get('1');
+    const records = await store.list();
+    expect(records).toHaveLength(2);
+  });
 
-      expect(record?.active).toBe(true);
-      expect(record?.deleted).toBe(false);
-      expect(record?.notes).toBeNull();
-    });
+  it('should filter records with where clause', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-    it('should use custom delimiter', async () => {
-      const filePath = path.join(tempDir, 'data.csv');
-      const store = new FileStore(filePath, { delimiter: ';' });
+    await store.set('1', { id: '1', name: 'Alice', active: true });
+    await store.set('2', { id: '2', name: 'Bob', active: false });
+    await store.set('3', { id: '3', name: 'Charlie', active: true });
 
-      await store.set('1', { id: '1', name: 'Alice', age: 30 });
+    const records = await store.list({ where: { active: true } });
+    expect(records).toHaveLength(2);
+    expect(records.map(r => r.name)).toContain('Alice');
+    expect(records.map(r => r.name)).toContain('Charlie');
+  });
 
-      const content = await fs.readFile(filePath, 'utf-8');
-      expect(content).toContain('id;name;age');
-      expect(content).toContain('1;Alice;30');
-    });
+  it('should support limit and offset', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
 
-    it('should escape values containing delimiter', async () => {
-      const filePath = path.join(tempDir, 'data.csv');
-      const store = new FileStore(filePath);
+    await store.set('1', { id: '1', name: 'Alice' });
+    await store.set('2', { id: '2', name: 'Bob' });
+    await store.set('3', { id: '3', name: 'Charlie' });
 
-      await store.set('1', { id: '1', name: 'Smith, John' });
+    const records = await store.list({ offset: 1, limit: 1 });
+    expect(records).toHaveLength(1);
+  });
 
-      const content = await fs.readFile(filePath, 'utf-8');
-      expect(content).toContain('"Smith, John"');
+  it('should clear all records', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
+
+    await store.set('1', { id: '1', name: 'Alice' });
+    await store.set('2', { id: '2', name: 'Bob' });
+    await store.clear();
+
+    const records = await store.list();
+    expect(records).toHaveLength(0);
+  });
+
+  describe('batch mode', () => {
+    it('should not write to disk until flush in batch mode', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR, persist: 'batch' });
+      const filePath = store.getFilePath();
+
+      await store.set('1', { id: '1', name: 'Alice' });
+
+      // File exists but should be empty or not contain data yet
+      const contentBefore = existsSync(filePath) ? readFileSync(filePath, 'utf-8') : '{}';
+      const parsedBefore = JSON.parse(contentBefore);
+      expect(Object.keys(parsedBefore)).toHaveLength(0);
+
+      // After flush, data should be persisted
+      store.flush();
+
+      const contentAfter = readFileSync(filePath, 'utf-8');
+      const parsedAfter = JSON.parse(contentAfter);
+      expect(parsedAfter['1']).toEqual({ id: '1', name: 'Alice' });
     });
   });
 
-  describe('format override', () => {
-    it('should allow explicit format override', async () => {
-      const filePath = path.join(tempDir, 'data.txt');
-      const store = new FileStore(filePath, { format: 'json' });
-
-      expect(store.getFormat()).toBe('json');
-    });
-  });
-
-  describe('edge cases', () => {
-    it('should handle non-existent file gracefully', async () => {
-      const filePath = path.join(tempDir, 'nonexistent.json');
-      const store = new FileStore(filePath);
-
-      const records = await store.list();
-      expect(records).toHaveLength(0);
-    });
-
-    it('should create parent directories if needed', async () => {
-      const filePath = path.join(tempDir, 'nested', 'dir', 'data.json');
-      const store = new FileStore(filePath);
-
-      await store.set('1', { id: '1', name: 'Alice' });
-
-      const content = await fs.readFile(filePath, 'utf-8');
-      expect(JSON.parse(content)).toHaveLength(1);
-    });
-
+  describe('persistence', () => {
     it('should persist data across store instances', async () => {
-      const filePath = path.join(tempDir, 'data.json');
-
-      const store1 = new FileStore(filePath);
+      const store1 = new FileStore('test-store', { baseDir: TEST_DIR });
       await store1.set('1', { id: '1', name: 'Alice' });
 
-      const store2 = new FileStore(filePath);
+      const store2 = new FileStore('test-store', { baseDir: TEST_DIR });
       const record = await store2.get('1');
 
       expect(record).toEqual({ id: '1', name: 'Alice' });
+    });
+
+    it('should reload data from disk', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+      await store.set('1', { id: '1', name: 'Alice' });
+
+      // Manually modify the file
+      const filePath = store.getFilePath();
+      const content = JSON.parse(readFileSync(filePath, 'utf-8'));
+      content['1'].name = 'Modified';
+      require('fs').writeFileSync(filePath, JSON.stringify(content));
+
+      // Reload and check
+      store.reload();
+      const record = await store.get('1');
+      expect(record?.name).toBe('Modified');
+    });
+  });
+
+  describe('pretty printing', () => {
+    it('should pretty-print JSON by default', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+      await store.set('1', { id: '1', name: 'Alice' });
+
+      const content = readFileSync(store.getFilePath(), 'utf-8');
+      expect(content).toContain('\n'); // Pretty printed has newlines
+    });
+
+    it('should compact JSON when pretty is false', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR, pretty: false });
+      await store.set('1', { id: '1', name: 'Alice' });
+
+      const content = readFileSync(store.getFilePath(), 'utf-8');
+      expect(content).not.toContain('\n'); // Compact has no newlines
+    });
+  });
+
+  describe('utilities', () => {
+    it('should report size correctly', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+
+      expect(store.size()).toBe(0);
+
+      await store.set('1', { id: '1' });
+      await store.set('2', { id: '2' });
+
+      expect(store.size()).toBe(2);
+    });
+
+    it('should dump all records', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+
+      await store.set('1', { id: '1', name: 'Alice' });
+      await store.set('2', { id: '2', name: 'Bob' });
+
+      const dump = store.dump();
+      expect(dump).toHaveLength(2);
+    });
+
+    it('should return file path', () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+      expect(store.getFilePath()).toBe(join(TEST_DIR, 'test-store.json'));
     });
   });
 });

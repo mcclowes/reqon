@@ -10,11 +10,13 @@ import type {
   ValidateStep,
   StoreStep,
   PipelineDefinition,
+  PipelineStage,
   SourceDefinition,
   StoreDefinition,
   FieldMapping,
   RateLimitSourceConfig,
 } from '../ast/nodes.js';
+import { isParallelStage, getStageActions } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
 import { createContext, childContext, setVariable, getVariable } from './context.js';
 import { evaluate, interpolatePath } from './evaluator.js';
@@ -296,7 +298,7 @@ export class MissionExecutor {
 
       if (!this.executionState) {
         // Create new execution state
-        const stages = mission.pipeline.stages.map((s) => s.action);
+        const stages = mission.pipeline.stages.map((s) => this.getStageName(s));
         this.executionState = createExecutionState({
           mission: mission.name,
           stages,
@@ -384,21 +386,18 @@ export class MissionExecutor {
     // Determine resume point
     const resumeIndex = this.executionState ? findResumePoint(this.executionState) : 0;
     if (resumeIndex > 0) {
-      this.log(`Resuming from stage ${resumeIndex} (${mission.pipeline.stages[resumeIndex]?.action})`);
+      const resumeStage = mission.pipeline.stages[resumeIndex];
+      const stageName = this.getStageName(resumeStage);
+      this.log(`Resuming from stage ${resumeIndex} (${stageName})`);
     }
 
     // Execute pipeline
     for (let i = 0; i < mission.pipeline.stages.length; i++) {
       const stage = mission.pipeline.stages[i];
-      const action = actions.get(stage.action);
-
-      if (!action) {
-        throw new Error(`Action not found: ${stage.action}`);
-      }
 
       // Skip already completed stages when resuming
       if (i < resumeIndex) {
-        this.log(`Skipping ${stage.action} (already completed)`);
+        this.log(`Skipping ${this.getStageName(stage)} (already completed)`);
         continue;
       }
 
@@ -406,68 +405,190 @@ export class MissionExecutor {
       if (stage.condition) {
         const shouldRun = evaluate(stage.condition, this.ctx);
         if (!shouldRun) {
-          this.log(`Skipping action ${stage.action} (condition not met)`);
+          this.log(`Skipping ${this.getStageName(stage)} (condition not met)`);
           this.updateStageState(i, { status: 'skipped' });
           await this.saveExecutionState();
           continue;
         }
       }
 
-      // Update stage state to running
-      this.updateStageState(i, { status: 'running' });
+      // Execute stage (parallel or sequential)
+      if (isParallelStage(stage)) {
+        await this.executeParallelStage(i, stage, actions, mission);
+      } else if (stage.action) {
+        await this.executeSequentialStage(i, stage.action, actions, mission);
+      }
+    }
+  }
+
+  private getStageName(stage: PipelineStage): string {
+    if (isParallelStage(stage)) {
+      return `[${stage.actions.join(', ')}]`;
+    }
+    return stage.action ?? 'unknown';
+  }
+
+  private async executeSequentialStage(
+    stageIndex: number,
+    actionName: string,
+    actions: Map<string, ActionDefinition>,
+    mission: MissionDefinition
+  ): Promise<void> {
+    const action = actions.get(actionName);
+    if (!action) {
+      throw new Error(`Action not found: ${actionName}`);
+    }
+
+    // Update stage state to running
+    this.updateStageState(stageIndex, { status: 'running' });
+    await this.saveExecutionState();
+
+    const stageStartTime = Date.now();
+
+    // Emit onStageStart callback
+    this.config.progress?.onStageStart?.({
+      executionId: this.executionState?.id ?? 'ephemeral',
+      mission: mission.name,
+      stageIndex,
+      stageName: actionName,
+      totalStages: mission.pipeline.stages.length,
+    });
+
+    try {
+      await this.executeAction(action);
+      this.actionsRun.push(action.name);
+
+      // Mark stage as completed
+      this.updateStageState(stageIndex, { status: 'completed' });
       await this.saveExecutionState();
 
-      const stageStartTime = Date.now();
-
-      // Emit onStageStart callback
-      this.config.progress?.onStageStart?.({
+      // Emit onStageComplete callback (success)
+      this.config.progress?.onStageComplete?.({
         executionId: this.executionState?.id ?? 'ephemeral',
         mission: mission.name,
-        stageIndex: i,
-        stageName: stage.action,
+        stageIndex,
+        stageName: actionName,
         totalStages: mission.pipeline.stages.length,
+        success: true,
+        duration: Date.now() - stageStartTime,
+      });
+    } catch (error) {
+      // Mark stage as failed
+      this.updateStageState(stageIndex, {
+        status: 'failed',
+        error: (error as Error).message,
+      });
+      await this.saveExecutionState();
+
+      // Emit onStageComplete callback (failure)
+      this.config.progress?.onStageComplete?.({
+        executionId: this.executionState?.id ?? 'ephemeral',
+        mission: mission.name,
+        stageIndex,
+        stageName: actionName,
+        totalStages: mission.pipeline.stages.length,
+        success: false,
+        duration: Date.now() - stageStartTime,
+        error: (error as Error).message,
       });
 
-      try {
-        await this.executeAction(action);
-        this.actionsRun.push(action.name);
+      throw error; // Re-throw to stop execution
+    }
+  }
 
-        // Mark stage as completed
-        this.updateStageState(i, { status: 'completed' });
-        await this.saveExecutionState();
+  private async executeParallelStage(
+    stageIndex: number,
+    stage: PipelineStage & { actions: string[] },
+    actions: Map<string, ActionDefinition>,
+    mission: MissionDefinition
+  ): Promise<void> {
+    const actionNames = stage.actions;
+    const stageName = `[${actionNames.join(', ')}]`;
 
-        // Emit onStageComplete callback (success)
-        this.config.progress?.onStageComplete?.({
-          executionId: this.executionState?.id ?? 'ephemeral',
-          mission: mission.name,
-          stageIndex: i,
-          stageName: stage.action,
-          totalStages: mission.pipeline.stages.length,
-          success: true,
-          duration: Date.now() - stageStartTime,
-        });
-      } catch (error) {
-        // Mark stage as failed
-        this.updateStageState(i, {
-          status: 'failed',
-          error: (error as Error).message,
-        });
-        await this.saveExecutionState();
-
-        // Emit onStageComplete callback (failure)
-        this.config.progress?.onStageComplete?.({
-          executionId: this.executionState?.id ?? 'ephemeral',
-          mission: mission.name,
-          stageIndex: i,
-          stageName: stage.action,
-          totalStages: mission.pipeline.stages.length,
-          success: false,
-          duration: Date.now() - stageStartTime,
-          error: (error as Error).message,
-        });
-
-        throw error; // Re-throw to stop execution
+    // Validate all actions exist
+    const actionDefs: ActionDefinition[] = [];
+    for (const name of actionNames) {
+      const action = actions.get(name);
+      if (!action) {
+        throw new Error(`Action not found: ${name}`);
       }
+      actionDefs.push(action);
+    }
+
+    // Update stage state to running
+    this.updateStageState(stageIndex, { status: 'running' });
+    await this.saveExecutionState();
+
+    const stageStartTime = Date.now();
+
+    // Emit onStageStart callback
+    this.config.progress?.onStageStart?.({
+      executionId: this.executionState?.id ?? 'ephemeral',
+      mission: mission.name,
+      stageIndex,
+      stageName,
+      totalStages: mission.pipeline.stages.length,
+    });
+
+    this.log(`Executing parallel stage: ${stageName}`);
+
+    try {
+      // Execute all actions in parallel
+      const results = await Promise.allSettled(
+        actionDefs.map(action => this.executeAction(action))
+      );
+
+      // Check for failures
+      const failures: { name: string; error: Error }[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === 'fulfilled') {
+          this.actionsRun.push(actionDefs[i].name);
+        } else {
+          failures.push({ name: actionDefs[i].name, error: result.reason });
+        }
+      }
+
+      if (failures.length > 0) {
+        const errorMsg = failures.map(f => `${f.name}: ${f.error.message}`).join('; ');
+        throw new Error(`Parallel stage failed: ${errorMsg}`);
+      }
+
+      // Mark stage as completed
+      this.updateStageState(stageIndex, { status: 'completed' });
+      await this.saveExecutionState();
+
+      // Emit onStageComplete callback (success)
+      this.config.progress?.onStageComplete?.({
+        executionId: this.executionState?.id ?? 'ephemeral',
+        mission: mission.name,
+        stageIndex,
+        stageName,
+        totalStages: mission.pipeline.stages.length,
+        success: true,
+        duration: Date.now() - stageStartTime,
+      });
+    } catch (error) {
+      // Mark stage as failed
+      this.updateStageState(stageIndex, {
+        status: 'failed',
+        error: (error as Error).message,
+      });
+      await this.saveExecutionState();
+
+      // Emit onStageComplete callback (failure)
+      this.config.progress?.onStageComplete?.({
+        executionId: this.executionState?.id ?? 'ephemeral',
+        mission: mission.name,
+        stageIndex,
+        stageName,
+        totalStages: mission.pipeline.stages.length,
+        success: false,
+        duration: Date.now() - stageStartTime,
+        error: (error as Error).message,
+      });
+
+      throw error; // Re-throw to stop execution
     }
   }
 

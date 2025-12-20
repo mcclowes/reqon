@@ -1,0 +1,18 @@
+{
+  "id": "exec_mjerhw2z_unkylp",
+  "mission": "TestMission",
+  "status": "completed",
+  "startedAt": "2025-12-20T20:39:45.323Z",
+  "stages": [
+    {
+      "action": "StepA",
+      "status": "completed",
+      "attempt": 0,
+      "startedAt": "2025-12-20T20:39:45.324Z",
+      "completedAt": "2025-12-20T20:39:45.324Z"
+    }
+  ],
+  "errors": [],
+  "completedAt": "2025-12-20T20:39:45.325Z",
+  "duration": 2
+}

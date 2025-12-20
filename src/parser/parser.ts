@@ -154,7 +154,14 @@ export class ReqonParser extends ReqonExpressionParser {
     // Optional configuration block
     if (this.match(TokenType.LBRACE)) {
       while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
-        const key = this.consume(TokenType.IDENTIFIER, 'Expected schedule option key').value;
+        // Handle keyword tokens that can appear as option keys
+        let key: string;
+        if (this.check(ReqonTokenType.RETRY)) {
+          this.advance();
+          key = 'retry';
+        } else {
+          key = this.consume(TokenType.IDENTIFIER, 'Expected schedule option key').value;
+        }
         this.consume(TokenType.COLON, "Expected ':'");
 
         switch (key) {
@@ -843,14 +850,39 @@ export class ReqonParser extends ReqonExpressionParser {
   }
 
   private parsePipelineStage(): PipelineStage {
+    let condition: Expression | undefined;
+
+    // Check for parallel stage: [Action1, Action2, ...]
+    if (this.match(TokenType.LBRACKET)) {
+      const actions: string[] = [];
+
+      // First action
+      actions.push(this.consume(TokenType.IDENTIFIER, 'Expected action name').value);
+
+      // Additional actions separated by commas
+      while (this.match(TokenType.COMMA)) {
+        actions.push(this.consume(TokenType.IDENTIFIER, 'Expected action name').value);
+      }
+
+      this.consume(TokenType.RBRACKET, "Expected ']'");
+
+      // Optional 'if' condition
+      if (this.match(TokenType.IF)) {
+        condition = this.parseExpression();
+      }
+
+      return { actions, condition };
+    }
+
+    // Single action (sequential)
     const action = this.consume(TokenType.IDENTIFIER, 'Expected action name').value;
 
-    let condition: Expression | undefined;
-    let parallel = false;
+    // Optional 'if' condition
+    if (this.match(TokenType.IF)) {
+      condition = this.parseExpression();
+    }
 
-    // Could add 'if' condition or 'parallel' modifier here
-
-    return { action, condition, parallel };
+    return { action, condition };
   }
 
   // ============================================

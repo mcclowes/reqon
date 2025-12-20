@@ -23,7 +23,7 @@
 ## DSL Enhancements
 
 - [ ] **`is` type checking** - `assume .items is array` syntax
-- [ ] **Parallel execution** - `run Step1, Step2 then Step3` (parallel first two)
+- [x] **Parallel execution** - `run [Step1, Step2] then Step3` (bracket syntax for parallel stages)
 - [ ] **Conditional actions** - `run Step1 then Step2 if condition`
 - [ ] **Variables/let bindings** - Reusable values within missions
 - [ ] **Schema definitions** - Full Vague schema support with validation
