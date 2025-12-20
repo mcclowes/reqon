@@ -27,6 +27,7 @@ import type { StoreAdapter } from '../stores/types.js';
 import { loadOAS, resolveOperation, getResponseSchema, validateResponse } from '../oas/index.js';
 import type { OASSource } from '../oas/index.js';
 import { AdaptiveRateLimiter } from '../auth/rate-limiter.js';
+import { CircuitBreaker, type CircuitBreakerCallbacks } from '../auth/circuit-breaker.js';
 import type { RateLimiter, RateLimitCallbacks } from '../auth/types.js';
 import {
   createExecutionState,
@@ -134,6 +135,8 @@ export interface ExecutorConfig {
   verbose?: boolean;
   // Rate limit callbacks (optional)
   rateLimitCallbacks?: RateLimitCallbacks;
+  // Circuit breaker callbacks (optional)
+  circuitBreakerCallbacks?: CircuitBreakerCallbacks;
   // Development mode - use file stores instead of sql/nosql (default: true)
   developmentMode?: boolean;
   // Base directory for file stores (default: '.reqon-data')
@@ -170,6 +173,7 @@ export class MissionExecutor {
   private oasSources: Map<string, OASSource> = new Map();
   private sourceConfigs: Map<string, SourceDefinition> = new Map();
   private rateLimiter: RateLimiter;
+  private circuitBreaker: CircuitBreaker;
   private executionStore?: ExecutionStore;
   private executionState?: ExecutionState;
   private syncStore?: SyncStore;
@@ -179,6 +183,7 @@ export class MissionExecutor {
     this.config = config;
     this.ctx = createContext();
     this.rateLimiter = new AdaptiveRateLimiter();
+    this.circuitBreaker = new CircuitBreaker();
 
     // Set up rate limit callbacks with default logging if verbose
     const callbacks: RateLimitCallbacks = config.rateLimitCallbacks ?? {};
@@ -207,6 +212,42 @@ export class MissionExecutor {
       };
     }
     this.rateLimiter.setCallbacks(callbacks);
+
+    // Set up circuit breaker callbacks with default logging if verbose
+    const cbCallbacks: CircuitBreakerCallbacks = config.circuitBreakerCallbacks ?? {};
+    if (config.verbose && !cbCallbacks.onOpen) {
+      cbCallbacks.onOpen = (event) => {
+        console.log(
+          `[Reqon] Circuit breaker OPEN for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+            `${event.failures} failures (${event.reason ?? 'threshold exceeded'})`
+        );
+      };
+    }
+    if (config.verbose && !cbCallbacks.onHalfOpen) {
+      cbCallbacks.onHalfOpen = (event) => {
+        console.log(
+          `[Reqon] Circuit breaker HALF-OPEN for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+            `testing recovery`
+        );
+      };
+    }
+    if (config.verbose && !cbCallbacks.onClose) {
+      cbCallbacks.onClose = (event) => {
+        console.log(
+          `[Reqon] Circuit breaker CLOSED for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+            `recovery successful`
+        );
+      };
+    }
+    if (config.verbose && !cbCallbacks.onRejected) {
+      cbCallbacks.onRejected = (event) => {
+        console.log(
+          `[Reqon] Request REJECTED by circuit breaker for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+            `retry in ${Math.ceil(event.nextAttemptIn / 1000)}s`
+        );
+      };
+    }
+    this.circuitBreaker.setCallbacks(cbCallbacks);
 
     // Initialize execution store if persistence enabled
     if (config.persistState) {
@@ -666,10 +707,31 @@ export class MissionExecutor {
       );
     }
 
+    // Configure circuit breaker for this source
+    if (source.config.circuitBreaker) {
+      this.circuitBreaker.configure(source.name, {
+        failureThreshold: source.config.circuitBreaker.failureThreshold,
+        // Convert seconds to milliseconds for the circuit breaker
+        resetTimeout: source.config.circuitBreaker.resetTimeout
+          ? source.config.circuitBreaker.resetTimeout * 1000
+          : undefined,
+        successThreshold: source.config.circuitBreaker.successThreshold,
+        failureWindow: source.config.circuitBreaker.failureWindow
+          ? source.config.circuitBreaker.failureWindow * 1000
+          : undefined,
+      });
+      this.log(
+        `Circuit breaker config for ${source.name}: ` +
+          `failureThreshold=${source.config.circuitBreaker.failureThreshold ?? 5}, ` +
+          `resetTimeout=${source.config.circuitBreaker.resetTimeout ?? 30}s`
+      );
+    }
+
     const client = new HttpClient({
       baseUrl,
       auth: authProvider,
       rateLimiter: this.rateLimiter,
+      circuitBreaker: this.circuitBreaker,
       sourceName: source.name,
     });
 

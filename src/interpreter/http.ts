@@ -1,6 +1,7 @@
 import type { RetryConfig } from '../ast/nodes.js';
 import type { RateLimiter, RateLimitInfo } from '../auth/types.js';
 import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
+import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
 import { sleep } from '../utils/async.js';
 
 export interface HttpClientConfig {
@@ -8,7 +9,8 @@ export interface HttpClientConfig {
   headers?: Record<string, string>;
   auth?: AuthProvider;
   rateLimiter?: RateLimiter;
-  /** Source name for rate limit tracking */
+  circuitBreaker?: CircuitBreaker;
+  /** Source name for rate limit and circuit breaker tracking */
   sourceName?: string;
 }
 
@@ -58,8 +60,26 @@ export class HttpClient {
 
     let lastError: Error | null = null;
 
+    // Check circuit breaker before attempting requests
+    if (this.config.circuitBreaker && this.config.sourceName) {
+      // This will throw CircuitBreakerError if circuit is open
+      this.config.circuitBreaker.ensureCanProceed(this.config.sourceName, req.path);
+    }
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        // Re-check circuit breaker on retries (state may have changed)
+        if (attempt > 1 && this.config.circuitBreaker && this.config.sourceName) {
+          if (!this.config.circuitBreaker.canProceed(this.config.sourceName, req.path)) {
+            // Circuit opened during retries, fail fast
+            throw new CircuitBreakerError(
+              this.config.sourceName,
+              req.path,
+              this.config.circuitBreaker.getStatus(this.config.sourceName, req.path).nextAttemptTime?.getTime() ?? 0 - Date.now()
+            );
+          }
+        }
+
         // Wait for rate limit capacity if we have a rate limiter
         if (this.config.rateLimiter && this.config.sourceName) {
           await this.config.rateLimiter.waitForCapacity(this.config.sourceName, req.path);
@@ -100,10 +120,17 @@ export class HttpClient {
         }
 
         // Handle server errors with retry
-        if (response.status >= 500 && attempt < maxAttempts) {
-          const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
-          await sleep(delay);
-          continue;
+        if (response.status >= 500) {
+          // Record failure in circuit breaker
+          if (this.config.circuitBreaker && this.config.sourceName) {
+            this.config.circuitBreaker.recordFailure(this.config.sourceName, req.path, response.status);
+          }
+
+          if (attempt < maxAttempts) {
+            const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+            await sleep(delay);
+            continue;
+          }
         }
 
         // Handle 401 - try token refresh
@@ -117,6 +144,11 @@ export class HttpClient {
 
         const data = await response.json() as T;
 
+        // Record success in circuit breaker
+        if (this.config.circuitBreaker && this.config.sourceName && response.status < 500) {
+          this.config.circuitBreaker.recordSuccess(this.config.sourceName, req.path);
+        }
+
         return {
           status: response.status,
           data,
@@ -124,6 +156,16 @@ export class HttpClient {
         };
       } catch (error) {
         lastError = error as Error;
+
+        // Re-throw circuit breaker errors immediately
+        if (error instanceof CircuitBreakerError) {
+          throw error;
+        }
+
+        // Record network errors in circuit breaker
+        if (this.config.circuitBreaker && this.config.sourceName) {
+          this.config.circuitBreaker.recordFailure(this.config.sourceName, req.path, undefined, true);
+        }
 
         if (attempt < maxAttempts) {
           const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
