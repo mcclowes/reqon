@@ -345,11 +345,11 @@ mission OrderReconciliation {
   }
 
   // ============================================================
-  // PIPELINE: Execute in order with dependencies
+  // PIPELINE: Parallel fetch, then sequential validation
   // ============================================================
 
-  run SyncShopifyOrders
-    then SyncStripePayments
-    then SyncShipStationShipments
+  // Fetch from all three APIs in parallel for maximum performance
+  // ValidateReconciliation runs after all three complete
+  run [SyncShopifyOrders, SyncStripePayments, SyncShipStationShipments]
     then ValidateReconciliation
 }

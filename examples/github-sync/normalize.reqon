@@ -1,0 +1,70 @@
+// Normalize issues and PRs to unified work items
+// External action file - automatically merged into mission
+
+action Normalize {
+  // Normalize issues
+  for issue in issues_raw {
+    map issue -> UnifiedWorkItem {
+      id: "issue_" + .id,
+      source: "github",
+      type: "issue",
+      number: .number,
+      title: .title,
+      description: .body,
+      status: match .state {
+        "open" => "open",
+        "closed" => "closed",
+        _ => "unknown"
+      },
+      author: .user.login,
+      labels: .labels,
+      created_at: .created_at,
+      updated_at: .updated_at,
+      synced_at: now()
+    }
+
+    validate response {
+      assume length(.title) > 0
+      assume .number > 0
+    }
+
+    store response -> work_items {
+      key: .id,
+      upsert: true
+    }
+  }
+
+  // Normalize PRs
+  for pr in prs_raw {
+    map pr -> UnifiedWorkItem {
+      id: "pr_" + .id,
+      source: "github",
+      type: "pull_request",
+      number: .number,
+      title: .title,
+      description: .body,
+      status: match .state {
+        "open" => "open",
+        "closed" => match .merged {
+          true => "merged",
+          _ => "closed"
+        },
+        _ => "unknown"
+      },
+      author: .user.login,
+      labels: [],
+      created_at: .created_at,
+      updated_at: .updated_at,
+      synced_at: now()
+    }
+
+    validate response {
+      assume length(.title) > 0
+    }
+
+    store response -> work_items {
+      key: .id,
+      upsert: true
+    }
+  }
+}

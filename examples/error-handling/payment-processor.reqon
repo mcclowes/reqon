@@ -1,0 +1,287 @@
+// Payment Processing Pipeline with Comprehensive Error Handling
+// Demonstrates all flow control directives: continue, skip, abort, retry, queue, jump
+
+mission ProcessPayments {
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source PaymentGateway {
+    auth: bearer,
+    base: "https://api.paymentgateway.com/v1",
+    rateLimit: {
+      strategy: "pause",
+      maxWait: 60,
+      fallbackRpm: 100
+    }
+  }
+
+  source FraudDetection {
+    auth: api_key,
+    base: "https://fraud.example.com/api"
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  store pending_payments: memory("pending")
+  store processed_payments: sql("payments")
+  store failed_payments: memory("failed")
+  store fraud_review_queue: memory("fraud_review")
+  store dead_letter_queue: memory("dlq")
+
+  // ============================================================
+  // SCHEMAS - Response Types
+  // ============================================================
+
+  schema PaymentSuccess {
+    id: string,
+    status: string,
+    amount: decimal,
+    currency: string,
+    captured_at: date
+  }
+
+  schema PaymentPending {
+    id: string,
+    status: string,
+    requires_action: boolean
+  }
+
+  schema RateLimitError {
+    error: string,
+    retry_after: int
+  }
+
+  schema AuthenticationError {
+    error: string,
+    code: string
+  }
+
+  schema ValidationError {
+    error: string,
+    field: string,
+    message: string
+  }
+
+  schema FraudWarning {
+    risk_score: decimal,
+    risk_level: string,
+    recommendation: string
+  }
+
+  schema ServerError {
+    error: string,
+    request_id: string
+  }
+
+  // ============================================================
+  // ACTION: Fetch Pending Payments
+  // ============================================================
+
+  action FetchPendingPayments {
+    fetch GET "/payments" {
+      body: { "status": "pending" },
+      retry: {
+        maxAttempts: 3,
+        backoff: "exponential",
+        initialDelay: 1000
+      }
+    }
+
+    match response {
+      // Success - store and continue
+      [PaymentSuccess] -> {
+        store response -> pending_payments { key: .id }
+      },
+
+      // Rate limited - retry with backoff
+      RateLimitError -> retry {
+        maxAttempts: 5,
+        backoff: exponential,
+        initialDelay: 5000,
+        maxDelay: 120000
+      },
+
+      // Auth error - refresh token and retry
+      AuthenticationError -> jump RefreshAuth then retry,
+
+      // Server error - abort the mission
+      ServerError -> abort "Payment gateway unavailable",
+
+      // Unexpected response - log and continue with empty
+      _ -> {
+        store {
+          error: "Unexpected response fetching payments",
+          response: response,
+          timestamp: now()
+        } -> failed_payments { key: now() }
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Refresh Authentication (called via jump)
+  // ============================================================
+
+  action RefreshAuth {
+    fetch POST "/auth/refresh" {
+      source: PaymentGateway,
+      body: {
+        "refresh_token": env("PAYMENT_REFRESH_TOKEN")
+      }
+    }
+
+    match response {
+      _ where .access_token != null -> continue,
+      _ -> abort "Failed to refresh authentication"
+    }
+  }
+
+  // ============================================================
+  // ACTION: Check Fraud Risk
+  // ============================================================
+
+  action CheckFraudRisk {
+    for payment in pending_payments {
+      fetch POST "/check" {
+        source: FraudDetection,
+        body: {
+          "payment_id": payment.id,
+          "amount": payment.amount,
+          "currency": payment.currency
+        }
+      }
+
+      match response {
+        // Low risk - continue processing
+        FraudWarning where .risk_level == "low" -> continue,
+
+        // Medium risk - queue for human review, skip this payment
+        FraudWarning where .risk_level == "medium" -> {
+          store {
+            payment_id: payment.id,
+            risk_score: response.risk_score,
+            reason: "Medium risk - requires review"
+          } -> fraud_review_queue { key: payment.id }
+        },
+
+        // High risk - queue and skip
+        FraudWarning where .risk_level == "high" -> {
+          store {
+            payment_id: payment.id,
+            risk_score: response.risk_score,
+            reason: "High fraud risk detected"
+          } -> fraud_review_queue { key: payment.id }
+        },
+
+        // Fraud service error - queue to DLQ for later processing
+        ServerError -> queue dead_letter_queue,
+
+        // Rate limited - retry
+        RateLimitError -> retry {
+          maxAttempts: 3,
+          backoff: constant,
+          initialDelay: 10000
+        },
+
+        // Unknown - skip but log
+        _ -> skip
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Process Approved Payments
+  // ============================================================
+
+  action ProcessPayments {
+    // Only process payments not in fraud review
+    for payment in pending_payments where not exists(fraud_review_queue[payment.id]) {
+      fetch POST "/payments/{payment.id}/capture" {
+        source: PaymentGateway,
+        body: {
+          "idempotency_key": payment.id + "_capture"
+        }
+      }
+
+      match response {
+        // Successfully captured
+        PaymentSuccess -> {
+          store response -> processed_payments {
+            key: .id,
+            upsert: true
+          }
+        },
+
+        // Payment requires additional action (3DS, etc)
+        PaymentPending where .requires_action == true -> {
+          store {
+            payment_id: payment.id,
+            reason: "Requires customer action",
+            status: "pending_action"
+          } -> failed_payments { key: payment.id }
+        },
+
+        // Validation error - payment data issue
+        ValidationError -> {
+          store {
+            payment_id: payment.id,
+            error: response.message,
+            field: response.field,
+            status: "invalid"
+          } -> failed_payments { key: payment.id }
+        },
+
+        // Rate limited
+        RateLimitError -> retry {
+          maxAttempts: 3,
+          backoff: exponential,
+          initialDelay: 2000
+        },
+
+        // Auth expired during processing
+        AuthenticationError -> jump RefreshAuth then retry,
+
+        // Server error - queue for retry later
+        ServerError -> queue dead_letter_queue,
+
+        // Catch-all - queue to DLQ
+        _ -> queue dead_letter_queue
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Generate Report
+  // ============================================================
+
+  action GenerateReport {
+    map {
+      processed: length(processed_payments),
+      failed: length(failed_payments),
+      fraud_flagged: length(fraud_review_queue),
+      queued_for_retry: length(dead_letter_queue),
+      completed_at: now()
+    } -> report
+
+    validate report {
+      assume .processed >= 0
+    }
+
+    store response -> processed_payments {
+      key: "report_" + now()
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  run FetchPendingPayments
+    then CheckFraudRisk
+    then ProcessPayments
+    then GenerateReport
+}
