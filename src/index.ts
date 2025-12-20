@@ -12,6 +12,11 @@ export {
   type ExecutionError,
   type ExecutorConfig,
   type ExecutionContext,
+  type ProgressCallbacks,
+  type ExecutionStartEvent,
+  type ExecutionCompleteEvent,
+  type StageStartEvent,
+  type StageCompleteEvent,
 } from './interpreter/index.js';
 export {
   MemoryStore,
@@ -46,6 +51,16 @@ export {
   type SchedulerConfig,
   type ScheduledMission,
 } from './scheduler/index.js';
+export {
+  generateCheckpointKey,
+  formatSinceDate,
+  parseSinceDate,
+  EPOCH,
+  FileSyncStore,
+  MemorySyncStore,
+  type SyncCheckpoint,
+  type SyncStore,
+} from './sync/index.js';
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';

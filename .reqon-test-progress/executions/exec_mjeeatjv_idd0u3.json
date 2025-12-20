@@ -1,0 +1,18 @@
+{
+  "id": "exec_mjeeatjv_idd0u3",
+  "mission": "TestMission",
+  "status": "completed",
+  "startedAt": "2025-12-20T14:30:20.443Z",
+  "stages": [
+    {
+      "action": "StepA",
+      "status": "completed",
+      "attempt": 0,
+      "startedAt": "2025-12-20T14:30:20.444Z",
+      "completedAt": "2025-12-20T14:30:20.444Z"
+    }
+  ],
+  "errors": [],
+  "completedAt": "2025-12-20T14:30:20.444Z",
+  "duration": 1
+}

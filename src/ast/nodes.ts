@@ -106,6 +106,7 @@ export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreSte
 
 // fetch GET "/Invoices" { paginate: ..., until: ... }
 // fetch Xero.getInvoices { paginate: ... }  -- OAS operationId reference
+// fetch GET "/Invoices" { since: lastSync }  -- Incremental sync
 export interface FetchStep {
   type: 'FetchStep';
   // Traditional: explicit method + path
@@ -119,6 +120,24 @@ export interface FetchStep {
   paginate?: PaginationConfig;
   until?: Expression; // Condition to stop pagination
   retry?: RetryConfig;
+  // Incremental sync
+  since?: SinceConfig;
+}
+
+// Configuration for incremental sync
+export interface SinceConfig {
+  /** How to resolve the "since" timestamp */
+  type: 'lastSync' | 'expression';
+  /** Custom checkpoint key (defaults to source:endpoint) */
+  key?: string;
+  /** Query parameter name for the since value (default: varies by API) */
+  param?: string;
+  /** Date format for the since value */
+  format?: 'iso' | 'unix' | 'unix-ms' | 'date-only';
+  /** Expression to evaluate for 'expression' type */
+  expression?: Expression;
+  /** Field in response to use as the new "since" value for next sync */
+  updateFrom?: string;
 }
 
 export interface OperationRef {

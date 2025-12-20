@@ -32,6 +32,12 @@ import {
   type ExecutionStore,
   FileExecutionStore,
 } from '../execution/index.js';
+import {
+  generateCheckpointKey,
+  formatSinceDate,
+  type SyncStore,
+  FileSyncStore,
+} from '../sync/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -50,6 +56,55 @@ export interface ExecutionError {
   step: string;
   message: string;
   details?: unknown;
+}
+
+/** Event emitted when execution starts */
+export interface ExecutionStartEvent {
+  executionId: string;
+  mission: string;
+  stageCount: number;
+  isResume: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+/** Event emitted when execution completes */
+export interface ExecutionCompleteEvent {
+  executionId: string;
+  mission: string;
+  success: boolean;
+  duration: number;
+  stagesCompleted: number;
+  stagesFailed: number;
+  errors: ExecutionError[];
+}
+
+/** Event emitted when a stage starts */
+export interface StageStartEvent {
+  executionId: string;
+  mission: string;
+  stageIndex: number;
+  stageName: string;
+  totalStages: number;
+}
+
+/** Event emitted when a stage completes */
+export interface StageCompleteEvent {
+  executionId: string;
+  mission: string;
+  stageIndex: number;
+  stageName: string;
+  totalStages: number;
+  success: boolean;
+  duration: number;
+  error?: string;
+}
+
+/** Callbacks for execution progress */
+export interface ProgressCallbacks {
+  onExecutionStart?: (event: ExecutionStartEvent) => void;
+  onExecutionComplete?: (event: ExecutionCompleteEvent) => void;
+  onStageStart?: (event: StageStartEvent) => void;
+  onStageComplete?: (event: StageCompleteEvent) => void;
 }
 
 export interface ExecutorConfig {
@@ -75,6 +130,10 @@ export interface ExecutorConfig {
   resumeFrom?: string;
   // Metadata to attach to execution state
   metadata?: Record<string, unknown>;
+  // Custom sync store (defaults to FileSyncStore)
+  syncStore?: SyncStore;
+  // Progress callbacks for real-time UI updates
+  progress?: ProgressCallbacks;
 }
 
 interface AuthConfig {
@@ -97,6 +156,8 @@ export class MissionExecutor {
   private rateLimiter: RateLimiter;
   private executionStore?: ExecutionStore;
   private executionState?: ExecutionState;
+  private syncStore?: SyncStore;
+  private missionName?: string;
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
@@ -187,9 +248,26 @@ export class MissionExecutor {
       }
     }
 
+    const duration = Date.now() - startTime;
+    const success = this.errors.length === 0;
+
+    // Emit onExecutionComplete callback
+    const stagesCompleted = this.executionState?.stages.filter(s => s.status === 'completed').length ?? this.actionsRun.length;
+    const stagesFailed = this.executionState?.stages.filter(s => s.status === 'failed').length ?? (success ? 0 : 1);
+
+    this.config.progress?.onExecutionComplete?.({
+      executionId: this.executionState?.id ?? 'ephemeral',
+      mission: mission.name,
+      success,
+      duration,
+      stagesCompleted,
+      stagesFailed,
+      errors: this.errors,
+    });
+
     return {
-      success: this.errors.length === 0,
-      duration: Date.now() - startTime,
+      success,
+      duration,
       actionsRun: this.actionsRun,
       errors: this.errors,
       stores: this.ctx.stores,
@@ -199,31 +277,45 @@ export class MissionExecutor {
   }
 
   private async initializeExecutionState(mission: MissionDefinition): Promise<void> {
-    if (!this.executionStore) return;
+    let isResume = false;
 
-    // Resume from previous execution?
-    if (this.config.resumeFrom) {
-      const previous = await this.executionStore.load(this.config.resumeFrom);
-      if (previous) {
-        this.executionState = previous;
-        this.executionState.status = 'running';
-        this.log(`Resuming execution ${previous.id} from previous run`);
-        await this.saveExecutionState();
-        return;
+    if (this.executionStore) {
+      // Resume from previous execution?
+      if (this.config.resumeFrom) {
+        const previous = await this.executionStore.load(this.config.resumeFrom);
+        if (previous) {
+          this.executionState = previous;
+          this.executionState.status = 'running';
+          this.log(`Resuming execution ${previous.id} from previous run`);
+          await this.saveExecutionState();
+          isResume = true;
+        } else {
+          this.log(`Warning: Could not find execution ${this.config.resumeFrom} to resume`);
+        }
       }
-      this.log(`Warning: Could not find execution ${this.config.resumeFrom} to resume`);
+
+      if (!this.executionState) {
+        // Create new execution state
+        const stages = mission.pipeline.stages.map((s) => s.action);
+        this.executionState = createExecutionState({
+          mission: mission.name,
+          stages,
+          metadata: this.config.metadata,
+        });
+        this.executionState.status = 'running';
+        await this.saveExecutionState();
+        this.log(`Started execution ${this.executionState.id}`);
+      }
     }
 
-    // Create new execution state
-    const stages = mission.pipeline.stages.map((s) => s.action);
-    this.executionState = createExecutionState({
+    // Emit onExecutionStart callback
+    this.config.progress?.onExecutionStart?.({
+      executionId: this.executionState?.id ?? 'ephemeral',
       mission: mission.name,
-      stages,
+      stageCount: mission.pipeline.stages.length,
+      isResume,
       metadata: this.config.metadata,
     });
-    this.executionState.status = 'running';
-    await this.saveExecutionState();
-    this.log(`Started execution ${this.executionState.id}`);
   }
 
   private async saveExecutionState(): Promise<void> {
@@ -265,6 +357,13 @@ export class MissionExecutor {
 
   private async executeMission(mission: MissionDefinition): Promise<void> {
     this.log(`Executing mission: ${mission.name}`);
+    this.missionName = mission.name;
+
+    // Initialize sync store
+    this.syncStore = this.config.syncStore ?? new FileSyncStore(
+      mission.name,
+      `${this.config.dataDir ?? '.reqon-data'}/sync`
+    );
 
     // Initialize sources (HTTP clients)
     for (const source of mission.sources) {
@@ -318,6 +417,17 @@ export class MissionExecutor {
       this.updateStageState(i, { status: 'running' });
       await this.saveExecutionState();
 
+      const stageStartTime = Date.now();
+
+      // Emit onStageStart callback
+      this.config.progress?.onStageStart?.({
+        executionId: this.executionState?.id ?? 'ephemeral',
+        mission: mission.name,
+        stageIndex: i,
+        stageName: stage.action,
+        totalStages: mission.pipeline.stages.length,
+      });
+
       try {
         await this.executeAction(action);
         this.actionsRun.push(action.name);
@@ -325,6 +435,17 @@ export class MissionExecutor {
         // Mark stage as completed
         this.updateStageState(i, { status: 'completed' });
         await this.saveExecutionState();
+
+        // Emit onStageComplete callback (success)
+        this.config.progress?.onStageComplete?.({
+          executionId: this.executionState?.id ?? 'ephemeral',
+          mission: mission.name,
+          stageIndex: i,
+          stageName: stage.action,
+          totalStages: mission.pipeline.stages.length,
+          success: true,
+          duration: Date.now() - stageStartTime,
+        });
       } catch (error) {
         // Mark stage as failed
         this.updateStageState(i, {
@@ -332,6 +453,19 @@ export class MissionExecutor {
           error: (error as Error).message,
         });
         await this.saveExecutionState();
+
+        // Emit onStageComplete callback (failure)
+        this.config.progress?.onStageComplete?.({
+          executionId: this.executionState?.id ?? 'ephemeral',
+          mission: mission.name,
+          stageIndex: i,
+          stageName: stage.action,
+          totalStages: mission.pipeline.stages.length,
+          success: false,
+          duration: Date.now() - stageStartTime,
+          error: (error as Error).message,
+        });
+
         throw error; // Re-throw to stop execution
       }
     }
@@ -505,6 +639,26 @@ export class MissionExecutor {
       throw new Error(`Source not found: ${sourceName}`);
     }
 
+    // Resolve "since" query parameter for incremental sync
+    let sinceQuery: Record<string, string> = {};
+    let checkpointKey: string | undefined;
+
+    if (step.since && this.syncStore) {
+      checkpointKey = step.since.key ?? generateCheckpointKey(sourceName, operationId, pathValue);
+
+      if (step.since.type === 'lastSync') {
+        const lastSync = await this.syncStore.getLastSync(checkpointKey);
+        const paramName = step.since.param ?? 'since';
+        const format = step.since.format ?? 'iso';
+        sinceQuery[paramName] = formatSinceDate(lastSync, format);
+        this.log(`Incremental sync: ${paramName}=${sinceQuery[paramName]} (key: ${checkpointKey})`);
+      } else if (step.since.type === 'expression' && step.since.expression) {
+        const value = evaluate(step.since.expression, this.ctx);
+        const paramName = step.since.param ?? 'since';
+        sinceQuery[paramName] = String(value);
+      }
+    }
+
     if (this.config.dryRun) {
       this.log('(dry run - skipping actual request)');
       this.ctx.response = { dryRun: true };
@@ -513,11 +667,12 @@ export class MissionExecutor {
 
     // Handle pagination
     if (step.paginate) {
-      await this.executePaginatedFetch(step, client, pathValue, method, sourceName, operationId);
+      await this.executePaginatedFetch(step, client, pathValue, method, sourceName, operationId, sinceQuery);
     } else {
       const response = await client.request({
         method,
         path: pathValue,
+        query: Object.keys(sinceQuery).length > 0 ? sinceQuery : undefined,
         body: step.body ? evaluate(step.body, this.ctx) : undefined,
       }, step.retry);
 
@@ -525,7 +680,65 @@ export class MissionExecutor {
       await this.validateOASResponse(sourceName, operationId, response.data);
 
       this.ctx.response = response.data;
+
+      // Update sync checkpoint after successful fetch
+      if (checkpointKey && this.syncStore) {
+        await this.recordSyncCheckpoint(checkpointKey, step, response.data);
+      }
     }
+  }
+
+  private async recordSyncCheckpoint(
+    key: string,
+    step: FetchStep,
+    data: unknown
+  ): Promise<void> {
+    if (!this.syncStore) return;
+
+    let syncedAt = new Date();
+
+    // If updateFrom is specified, extract the timestamp from response
+    if (step.since?.updateFrom && data && typeof data === 'object') {
+      const parts = step.since.updateFrom.split('.');
+      let value: unknown = data;
+      for (const part of parts) {
+        if (value && typeof value === 'object') {
+          value = (value as Record<string, unknown>)[part];
+        }
+      }
+      if (value instanceof Date) {
+        syncedAt = value;
+      } else if (typeof value === 'string' || typeof value === 'number') {
+        const parsed = new Date(value);
+        if (!isNaN(parsed.getTime())) {
+          syncedAt = parsed;
+        }
+      }
+    }
+
+    // Count records if response is an array
+    let recordCount: number | undefined;
+    if (Array.isArray(data)) {
+      recordCount = data.length;
+    } else if (data && typeof data === 'object') {
+      // Look for array in response
+      for (const val of Object.values(data)) {
+        if (Array.isArray(val)) {
+          recordCount = val.length;
+          break;
+        }
+      }
+    }
+
+    await this.syncStore.recordSync({
+      key,
+      syncedAt,
+      recordCount,
+      mission: this.missionName,
+      executionId: this.executionState?.id,
+    });
+
+    this.log(`Recorded sync checkpoint: ${key} at ${syncedAt.toISOString()}`);
   }
 
   private async validateOASResponse(
@@ -560,7 +773,8 @@ export class MissionExecutor {
     basePath: string,
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     sourceName: string,
-    operationId?: string
+    operationId?: string,
+    sinceQuery: Record<string, string> = {}
   ): Promise<void> {
     const allResults: unknown[] = [];
     let page = 0;
@@ -568,7 +782,7 @@ export class MissionExecutor {
     let cursor: string | undefined;
 
     while (hasMore) {
-      const query: Record<string, string> = {};
+      const query: Record<string, string> = { ...sinceQuery };
 
       switch (step.paginate!.type) {
         case 'offset':

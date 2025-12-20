@@ -18,6 +18,8 @@ export enum ReqonTokenType {
   KEY = 'KEY',
   PARTIAL = 'PARTIAL',
   UPSERT = 'UPSERT',
+  SINCE = 'SINCE',
+  LAST_SYNC = 'LAST_SYNC',
 
   // HTTP methods
   GET = 'GET',
@@ -84,6 +86,8 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   key: ReqonTokenType.KEY,
   partial: ReqonTokenType.PARTIAL,
   upsert: ReqonTokenType.UPSERT,
+  since: ReqonTokenType.SINCE,
+  lastSync: ReqonTokenType.LAST_SYNC,
 
   // HTTP methods (case insensitive in parsing, but stored as tokens)
   GET: ReqonTokenType.GET,

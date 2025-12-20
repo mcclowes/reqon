@@ -3,7 +3,7 @@
 ## Core Features
 
 - [x] **State persistence** - Durable execution state for resumable missions with checkpointing
-- [ ] **Incremental sync** - `since` parameter handling for "only fetch changed since last run"
+- [x] **Incremental sync** - `since: lastSync` parameter for "only fetch changed since last run"
 - [ ] **Idempotency** - Upsert semantics and conflict resolution strategies
 - [ ] **Error handling modes** - Stop, skip, retry, or queue failed records
 

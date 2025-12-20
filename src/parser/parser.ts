@@ -28,6 +28,7 @@ import type {
   ScheduleDefinition,
   IntervalSchedule,
   ScheduleRetryConfig,
+  SinceConfig,
 } from '../ast/nodes.js';
 
 export class ReqonParser extends ReqonExpressionParser {
@@ -467,6 +468,7 @@ export class ReqonParser extends ReqonExpressionParser {
     let paginate: PaginationConfig | undefined;
     let until: Expression | undefined;
     let retry: RetryConfig | undefined;
+    let since: SinceConfig | undefined;
 
     if (this.match(TokenType.LBRACE)) {
       while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
@@ -484,6 +486,9 @@ export class ReqonParser extends ReqonExpressionParser {
         } else if (this.check(ReqonTokenType.RETRY)) {
           this.advance();
           key = 'retry';
+        } else if (this.check(ReqonTokenType.SINCE)) {
+          this.advance();
+          key = 'since';
         } else {
           key = this.consume(TokenType.IDENTIFIER, 'Expected option key').value;
         }
@@ -505,6 +510,9 @@ export class ReqonParser extends ReqonExpressionParser {
           case 'retry':
             retry = this.parseRetryConfig();
             break;
+          case 'since':
+            since = this.parseSinceConfig();
+            break;
           default:
             throw this.error(`Unknown fetch option: ${key}`);
         }
@@ -525,6 +533,68 @@ export class ReqonParser extends ReqonExpressionParser {
       paginate,
       until,
       retry,
+      since,
+    };
+  }
+
+  private parseSinceConfig(): SinceConfig {
+    // since: lastSync
+    // since: lastSync("custom-key")
+    // since: lastSync { param: "modified_since", format: "unix" }
+
+    if (this.check(ReqonTokenType.LAST_SYNC)) {
+      this.advance();
+
+      let key: string | undefined;
+      let param: string | undefined;
+      let format: SinceConfig['format'];
+      let updateFrom: string | undefined;
+
+      // Check for optional key: lastSync("key")
+      if (this.match(TokenType.LPAREN)) {
+        key = this.consume(TokenType.STRING, 'Expected checkpoint key').value;
+        this.consume(TokenType.RPAREN, "Expected ')'");
+      }
+
+      // Check for optional config block
+      if (this.match(TokenType.LBRACE)) {
+        while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+          const optionKey = this.consume(TokenType.IDENTIFIER, 'Expected option key').value;
+          this.consume(TokenType.COLON, "Expected ':'");
+
+          switch (optionKey) {
+            case 'param':
+              param = this.consume(TokenType.STRING, 'Expected param name').value;
+              break;
+            case 'format':
+              format = this.consume(TokenType.IDENTIFIER, 'Expected format').value as SinceConfig['format'];
+              break;
+            case 'updateFrom':
+              updateFrom = this.consume(TokenType.STRING, 'Expected field path').value;
+              break;
+            default:
+              throw this.error(`Unknown since option: ${optionKey}`);
+          }
+
+          this.match(TokenType.COMMA);
+        }
+        this.consume(TokenType.RBRACE, "Expected '}'");
+      }
+
+      return {
+        type: 'lastSync',
+        key,
+        param,
+        format,
+        updateFrom,
+      };
+    }
+
+    // since: <expression> - custom expression for the timestamp
+    const expression = this.parseExpression();
+    return {
+      type: 'expression',
+      expression,
     };
   }
 

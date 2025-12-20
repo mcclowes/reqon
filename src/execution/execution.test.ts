@@ -241,14 +241,14 @@ describe('FileExecutionStore', () => {
 
   beforeEach(() => {
     if (existsSync(TEST_DIR)) {
-      rmSync(TEST_DIR, { recursive: true });
+      rmSync(TEST_DIR, { recursive: true, force: true });
     }
     store = new FileExecutionStore(TEST_DIR);
   });
 
   afterEach(() => {
     if (existsSync(TEST_DIR)) {
-      rmSync(TEST_DIR, { recursive: true });
+      rmSync(TEST_DIR, { recursive: true, force: true });
     }
   });
 
