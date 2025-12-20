@@ -1,6 +1,14 @@
 import { TokenType, type Expression, type QualifiedName, type MatchArm } from 'vague-lang';
 import type { ReqonToken } from '../lexer/tokens.js';
+import { ReqonTokenType } from '../lexer/tokens.js';
 import { ReqonParserBase } from './base.js';
+
+// Extended expression type for Reqon's 'is' type checking
+export interface IsExpression {
+  type: 'IsExpression';
+  operand: Expression;
+  typeCheck: string; // 'array', 'object', 'string', 'number', 'boolean', 'null', 'undefined'
+}
 
 export class ReqonExpressionParser extends ReqonParserBase {
   parseExpression(): Expression {
@@ -95,6 +103,13 @@ export class ReqonExpressionParser extends ReqonParserBase {
       const operator = this.advance().value;
       const right = this.parseRange();
       left = { type: 'BinaryExpression', operator, left, right };
+    }
+
+    // Check for 'is' type checking: expr is array, expr is string, etc.
+    if (this.check(ReqonTokenType.IS)) {
+      this.advance(); // consume 'is'
+      const typeCheck = this.consume(TokenType.IDENTIFIER, "Expected type name after 'is'").value;
+      return { type: 'IsExpression', operand: left, typeCheck } as unknown as Expression;
     }
 
     return left;

@@ -1,6 +1,7 @@
 import type { Expression } from 'vague-lang';
 import type { ExecutionContext } from './context.js';
 import { getVariable } from './context.js';
+import type { IsExpression } from '../parser/expressions.js';
 
 export function evaluate(expr: Expression, ctx: ExecutionContext, current?: unknown): unknown {
   switch (expr.type) {
@@ -170,6 +171,13 @@ export function evaluate(expr: Expression, ctx: ExecutionContext, current?: unkn
       return collection[Math.floor(Math.random() * collection.length)];
     }
 
+    case 'IsExpression': {
+      // Type checking expression: value is array, value is string, etc.
+      const isExpr = expr as unknown as IsExpression;
+      const value = evaluate(isExpr.operand, ctx, current);
+      return checkType(value, isExpr.typeCheck);
+    }
+
     default:
       throw new Error(`Cannot evaluate expression type: ${(expr as Expression).type}`);
   }
@@ -196,4 +204,35 @@ export function interpolatePath(path: string, ctx: ExecutionContext, current?: u
 
     return String(value ?? '');
   });
+}
+
+/**
+ * Check if a value matches a type.
+ * Supports: array, object, string, number, boolean, null, undefined, int, decimal, date
+ */
+function checkType(value: unknown, typeName: string): boolean {
+  switch (typeName.toLowerCase()) {
+    case 'array':
+      return Array.isArray(value);
+    case 'object':
+      return value !== null && typeof value === 'object' && !Array.isArray(value);
+    case 'string':
+      return typeof value === 'string';
+    case 'number':
+    case 'decimal':
+      return typeof value === 'number';
+    case 'int':
+    case 'integer':
+      return typeof value === 'number' && Number.isInteger(value);
+    case 'boolean':
+      return typeof value === 'boolean';
+    case 'null':
+      return value === null;
+    case 'undefined':
+      return value === undefined;
+    case 'date':
+      return value instanceof Date || (typeof value === 'string' && !isNaN(Date.parse(value)));
+    default:
+      throw new Error(`Unknown type for 'is' check: ${typeName}`);
+  }
 }
