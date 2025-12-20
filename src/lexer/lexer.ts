@@ -207,10 +207,11 @@ export class ReqonLexer {
     }
 
     const twoChar = char + this.peek();
-    const twoCharOps: Record<string, TokenType> = {
+    const twoCharOps: Record<string, TokenType | ReqonTokenType> = {
       '..': TokenType.DOTDOT,
       '=>': TokenType.ARROW,
       '==': TokenType.DOUBLE_EQUALS,
+      '!=': ReqonTokenType.NOT_EQUALS,
       '+=': TokenType.PLUS_EQUALS,
       '<=': TokenType.LTE,
       '>=': TokenType.GTE,
@@ -221,7 +222,7 @@ export class ReqonLexer {
       return { type: twoCharOps[twoChar], value: twoChar, line: this.line, column: startColumn };
     }
 
-    const singleCharOps: Record<string, TokenType> = {
+    const singleCharOps: Record<string, TokenType | ReqonTokenType> = {
       '|': TokenType.PIPE,
       '~': TokenType.TILDE,
       ':': TokenType.COLON,
@@ -243,6 +244,7 @@ export class ReqonLexer {
       '}': TokenType.RBRACE,
       '[': TokenType.LBRACKET,
       ']': TokenType.RBRACKET,
+      '!': ReqonTokenType.BANG,
     };
 
     const type = singleCharOps[char];

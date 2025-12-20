@@ -47,6 +47,8 @@ export enum ReqonTokenType {
 
   // Additional operators
   RIGHT_ARROW = 'RIGHT_ARROW', // ->
+  NOT_EQUALS = 'NOT_EQUALS', // !=
+  BANG = 'BANG', // !
 
   // OAS integration
   FROM = 'FROM',
@@ -99,7 +101,12 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   since: ReqonTokenType.SINCE,
   lastSync: ReqonTokenType.LAST_SYNC,
 
-  // HTTP methods (case insensitive in parsing, but stored as tokens)
+  // HTTP methods (both lowercase and uppercase)
+  get: ReqonTokenType.GET,
+  post: ReqonTokenType.POST,
+  put: ReqonTokenType.PUT,
+  patch: ReqonTokenType.PATCH,
+  delete: ReqonTokenType.DELETE,
   GET: ReqonTokenType.GET,
   POST: ReqonTokenType.POST,
   PUT: ReqonTokenType.PUT,
