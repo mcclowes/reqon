@@ -6,6 +6,7 @@ import type {
   RateLimitCallbacks,
   RateLimitEvent,
 } from './types.js';
+import { sleep } from '../utils/async.js';
 
 interface RateLimitState {
   remaining?: number;
@@ -116,7 +117,7 @@ export class AdaptiveRateLimiter implements RateLimiter {
       if (config.strategy === 'throttle') {
         const delay = this.getThrottleDelay(source, endpoint);
         if (delay > 0) {
-          await this.sleep(delay);
+          await sleep(delay);
         }
       }
       return;
@@ -186,7 +187,7 @@ export class AdaptiveRateLimiter implements RateLimiter {
       // Sleep in chunks (check every 1-5 seconds)
       const remainingMs = waitUntil.getTime() - Date.now();
       const sleepMs = Math.min(Math.max(remainingMs, 1000), 5000);
-      await this.sleep(sleepMs);
+      await sleep(sleepMs);
     }
 
     // Emit resumed event
@@ -289,10 +290,6 @@ export class AdaptiveRateLimiter implements RateLimiter {
       isLimited: Boolean(isLimited),
       resetInSeconds,
     };
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdir, readFile, writeFile, readdir, unlink, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ExecutionState } from './state.js';
 
@@ -34,15 +34,18 @@ export interface ExecutionStore {
  */
 export class FileExecutionStore implements ExecutionStore {
   private baseDir: string;
+  private initialized: Promise<void>;
 
   constructor(baseDir = '.reqon-data/executions') {
     this.baseDir = baseDir;
-    this.ensureDirectory();
+    this.initialized = this.ensureDirectory();
   }
 
-  private ensureDirectory(): void {
-    if (!existsSync(this.baseDir)) {
-      mkdirSync(this.baseDir, { recursive: true });
+  private async ensureDirectory(): Promise<void> {
+    try {
+      await access(this.baseDir);
+    } catch {
+      await mkdir(this.baseDir, { recursive: true });
     }
   }
 
@@ -77,18 +80,17 @@ export class FileExecutionStore implements ExecutionStore {
   }
 
   async save(state: ExecutionState): Promise<void> {
+    await this.initialized;
     const filePath = this.getFilePath(state.id);
-    writeFileSync(filePath, this.serialize(state), 'utf-8');
+    await writeFile(filePath, this.serialize(state), 'utf-8');
   }
 
   async load(id: string): Promise<ExecutionState | null> {
+    await this.initialized;
     const filePath = this.getFilePath(id);
-    if (!existsSync(filePath)) {
-      return null;
-    }
 
     try {
-      const content = readFileSync(filePath, 'utf-8');
+      const content = await readFile(filePath, 'utf-8');
       return this.deserialize(content);
     } catch {
       return null;
@@ -101,19 +103,21 @@ export class FileExecutionStore implements ExecutionStore {
   }
 
   async listRecent(limit = 50): Promise<ExecutionState[]> {
-    if (!existsSync(this.baseDir)) {
+    await this.initialized;
+
+    let files: string[];
+    try {
+      const entries = await readdir(this.baseDir);
+      files = entries.filter((f) => f.endsWith('.json')).map((f) => join(this.baseDir, f));
+    } catch {
       return [];
     }
-
-    const files = readdirSync(this.baseDir)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => join(this.baseDir, f));
 
     const states: ExecutionState[] = [];
 
     for (const file of files) {
       try {
-        const content = readFileSync(file, 'utf-8');
+        const content = await readFile(file, 'utf-8');
         states.push(this.deserialize(content));
       } catch {
         // Skip corrupted files
@@ -127,10 +131,12 @@ export class FileExecutionStore implements ExecutionStore {
   }
 
   async delete(id: string): Promise<void> {
+    await this.initialized;
     const filePath = this.getFilePath(id);
-    if (existsSync(filePath)) {
-      const { unlinkSync } = await import('node:fs');
-      unlinkSync(filePath);
+    try {
+      await unlink(filePath);
+    } catch {
+      // File doesn't exist, nothing to delete
     }
   }
 

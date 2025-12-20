@@ -40,6 +40,8 @@ import {
   type SyncStore,
   FileSyncStore,
 } from '../sync/index.js';
+import { FetchHandler } from './fetch-handler.js';
+import { ForHandler, MapHandler, ValidateHandler, StoreHandler } from './step-handlers/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -687,7 +689,16 @@ export class MissionExecutor {
     }
   }
 
-  private async executeStep(step: ActionStep, actionName: string): Promise<void> {
+  private async executeStep(step: ActionStep, actionName: string, ctx?: ExecutionContext): Promise<void> {
+    // Use provided context or default to this.ctx
+    const execCtx = ctx ?? this.ctx;
+    const originalCtx = this.ctx;
+
+    // Temporarily use the provided context
+    if (ctx) {
+      this.ctx = ctx;
+    }
+
     try {
       switch (step.type) {
         case 'FetchStep':
@@ -716,401 +727,67 @@ export class MissionExecutor {
         details: error,
       });
       throw error;
+    } finally {
+      // Restore original context
+      if (ctx) {
+        this.ctx = originalCtx;
+      }
     }
   }
 
   private async executeFetch(step: FetchStep): Promise<void> {
-    let sourceName: string;
-    let method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-    let pathValue: string;
-    let operationId: string | undefined;
-
-    // Resolve method and path - either from operationRef or explicit values
-    if (step.operationRef) {
-      // OAS-style: resolve from operationId
-      sourceName = step.operationRef.source;
-      operationId = step.operationRef.operationId;
-
-      const oasSource = this.oasSources.get(sourceName);
-      if (!oasSource) {
-        throw new Error(`Source '${sourceName}' does not have an OAS spec. Use 'source ${sourceName} from "spec.yaml"'`);
-      }
-
-      const operation = resolveOperation(oasSource, operationId);
-      method = operation.method;
-      pathValue = interpolatePath(operation.path, this.ctx);
-
-      this.log(`Fetching: ${sourceName}.${operationId} -> ${method} ${pathValue}`);
-    } else {
-      // Traditional: explicit method + path
-      sourceName = step.source ?? this.ctx.sources.keys().next().value!;
-      method = step.method!;
-
-      if (step.path!.type === 'Literal' && step.path!.dataType === 'string') {
-        pathValue = interpolatePath(step.path!.value as string, this.ctx);
-      } else {
-        pathValue = String(evaluate(step.path!, this.ctx));
-      }
-
-      this.log(`Fetching: ${method} ${pathValue}`);
-    }
-
-    const client = this.ctx.sources.get(sourceName);
-    if (!client) {
-      throw new Error(`Source not found: ${sourceName}`);
-    }
-
-    // Resolve "since" query parameter for incremental sync
-    let sinceQuery: Record<string, string> = {};
-    let checkpointKey: string | undefined;
-
-    if (step.since && this.syncStore) {
-      checkpointKey = step.since.key ?? generateCheckpointKey(sourceName, operationId, pathValue);
-
-      if (step.since.type === 'lastSync') {
-        const lastSync = await this.syncStore.getLastSync(checkpointKey);
-        const paramName = step.since.param ?? 'since';
-        const format = step.since.format ?? 'iso';
-        sinceQuery[paramName] = formatSinceDate(lastSync, format);
-        this.log(`Incremental sync: ${paramName}=${sinceQuery[paramName]} (key: ${checkpointKey})`);
-      } else if (step.since.type === 'expression' && step.since.expression) {
-        const value = evaluate(step.since.expression, this.ctx);
-        const paramName = step.since.param ?? 'since';
-        sinceQuery[paramName] = String(value);
-      }
-    }
-
-    if (this.config.dryRun) {
-      this.log('(dry run - skipping actual request)');
-      this.ctx.response = { dryRun: true };
-      return;
-    }
-
-    // Handle pagination
-    if (step.paginate) {
-      await this.executePaginatedFetch(step, client, pathValue, method, sourceName, operationId, sinceQuery);
-    } else {
-      const response = await client.request({
-        method,
-        path: pathValue,
-        query: Object.keys(sinceQuery).length > 0 ? sinceQuery : undefined,
-        body: step.body ? evaluate(step.body, this.ctx) : undefined,
-      }, step.retry);
-
-      // Validate response against OAS schema if enabled
-      await this.validateOASResponse(sourceName, operationId, response.data);
-
-      this.ctx.response = response.data;
-
-      // Update sync checkpoint after successful fetch
-      if (checkpointKey && this.syncStore) {
-        await this.recordSyncCheckpoint(checkpointKey, step, response.data);
-      }
-    }
-  }
-
-  private async recordSyncCheckpoint(
-    key: string,
-    step: FetchStep,
-    data: unknown
-  ): Promise<void> {
-    if (!this.syncStore) return;
-
-    let syncedAt = new Date();
-
-    // If updateFrom is specified, extract the timestamp from response
-    if (step.since?.updateFrom && data && typeof data === 'object') {
-      const parts = step.since.updateFrom.split('.');
-      let value: unknown = data;
-      for (const part of parts) {
-        if (value && typeof value === 'object') {
-          value = (value as Record<string, unknown>)[part];
-        }
-      }
-      if (value instanceof Date) {
-        syncedAt = value;
-      } else if (typeof value === 'string' || typeof value === 'number') {
-        const parsed = new Date(value);
-        if (!isNaN(parsed.getTime())) {
-          syncedAt = parsed;
-        }
-      }
-    }
-
-    // Count records if response is an array
-    let recordCount: number | undefined;
-    if (Array.isArray(data)) {
-      recordCount = data.length;
-    } else if (data && typeof data === 'object') {
-      // Look for array in response
-      for (const val of Object.values(data)) {
-        if (Array.isArray(val)) {
-          recordCount = val.length;
-          break;
-        }
-      }
-    }
-
-    await this.syncStore.recordSync({
-      key,
-      syncedAt,
-      recordCount,
-      mission: this.missionName,
+    const fetchHandler = new FetchHandler({
+      ctx: this.ctx,
+      oasSources: this.oasSources,
+      sourceConfigs: this.sourceConfigs,
+      syncStore: this.syncStore,
+      missionName: this.missionName,
       executionId: this.executionState?.id,
+      dryRun: this.config.dryRun,
+      log: (msg) => this.log(msg),
     });
 
-    this.log(`Recorded sync checkpoint: ${key} at ${syncedAt.toISOString()}`);
-  }
+    const result = await fetchHandler.execute(step);
+    this.ctx.response = result.data;
 
-  private async validateOASResponse(
-    sourceName: string,
-    operationId: string | undefined,
-    data: unknown
-  ): Promise<void> {
-    if (!operationId) return;
-
-    const sourceConfig = this.sourceConfigs.get(sourceName);
-    if (!sourceConfig?.config.validateResponses) return;
-
-    const oasSource = this.oasSources.get(sourceName);
-    if (!oasSource) return;
-
-    const schema = getResponseSchema(oasSource, operationId);
-    if (!schema) {
-      this.log(`No response schema found for ${operationId}`);
-      return;
+    // Update sync checkpoint after successful fetch
+    if (result.checkpointKey && this.syncStore) {
+      await fetchHandler.recordCheckpoint(result.checkpointKey, step, result.data);
     }
-
-    const result = validateResponse(data, schema);
-    if (!result.valid) {
-      const errorMessages = result.errors.map(e => `  ${e.path}: ${e.message}`).join('\n');
-      this.log(`Response validation warnings for ${operationId}:\n${errorMessages}`);
-    }
-  }
-
-  private async executePaginatedFetch(
-    step: FetchStep,
-    client: HttpClient,
-    basePath: string,
-    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
-    sourceName: string,
-    operationId?: string,
-    sinceQuery: Record<string, string> = {}
-  ): Promise<void> {
-    const allResults: unknown[] = [];
-    let page = 0;
-    let hasMore = true;
-    let cursor: string | undefined;
-
-    while (hasMore) {
-      const query: Record<string, string> = { ...sinceQuery };
-
-      switch (step.paginate!.type) {
-        case 'offset':
-          query[step.paginate!.param] = String(page * step.paginate!.pageSize);
-          break;
-        case 'page':
-          query[step.paginate!.param] = String(page + 1);
-          break;
-        case 'cursor':
-          if (cursor) {
-            query[step.paginate!.param] = cursor;
-          }
-          break;
-      }
-
-      this.log(`Fetching page ${page + 1}...`);
-
-      const response = await client.request({
-        method,
-        path: basePath,
-        query,
-      }, step.retry);
-
-      // Validate response against OAS schema if enabled
-      await this.validateOASResponse(sourceName, operationId, response.data);
-
-      this.ctx.response = response.data;
-
-      // Check until condition
-      if (step.until) {
-        const shouldStop = evaluate(step.until, this.ctx);
-        if (shouldStop) {
-          hasMore = false;
-          break;
-        }
-      }
-
-      // Extract results (assuming response has array)
-      const data = response.data as Record<string, unknown>;
-      for (const key of Object.keys(data)) {
-        if (Array.isArray(data[key])) {
-          allResults.push(...(data[key] as unknown[]));
-          if ((data[key] as unknown[]).length < step.paginate!.pageSize) {
-            hasMore = false;
-          }
-          break;
-        }
-      }
-
-      // Handle cursor pagination
-      if (step.paginate!.type === 'cursor' && step.paginate!.cursorPath) {
-        cursor = this.extractCursor(data, step.paginate!.cursorPath);
-        if (!cursor) hasMore = false;
-      }
-
-      page++;
-
-      // Safety limit
-      if (page > 100) {
-        this.log('Warning: pagination limit reached');
-        hasMore = false;
-      }
-    }
-
-    // Set combined results
-    this.ctx.response = allResults;
-    this.log(`Fetched ${allResults.length} total items`);
-  }
-
-  private extractCursor(data: Record<string, unknown>, path: string): string | undefined {
-    const parts = path.split('.');
-    let value: unknown = data;
-
-    for (const part of parts) {
-      if (value && typeof value === 'object') {
-        value = (value as Record<string, unknown>)[part];
-      } else {
-        return undefined;
-      }
-    }
-
-    return value ? String(value) : undefined;
   }
 
   private async executeFor(step: ForStep, actionName: string): Promise<void> {
-    // Get collection
-    let collection: unknown[];
-
-    if (step.collection.type === 'Identifier') {
-      // It's a store reference
-      const store = this.ctx.stores.get(step.collection.name);
-      if (store) {
-        collection = await store.list();
-      } else {
-        collection = (getVariable(this.ctx, step.collection.name) as unknown[]) ?? [];
-      }
-    } else {
-      collection = evaluate(step.collection, this.ctx) as unknown[];
-    }
-
-    if (!Array.isArray(collection)) {
-      throw new Error('For loop collection must be an array');
-    }
-
-    // Apply filter if present
-    if (step.condition) {
-      collection = collection.filter((item) => evaluate(step.condition!, this.ctx, item));
-    }
-
-    this.log(`Iterating over ${collection.length} items`);
-
-    // Execute steps for each item
-    for (const item of collection) {
-      const childCtx = childContext(this.ctx);
-      setVariable(childCtx, step.variable, item);
-
-      // Temporarily use child context
-      const parentCtx = this.ctx;
-      this.ctx = childCtx;
-
-      for (const innerStep of step.steps) {
-        await this.executeStep(innerStep, actionName);
-      }
-
-      // Restore parent context
-      this.ctx = parentCtx;
-    }
+    const handler = new ForHandler({
+      ctx: this.ctx,
+      log: (msg) => this.log(msg),
+      executeStep: (s, a, c) => this.executeStep(s, a, c),
+      actionName,
+    });
+    await handler.execute(step);
   }
 
   private async executeMap(step: MapStep): Promise<void> {
-    const source = evaluate(step.source, this.ctx) as Record<string, unknown>;
-
-    const mapped: Record<string, unknown> = {};
-
-    for (const mapping of step.mappings) {
-      mapped[mapping.field] = evaluate(mapping.expression, this.ctx, source);
-    }
-
-    // Store mapped result in response for next step
-    this.ctx.response = mapped;
-    this.log(`Mapped to ${step.targetSchema}`);
+    const handler = new MapHandler({
+      ctx: this.ctx,
+      log: (msg) => this.log(msg),
+    });
+    await handler.execute(step);
   }
 
   private async executeValidate(step: ValidateStep): Promise<void> {
-    const target = evaluate(step.target, this.ctx);
-
-    for (const constraint of step.constraints) {
-      const result = evaluate(constraint.condition, this.ctx, target);
-
-      if (!result) {
-        const message = constraint.message ?? `Validation failed: ${JSON.stringify(constraint.condition)}`;
-
-        if (constraint.severity === 'error') {
-          throw new Error(message);
-        } else {
-          this.log(`Warning: ${message}`);
-        }
-      }
-    }
-
-    this.log('Validation passed');
+    const handler = new ValidateHandler({
+      ctx: this.ctx,
+      log: (msg) => this.log(msg),
+    });
+    await handler.execute(step);
   }
 
   private async executeStore(step: StoreStep): Promise<void> {
-    const store = this.ctx.stores.get(step.target);
-    if (!store) {
-      throw new Error(`Store not found: ${step.target}`);
-    }
-
-    const source = evaluate(step.source, this.ctx);
-
-    if (Array.isArray(source)) {
-      // Store each item
-      for (const item of source) {
-        const record = item as Record<string, unknown>;
-        const key = step.options.key
-          ? String(evaluate(step.options.key, this.ctx, record))
-          : String(record.id ?? Math.random());
-
-        if (step.options.partial !== undefined) {
-          record._partial = step.options.partial;
-        }
-
-        if (step.options.upsert) {
-          await store.update(key, record);
-        } else {
-          await store.set(key, record);
-        }
-      }
-      this.log(`Stored ${source.length} items to ${step.target}`);
-    } else {
-      const record = source as Record<string, unknown>;
-      const key = step.options.key
-        ? String(evaluate(step.options.key, this.ctx, record))
-        : String(record.id ?? Math.random());
-
-      if (step.options.partial !== undefined) {
-        record._partial = step.options.partial;
-      }
-
-      if (step.options.upsert) {
-        await store.update(key, record);
-      } else {
-        await store.set(key, record);
-      }
-      this.log(`Stored item to ${step.target}`);
-    }
+    const handler = new StoreHandler({
+      ctx: this.ctx,
+      log: (msg) => this.log(msg),
+    });
+    await handler.execute(step);
   }
 
   private log(message: string): void {

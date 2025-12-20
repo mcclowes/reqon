@@ -12,14 +12,23 @@ A declarative DSL framework for fetch, map, validate pipelines - built on [Vague
 ```
 src/
 ├── ast/           # Extended AST nodes (missions, actions, steps)
-├── lexer/         # Extended lexer with Reqon keywords
-├── parser/        # Parser for mission/action/fetch/store syntax
+├── auth/          # Rate limiting and authentication providers
+├── errors/        # Structured error classes (ParseError, RuntimeError, etc.)
+├── execution/     # Execution state management and persistence
 ├── interpreter/   # Runtime execution
-│   ├── context.ts   # Execution context (stores, variables)
-│   ├── evaluator.ts # Expression evaluation
-│   ├── executor.ts  # Mission/action execution
-│   └── http.ts      # HTTP client with retry/backoff
-├── stores/        # Store adapters (memory, extensible to SQL/NoSQL)
+│   ├── context.ts       # Execution context (stores, variables)
+│   ├── evaluator.ts     # Expression evaluation
+│   ├── executor.ts      # Mission/action execution
+│   ├── fetch-handler.ts # HTTP fetch with sync checkpoints
+│   ├── pagination.ts    # Pagination strategies (offset, page, cursor)
+│   └── http.ts          # HTTP client with retry/backoff
+├── lexer/         # Extended lexer with Reqon keywords
+├── oas/           # OpenAPI spec integration
+├── parser/        # Parser for mission/action/fetch/store syntax
+├── scheduler/     # Cron scheduling for missions
+├── stores/        # Store adapters (memory, file, extensible to SQL/NoSQL)
+├── sync/          # Incremental sync checkpointing
+├── utils/         # Shared utilities (sleep, path traversal, logger)
 ├── index.ts       # Main exports
 └── cli.ts         # CLI entry point
 ```
@@ -37,15 +46,16 @@ npm run dev        # Watch mode compilation
 
 Key constructs:
 - `mission` - Pipeline definition
-- `source` - API source with auth (oauth2, bearer, basic, api_key)
-- `store` - Storage target (memory, sql, nosql)
+- `source` - API source with auth (oauth2, bearer, basic, api_key), or from OAS spec
+- `store` - Storage target (memory, file, sql, nosql)
 - `action` - Discrete pipeline step
-- `fetch` - HTTP request with optional pagination/retry
+- `fetch` - HTTP request with optional pagination/retry, or OAS operationId reference
 - `for...in...where` - Iteration with filtering
 - `map...->` - Schema transformation
 - `validate` - Constraint checking with `assume`
-- `run...then` - Pipeline sequencing
+- `run...then` - Pipeline sequencing (supports `run [A, B] then C` for parallel)
 - `match` - Pattern matching (from Vague)
+- `since: lastSync` - Incremental sync with checkpointing
 
 ## Code Conventions
 

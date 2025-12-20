@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { fromFile, parse, Scheduler } from './index.js';
 import type { ScheduleEvent } from './scheduler/index.js';
+import { ReqonError } from './errors/index.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -101,7 +102,11 @@ Examples:
       process.exit(1);
     }
   } catch (error) {
-    console.error(`Error: ${(error as Error).message}`);
+    if (error instanceof ReqonError) {
+      console.error(error.format());
+    } else {
+      console.error(`Error: ${(error as Error).message}`);
+    }
     process.exit(1);
   }
 }
@@ -115,8 +120,27 @@ interface DaemonOptions {
 
 async function runDaemon(filePath: string, options: DaemonOptions): Promise<void> {
   const absolutePath = resolve(filePath);
-  const source = await readFile(absolutePath, 'utf-8');
-  const program = parse(source);
+
+  let source: string;
+  try {
+    source = await readFile(absolutePath, 'utf-8');
+  } catch (error) {
+    console.error(`Error reading file: ${absolutePath}`);
+    console.error((error as Error).message);
+    process.exit(1);
+  }
+
+  let program;
+  try {
+    program = parse(source);
+  } catch (error) {
+    if (error instanceof ReqonError) {
+      console.error(error.format());
+    } else {
+      console.error(`Parse error: ${(error as Error).message}`);
+    }
+    process.exit(1);
+  }
 
   // Find scheduled missions
   const scheduledMissions = program.statements.filter(

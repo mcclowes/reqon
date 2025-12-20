@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { StoreAdapter, StoreFilter } from './types.js';
+import { applyStoreFilter } from './types.js';
 
 export interface FileStoreOptions {
   /** Base directory for data files (default: '.reqon-data') */
@@ -101,26 +102,7 @@ export class FileStore implements StoreAdapter {
   }
 
   async list(filter?: StoreFilter): Promise<Record<string, unknown>[]> {
-    let results = Array.from(this.data.values());
-
-    if (filter?.where) {
-      results = results.filter((item) => {
-        for (const [key, value] of Object.entries(filter.where!)) {
-          if (item[key] !== value) return false;
-        }
-        return true;
-      });
-    }
-
-    if (filter?.offset) {
-      results = results.slice(filter.offset);
-    }
-
-    if (filter?.limit) {
-      results = results.slice(0, filter.limit);
-    }
-
-    return results;
+    return applyStoreFilter(Array.from(this.data.values()), filter);
   }
 
   async clear(): Promise<void> {

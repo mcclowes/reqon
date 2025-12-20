@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import type { SyncCheckpoint } from './state.js';
 import { EPOCH } from './state.js';
@@ -33,72 +33,83 @@ export interface SyncStore {
 export class FileSyncStore implements SyncStore {
   private filePath: string;
   private checkpoints: Map<string, SyncCheckpoint> = new Map();
+  private initialized: Promise<void>;
 
   constructor(mission: string, baseDir = '.reqon-data/sync') {
     this.filePath = join(baseDir, `${mission}.json`);
-    this.ensureDirectory();
-    this.load();
+    this.initialized = this.init();
   }
 
-  private ensureDirectory(): void {
+  private async init(): Promise<void> {
+    await this.ensureDirectory();
+    await this.load();
+  }
+
+  private async ensureDirectory(): Promise<void> {
     const dir = dirname(this.filePath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+    try {
+      await access(dir);
+    } catch {
+      await mkdir(dir, { recursive: true });
     }
   }
 
-  private load(): void {
-    if (existsSync(this.filePath)) {
-      try {
-        const content = readFileSync(this.filePath, 'utf-8');
-        const data = JSON.parse(content) as Record<string, SyncCheckpoint>;
+  private async load(): Promise<void> {
+    try {
+      const content = await readFile(this.filePath, 'utf-8');
+      const data = JSON.parse(content) as Record<string, SyncCheckpoint>;
 
-        for (const [key, checkpoint] of Object.entries(data)) {
-          // Restore Date objects
-          checkpoint.syncedAt = new Date(checkpoint.syncedAt);
-          this.checkpoints.set(key, checkpoint);
-        }
-      } catch {
-        // Start fresh if file is corrupted
-        this.checkpoints = new Map();
+      for (const [key, checkpoint] of Object.entries(data)) {
+        // Restore Date objects
+        checkpoint.syncedAt = new Date(checkpoint.syncedAt);
+        this.checkpoints.set(key, checkpoint);
       }
+    } catch {
+      // Start fresh if file doesn't exist or is corrupted
+      this.checkpoints = new Map();
     }
   }
 
-  private persist(): void {
+  private async persist(): Promise<void> {
     const data: Record<string, SyncCheckpoint> = {};
     for (const [key, checkpoint] of this.checkpoints) {
       data[key] = checkpoint;
     }
-    writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+    await writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
   async getLastSync(key: string): Promise<Date> {
+    await this.initialized;
     const checkpoint = this.checkpoints.get(key);
     return checkpoint?.syncedAt ?? EPOCH;
   }
 
   async getCheckpoint(key: string): Promise<SyncCheckpoint | null> {
+    await this.initialized;
     return this.checkpoints.get(key) ?? null;
   }
 
   async recordSync(checkpoint: SyncCheckpoint): Promise<void> {
+    await this.initialized;
     this.checkpoints.set(checkpoint.key, checkpoint);
-    this.persist();
+    await this.persist();
   }
 
   async list(): Promise<SyncCheckpoint[]> {
+    await this.initialized;
     return Array.from(this.checkpoints.values());
   }
 
   async clear(key: string): Promise<void> {
+    await this.initialized;
     this.checkpoints.delete(key);
-    this.persist();
+    await this.persist();
   }
 
   async clearAll(): Promise<void> {
+    await this.initialized;
     this.checkpoints.clear();
-    this.persist();
+    await this.persist();
   }
 }
 

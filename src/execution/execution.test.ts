@@ -252,7 +252,9 @@ describe('FileExecutionStore', () => {
     }
   });
 
-  it('creates directory if not exists', () => {
+  it('creates directory if not exists', async () => {
+    // Trigger initialization by calling any async method
+    await store.listRecent();
     expect(existsSync(TEST_DIR)).toBe(true);
   });
 

@@ -1,6 +1,7 @@
 import type { RetryConfig } from '../ast/nodes.js';
 import type { RateLimiter, RateLimitInfo } from '../auth/types.js';
 import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
+import { sleep } from '../utils/async.js';
 
 export interface HttpClientConfig {
   baseUrl: string;
@@ -94,22 +95,19 @@ export class HttpClient {
         if (response.status === 429) {
           const retryAfter = response.headers.get('Retry-After');
           const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
-          console.log(`Rate limited. Retrying in ${delay}ms...`);
-          await this.sleep(delay);
+          await sleep(delay);
           continue;
         }
 
         // Handle server errors with retry
         if (response.status >= 500 && attempt < maxAttempts) {
           const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
-          console.log(`Server error ${response.status}. Retrying in ${delay}ms...`);
-          await this.sleep(delay);
+          await sleep(delay);
           continue;
         }
 
         // Handle 401 - try token refresh
         if (response.status === 401 && this.config.auth?.refreshToken && attempt < maxAttempts) {
-          console.log('Token expired, refreshing...');
           await this.config.auth.refreshToken();
           // Rebuild headers with new token
           const newHeaders = await this.buildHeaders(req.headers);
@@ -129,8 +127,7 @@ export class HttpClient {
 
         if (attempt < maxAttempts) {
           const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
-          console.log(`Request failed: ${lastError.message}. Retrying in ${delay}ms...`);
-          await this.sleep(delay);
+          await sleep(delay);
         }
       }
     }
@@ -192,10 +189,6 @@ export class HttpClient {
     delay = Math.min(delay + jitter, maxDelay);
 
     return Math.round(delay);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 

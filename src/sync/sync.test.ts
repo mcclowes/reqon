@@ -158,7 +158,9 @@ describe('FileSyncStore', () => {
     }
   });
 
-  it('creates sync directory', () => {
+  it('creates sync directory', async () => {
+    // Trigger initialization by calling any async method
+    await store.list();
     expect(existsSync(TEST_DIR)).toBe(true);
   });
 

@@ -1,6 +1,7 @@
 import type { StoreAdapter } from './types.js';
 import { MemoryStore } from './memory.js';
 import { FileStore, type FileStoreOptions } from './file.js';
+import { type Logger, createLogger } from '../utils/logger.js';
 
 export type StoreType = 'memory' | 'file' | 'sql' | 'nosql';
 
@@ -13,6 +14,8 @@ export interface CreateStoreOptions {
   baseDir?: string;
   /** File store options */
   fileOptions?: FileStoreOptions;
+  /** Logger instance */
+  logger?: Logger;
 }
 
 /**
@@ -27,6 +30,8 @@ export interface CreateStoreOptions {
  * - 'nosql' - MongoDB/DynamoDB
  */
 export function createStore(options: CreateStoreOptions): StoreAdapter {
+  const logger = options.logger ?? createLogger();
+
   switch (options.type) {
     case 'memory':
       return new MemoryStore(options.name);
@@ -39,7 +44,7 @@ export function createStore(options: CreateStoreOptions): StoreAdapter {
 
     case 'sql':
       // TODO: Implement SQL adapter
-      console.warn(`SQL store not yet implemented, falling back to file store for '${options.name}'`);
+      logger.warn(`SQL store not yet implemented, falling back to file store for '${options.name}'`);
       return new FileStore(options.name, {
         ...options.fileOptions,
         baseDir: options.baseDir ?? '.reqon-data/sql',
@@ -47,7 +52,7 @@ export function createStore(options: CreateStoreOptions): StoreAdapter {
 
     case 'nosql':
       // TODO: Implement NoSQL adapter
-      console.warn(`NoSQL store not yet implemented, falling back to file store for '${options.name}'`);
+      logger.warn(`NoSQL store not yet implemented, falling back to file store for '${options.name}'`);
       return new FileStore(options.name, {
         ...options.fileOptions,
         baseDir: options.baseDir ?? '.reqon-data/nosql',

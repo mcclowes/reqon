@@ -184,7 +184,11 @@ validate target {
 ### Pipeline
 
 ```reqon
+// Sequential execution
 run Step1 then Step2 then Step3
+
+// Parallel execution with brackets
+run [Step1, Step2] then Step3  // Step1 and Step2 run in parallel, then Step3
 ```
 
 ## OpenAPI Integration

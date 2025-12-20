@@ -11,7 +11,7 @@ describe('FileStore', () => {
   beforeEach(() => {
     // Clean up test directory
     if (existsSync(TEST_DIR)) {
-      rmSync(TEST_DIR, { recursive: true });
+      rmSync(TEST_DIR, { recursive: true, force: true });
     }
     store = new FileStore('test-store', { baseDir: TEST_DIR });
   });
@@ -19,7 +19,7 @@ describe('FileStore', () => {
   afterEach(() => {
     // Clean up after tests
     if (existsSync(TEST_DIR)) {
-      rmSync(TEST_DIR, { recursive: true });
+      rmSync(TEST_DIR, { recursive: true, force: true });
     }
   });
 
@@ -117,13 +117,13 @@ describe('FileStore', () => {
 describe('createStore factory', () => {
   beforeEach(() => {
     if (existsSync(TEST_DIR)) {
-      rmSync(TEST_DIR, { recursive: true });
+      rmSync(TEST_DIR, { recursive: true, force: true });
     }
   });
 
   afterEach(() => {
     if (existsSync(TEST_DIR)) {
-      rmSync(TEST_DIR, { recursive: true });
+      rmSync(TEST_DIR, { recursive: true, force: true });
     }
   });
 
