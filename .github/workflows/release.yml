@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout reqon
+        uses: actions/checkout@v4
+
+      - name: Checkout vague dependency
+        uses: actions/checkout@v4
+        with:
+          repository: mcclowes/vague
+          path: ../vague
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install vague dependencies
+        run: npm ci
+        working-directory: ../vague
+
+      - name: Build vague
+        run: npm run build
+        working-directory: ../vague
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:run
+
+      - name: Build
+        run: npm run build
+
+      - name: Update package.json for publishing
+        run: |
+          # Replace local file dependency with published version for npm
+          # This assumes vague-lang is published to npm
+          node -e "
+            const pkg = require('./package.json');
+            if (pkg.dependencies['vague-lang']?.startsWith('file:')) {
+              pkg.dependencies['vague-lang'] = '*';
+            }
+            require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2));
+          "
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
