@@ -3,6 +3,14 @@ import type { RateLimiter, RateLimitInfo } from '../auth/types.js';
 import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
 import { sleep } from '../utils/async.js';
 
+/** Default retry configuration values */
+const DEFAULT_RETRY = {
+  MAX_ATTEMPTS: 3,
+  INITIAL_DELAY_MS: 1000,
+  MAX_DELAY_MS: 30000,
+  BACKOFF: 'exponential' as const,
+} as const;
+
 export interface HttpClientConfig {
   baseUrl: string;
   headers?: Record<string, string>;
@@ -51,10 +59,10 @@ export class HttpClient {
       body: req.body ? JSON.stringify(req.body) : undefined,
     };
 
-    const maxAttempts = retry?.maxAttempts ?? 3;
-    const backoff = retry?.backoff ?? 'exponential';
-    const initialDelay = retry?.initialDelay ?? 1000;
-    const maxDelay = retry?.maxDelay ?? 30000;
+    const maxAttempts = retry?.maxAttempts ?? DEFAULT_RETRY.MAX_ATTEMPTS;
+    const backoff = retry?.backoff ?? DEFAULT_RETRY.BACKOFF;
+    const initialDelay = retry?.initialDelay ?? DEFAULT_RETRY.INITIAL_DELAY_MS;
+    const maxDelay = retry?.maxDelay ?? DEFAULT_RETRY.MAX_DELAY_MS;
 
     let lastError: Error | null = null;
 

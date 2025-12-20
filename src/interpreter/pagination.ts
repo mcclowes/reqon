@@ -31,6 +31,32 @@ export interface PaginationStrategy {
 }
 
 /**
+ * Extract items array from response and determine if more pages exist
+ * Shared utility for offset and page-based pagination strategies
+ */
+function extractItemsFromResponse(
+  response: unknown,
+  pageSize: number
+): { items: unknown[]; hasMore: boolean } {
+  if (!response || typeof response !== 'object') {
+    return { items: [], hasMore: false };
+  }
+
+  const data = response as Record<string, unknown>;
+  for (const key of Object.keys(data)) {
+    if (Array.isArray(data[key])) {
+      const items = data[key] as unknown[];
+      return {
+        items,
+        hasMore: items.length >= pageSize,
+      };
+    }
+  }
+
+  return { items: [], hasMore: false };
+}
+
+/**
  * Offset-based pagination (e.g., offset=100, offset=200)
  */
 export class OffsetPaginationStrategy implements PaginationStrategy {
@@ -43,30 +69,7 @@ export class OffsetPaginationStrategy implements PaginationStrategy {
   }
 
   extractResults(response: unknown, ctx: PaginationContext): PageResult {
-    const { items, hasMore } = this.extractItems(response, ctx.pageSize);
-    return { items, hasMore };
-  }
-
-  private extractItems(
-    response: unknown,
-    pageSize: number
-  ): { items: unknown[]; hasMore: boolean } {
-    if (!response || typeof response !== 'object') {
-      return { items: [], hasMore: false };
-    }
-
-    const data = response as Record<string, unknown>;
-    for (const key of Object.keys(data)) {
-      if (Array.isArray(data[key])) {
-        const items = data[key] as unknown[];
-        return {
-          items,
-          hasMore: items.length >= pageSize,
-        };
-      }
-    }
-
-    return { items: [], hasMore: false };
+    return extractItemsFromResponse(response, ctx.pageSize);
   }
 }
 
@@ -83,30 +86,7 @@ export class PageNumberPaginationStrategy implements PaginationStrategy {
   }
 
   extractResults(response: unknown, ctx: PaginationContext): PageResult {
-    const { items, hasMore } = this.extractItems(response, ctx.pageSize);
-    return { items, hasMore };
-  }
-
-  private extractItems(
-    response: unknown,
-    pageSize: number
-  ): { items: unknown[]; hasMore: boolean } {
-    if (!response || typeof response !== 'object') {
-      return { items: [], hasMore: false };
-    }
-
-    const data = response as Record<string, unknown>;
-    for (const key of Object.keys(data)) {
-      if (Array.isArray(data[key])) {
-        const items = data[key] as unknown[];
-        return {
-          items,
-          hasMore: items.length >= pageSize,
-        };
-      }
-    }
-
-    return { items: [], hasMore: false };
+    return extractItemsFromResponse(response, ctx.pageSize);
   }
 }
 

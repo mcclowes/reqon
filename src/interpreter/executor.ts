@@ -267,9 +267,17 @@ export class MissionExecutor {
     const duration = Date.now() - startTime;
     const success = this.errors.length === 0;
 
-    // Emit onExecutionComplete callback
-    const stagesCompleted = this.executionState?.stages.filter(s => s.status === 'completed').length ?? this.actionsRun.length;
-    const stagesFailed = this.executionState?.stages.filter(s => s.status === 'failed').length ?? (success ? 0 : 1);
+    // Emit onExecutionComplete callback - count stages in a single pass
+    const stageCounts = this.executionState?.stages.reduce(
+      (acc, s) => {
+        if (s.status === 'completed') acc.completed++;
+        else if (s.status === 'failed') acc.failed++;
+        return acc;
+      },
+      { completed: 0, failed: 0 }
+    );
+    const stagesCompleted = stageCounts?.completed ?? this.actionsRun.length;
+    const stagesFailed = stageCounts?.failed ?? (success ? 0 : 1);
 
     this.config.progress?.onExecutionComplete?.({
       executionId: this.executionState?.id ?? 'ephemeral',

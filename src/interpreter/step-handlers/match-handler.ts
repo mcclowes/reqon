@@ -3,6 +3,17 @@ import type { StepHandler, StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
 import type { ExecutionContext } from '../context.js';
 import { findMatchingSchema } from '../schema-matcher.js';
+import {
+  NoMatchError,
+  AbortError,
+  SkipSignal,
+  RetrySignal,
+  JumpSignal,
+  QueueSignal,
+} from '../signals.js';
+
+// Re-export signals for backwards compatibility
+export { NoMatchError, AbortError, SkipSignal, RetrySignal, JumpSignal, QueueSignal };
 
 /**
  * Result of executing a match step
@@ -19,72 +30,6 @@ export interface MatchResult {
 export interface MatchHandlerDeps extends StepHandlerDeps {
   executeStep: (step: ActionStep, actionName: string, ctx: ExecutionContext) => Promise<void>;
   actionName: string;
-}
-
-/**
- * Error thrown when a match step has no matching arm
- */
-export class NoMatchError extends Error {
-  constructor(public value: unknown) {
-    super('No matching schema found for response');
-    this.name = 'NoMatchError';
-  }
-}
-
-/**
- * Error thrown when a match arm triggers an abort
- */
-export class AbortError extends Error {
-  constructor(message?: string) {
-    super(message ?? 'Execution aborted');
-    this.name = 'AbortError';
-  }
-}
-
-/**
- * Signal thrown when a match arm triggers skip
- */
-export class SkipSignal extends Error {
-  constructor() {
-    super('Skip remaining steps');
-    this.name = 'SkipSignal';
-  }
-}
-
-/**
- * Signal thrown when a match arm triggers retry
- */
-export class RetrySignal extends Error {
-  constructor(public backoff?: { maxAttempts: number; backoff: string; initialDelay: number }) {
-    super('Retry action');
-    this.name = 'RetrySignal';
-  }
-}
-
-/**
- * Signal thrown when a match arm triggers jump
- */
-export class JumpSignal extends Error {
-  constructor(
-    public action: string,
-    public then?: 'retry' | 'continue'
-  ) {
-    super(`Jump to action: ${action}`);
-    this.name = 'JumpSignal';
-  }
-}
-
-/**
- * Signal thrown when a match arm triggers queue
- */
-export class QueueSignal extends Error {
-  constructor(
-    public value: unknown,
-    public target?: string
-  ) {
-    super('Queue for later processing');
-    this.name = 'QueueSignal';
-  }
 }
 
 /**

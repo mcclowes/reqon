@@ -22,6 +22,7 @@ export class Scheduler {
   private state: SchedulerState;
   private running = false;
   private checkTimer: NodeJS.Timeout | null = null;
+  private retryTimers: Set<NodeJS.Timeout> = new Set();
   private executorConfig: ExecutorConfig;
 
   constructor(config: SchedulerConfig = {}, executorConfig: ExecutorConfig = {}) {
@@ -122,6 +123,12 @@ export class Scheduler {
       clearInterval(this.checkTimer);
       this.checkTimer = null;
     }
+
+    // Clear all pending retry timers to prevent memory leaks
+    for (const timer of this.retryTimers) {
+      clearTimeout(timer);
+    }
+    this.retryTimers.clear();
 
     // Save state
     await this.saveState();
@@ -265,8 +272,9 @@ export class Scheduler {
           `(attempt ${job.consecutiveFailures}/${retryConfig.maxRetries})`
       );
 
-      // Schedule retry
-      setTimeout(() => {
+      // Schedule retry and track the timer to prevent memory leaks
+      const timer = setTimeout(() => {
+        this.retryTimers.delete(timer);
         const scheduledMission = this.missions.get(job.missionName);
         if (scheduledMission && this.running) {
           this.runJob(job, scheduledMission).catch((error) => {
@@ -274,6 +282,7 @@ export class Scheduler {
           });
         }
       }, retryConfig.delaySeconds * 1000);
+      this.retryTimers.add(timer);
     } else {
       this.log(
         `Job '${job.missionName}' exceeded max retries (${retryConfig.maxRetries}), waiting for next scheduled run`

@@ -120,6 +120,14 @@ export class FileStore implements StoreAdapter {
   }
 
   /**
+   * Close the store, ensuring all pending changes are written to disk.
+   * Should be called before the process exits to prevent data loss in batch mode.
+   */
+  close(): void {
+    this.flush();
+  }
+
+  /**
    * Reload data from disk (useful if file was modified externally)
    */
   reload(): void {
