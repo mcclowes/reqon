@@ -104,3 +104,4 @@ out/
 # Reqon runtime data
 .reqon-data/
 output.json
+.reqon-test-progress/
