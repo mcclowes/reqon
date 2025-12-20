@@ -246,7 +246,7 @@ describe('ReqonLexer', () => {
           store users: memory("users")
 
           action FetchUsers {
-            fetch GET "/users"
+            get "/users"
             store response -> users {
               key: .id
             }

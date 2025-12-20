@@ -107,7 +107,7 @@ mission OrderReconciliation {
 
   action SyncShopifyOrders {
     // Get last sync timestamp for incremental sync
-    fetch GET "/orders.json" {
+    get "/orders.json" {
       source: "Shopify",
       body: {
         "status": "any",
@@ -165,7 +165,7 @@ mission OrderReconciliation {
   // ============================================================
 
   action SyncStripePayments {
-    fetch GET "/payment_intents" {
+    get "/payment_intents" {
       source: "Stripe",
       body: {
         "limit": 100,
@@ -209,7 +209,7 @@ mission OrderReconciliation {
   // ============================================================
 
   action SyncShipStationShipments {
-    fetch GET "/shipments" {
+    get "/shipments" {
       source: "ShipStation",
       body: {
         "pageSize": 500,

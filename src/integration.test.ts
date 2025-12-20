@@ -14,7 +14,7 @@ describe('Reqon Integration', () => {
         store items: memory("items")
 
         action FetchItems {
-          fetch GET "/items"
+          get "/items"
 
           store response -> items {
             key: .id

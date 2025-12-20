@@ -178,7 +178,7 @@ describe('Integration with parser', () => {
   }
 
   action Fetch {
-    fetch GET "/items
+    get "/items
   }
 
   run Fetch
@@ -205,7 +205,7 @@ describe('Integration with parser', () => {
   }
 
   action Fetch
-    fetch GET "/items"
+    get "/items"
   }
 
   run Fetch

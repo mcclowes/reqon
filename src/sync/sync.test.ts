@@ -197,7 +197,7 @@ describe('Parser: since config', () => {
         store items: memory("items")
 
         action Fetch {
-          fetch GET "/items" {
+          get "/items" {
             since: lastSync
           }
           store response -> items { key: .id }
@@ -222,7 +222,7 @@ describe('Parser: since config', () => {
         store items: memory("items")
 
         action Fetch {
-          fetch GET "/items" {
+          get "/items" {
             since: lastSync("my-custom-key")
           }
           store response -> items { key: .id }
@@ -247,7 +247,7 @@ describe('Parser: since config', () => {
         store items: memory("items")
 
         action Fetch {
-          fetch GET "/items" {
+          get "/items" {
             since: lastSync {
               param: "modified_since",
               format: unix

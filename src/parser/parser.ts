@@ -414,6 +414,8 @@ export class ReqonParser extends ReqonExpressionParser {
 
   private parseActionStep(): ActionStep {
     if (this.check(ReqonTokenType.FETCH)) return this.parseFetchStep();
+    // Shorthand: get "/path", post "/path", etc.
+    if (this.checkHttpMethod()) return this.parseHttpMethodStep();
     if (this.check(ReqonTokenType.FOR)) return this.parseForStep();
     if (this.check(ReqonTokenType.MAP)) return this.parseMapStep();
     if (this.check(TokenType.VALIDATE)) return this.parseValidateStep();
@@ -423,56 +425,136 @@ export class ReqonParser extends ReqonExpressionParser {
     throw this.error(`Expected action step, got: ${this.peek().value}`);
   }
 
+  private checkHttpMethod(): boolean {
+    const t = this.peek().type;
+    return (
+      t === ReqonTokenType.GET ||
+      t === ReqonTokenType.POST ||
+      t === ReqonTokenType.PUT ||
+      t === ReqonTokenType.PATCH ||
+      t === ReqonTokenType.DELETE
+    );
+  }
+
+  /**
+   * Parse HTTP method syntax: get "/path" { options }
+   */
+  private parseHttpMethodStep(): FetchStep {
+    const methodToken = this.advance();
+    let method: FetchStep['method'];
+
+    switch (methodToken.type) {
+      case ReqonTokenType.GET:
+        method = 'GET';
+        break;
+      case ReqonTokenType.POST:
+        method = 'POST';
+        break;
+      case ReqonTokenType.PUT:
+        method = 'PUT';
+        break;
+      case ReqonTokenType.PATCH:
+        method = 'PATCH';
+        break;
+      case ReqonTokenType.DELETE:
+        method = 'DELETE';
+        break;
+      default:
+        throw this.error(`Unexpected HTTP method token: ${methodToken.value}`);
+    }
+
+    const path = this.parseExpression();
+
+    // Parse optional config block (same as parseFetchStep)
+    let source: string | undefined;
+    let body: Expression | undefined;
+    let headers: Record<string, Expression> | undefined;
+    let paginate: PaginationConfig | undefined;
+    let until: Expression | undefined;
+    let retry: RetryConfig | undefined;
+    let since: SinceConfig | undefined;
+
+    if (this.match(TokenType.LBRACE)) {
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        let key: string;
+        if (this.check(ReqonTokenType.SOURCE)) {
+          this.advance();
+          key = 'source';
+        } else if (this.check(ReqonTokenType.PAGINATE)) {
+          this.advance();
+          key = 'paginate';
+        } else if (this.check(ReqonTokenType.UNTIL)) {
+          this.advance();
+          key = 'until';
+        } else if (this.check(ReqonTokenType.RETRY)) {
+          this.advance();
+          key = 'retry';
+        } else if (this.check(ReqonTokenType.SINCE)) {
+          this.advance();
+          key = 'since';
+        } else {
+          key = this.consume(TokenType.IDENTIFIER, 'Expected option key').value;
+        }
+        this.consume(TokenType.COLON, "Expected ':'");
+
+        switch (key) {
+          case 'source':
+            source = this.consume(TokenType.IDENTIFIER, 'Expected source name').value;
+            break;
+          case 'body':
+            body = this.parseExpression();
+            break;
+          case 'paginate':
+            paginate = this.parsePaginationConfig();
+            break;
+          case 'until':
+            until = this.parseExpression();
+            break;
+          case 'retry':
+            retry = this.parseRetryConfig();
+            break;
+          case 'since':
+            since = this.parseSinceConfig();
+            break;
+          default:
+            throw this.error(`Unknown fetch option: ${key}`);
+        }
+
+        this.match(TokenType.COMMA);
+      }
+      this.consume(TokenType.RBRACE, "Expected '}'");
+    }
+
+    return {
+      type: 'FetchStep',
+      method,
+      path,
+      source,
+      body,
+      headers,
+      paginate,
+      until,
+      retry,
+      since,
+    };
+  }
+
   // ============================================
   // Fetch step
   // ============================================
 
+  /**
+   * Parse OAS-style fetch: fetch Source.operationId { options }
+   * For direct HTTP requests, use: get "/path", post "/path", etc.
+   */
   private parseFetchStep(): FetchStep {
     this.consume(ReqonTokenType.FETCH, "Expected 'fetch'");
 
-    let method: FetchStep['method'];
-    let path: Expression | undefined;
-    let operationRef: OperationRef | undefined;
-
-    // Check if next token is an HTTP method or an identifier (for Source.operationId)
-    const nextToken = this.peek();
-
-    if (
-      nextToken.type === ReqonTokenType.GET ||
-      nextToken.type === ReqonTokenType.POST ||
-      nextToken.type === ReqonTokenType.PUT ||
-      nextToken.type === ReqonTokenType.PATCH ||
-      nextToken.type === ReqonTokenType.DELETE
-    ) {
-      // Traditional: fetch GET "/path"
-      const methodToken = this.advance();
-      switch (methodToken.type) {
-        case ReqonTokenType.GET:
-          method = 'GET';
-          break;
-        case ReqonTokenType.POST:
-          method = 'POST';
-          break;
-        case ReqonTokenType.PUT:
-          method = 'PUT';
-          break;
-        case ReqonTokenType.PATCH:
-          method = 'PATCH';
-          break;
-        case ReqonTokenType.DELETE:
-          method = 'DELETE';
-          break;
-      }
-      path = this.parseExpression();
-    } else if (nextToken.type === TokenType.IDENTIFIER) {
-      // OAS-style: fetch Source.operationId
-      const sourceName = this.consume(TokenType.IDENTIFIER, 'Expected source name').value;
-      this.consume(TokenType.DOT, "Expected '.'");
-      const opId = this.consume(TokenType.IDENTIFIER, 'Expected operationId').value;
-      operationRef = { source: sourceName, operationId: opId };
-    } else {
-      throw this.error(`Expected HTTP method or Source.operationId, got: ${nextToken.value}`);
-    }
+    // OAS-style: fetch Source.operationId
+    const sourceName = this.consume(TokenType.IDENTIFIER, 'Expected source name').value;
+    this.consume(TokenType.DOT, "Expected '.'");
+    const opId = this.consume(TokenType.IDENTIFIER, 'Expected operationId').value;
+    const operationRef: OperationRef = { source: sourceName, operationId: opId };
 
     let source: string | undefined;
     let body: Expression | undefined;
@@ -536,8 +618,6 @@ export class ReqonParser extends ReqonExpressionParser {
 
     return {
       type: 'FetchStep',
-      method,
-      path,
       operationRef,
       source,
       body,

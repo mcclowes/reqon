@@ -2,7 +2,7 @@
  * Sync State - Tracks last sync timestamps for incremental sync
  *
  * Enables "only fetch changed since last run" patterns:
- * - fetch GET "/invoices" { since: lastSync }
+ * - get "/invoices" { since: lastSync }
  * - fetch Xero.getInvoices { since: lastSync("invoices") }
  */
 

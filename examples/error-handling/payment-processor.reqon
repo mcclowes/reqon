@@ -82,7 +82,7 @@ mission ProcessPayments {
   // ============================================================
 
   action FetchPendingPayments {
-    fetch GET "/payments" {
+    get "/payments" {
       body: { "status": "pending" },
       retry: {
         maxAttempts: 3,
@@ -127,7 +127,7 @@ mission ProcessPayments {
   // ============================================================
 
   action RefreshAuth {
-    fetch POST "/auth/refresh" {
+    post "/auth/refresh" {
       source: PaymentGateway,
       body: {
         "refresh_token": env("PAYMENT_REFRESH_TOKEN")
@@ -146,7 +146,7 @@ mission ProcessPayments {
 
   action CheckFraudRisk {
     for payment in pending_payments {
-      fetch POST "/check" {
+      post "/check" {
         source: FraudDetection,
         body: {
           "payment_id": payment.id,
@@ -200,7 +200,7 @@ mission ProcessPayments {
   action ProcessPayments {
     // Only process payments not in fraud review
     for payment in pending_payments where not exists(fraud_review_queue[payment.id]) {
-      fetch POST "/payments/{payment.id}/capture" {
+      post "/payments/{payment.id}/capture" {
         source: PaymentGateway,
         body: {
           "idempotency_key": payment.id + "_capture"

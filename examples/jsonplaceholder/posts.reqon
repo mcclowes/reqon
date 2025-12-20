@@ -11,7 +11,7 @@ mission SyncPosts {
   store posts_normalized: sql("posts_normalized")
 
   action FetchPosts {
-    fetch GET "/posts"
+    get "/posts"
 
     validate response {
       assume length(response) > 0

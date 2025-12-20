@@ -37,7 +37,7 @@ source Xero {
 
 ### Pagination with Until Condition
 ```reqon
-fetch GET "/Invoices" {
+get "/Invoices" {
   paginate: offset(page, 100),
   until: length(response.Invoices) == 0
 }
