@@ -141,7 +141,7 @@ describe('OAS Parser Integration', () => {
         store pets: memory("pets")
 
         action FetchPets {
-          fetch Petstore.listPets
+          call Petstore.listPets
 
           store response.pets -> pets {
             key: .id
@@ -199,7 +199,7 @@ describe('OAS Parser Integration', () => {
     }
   });
 
-  it('supports both OAS and traditional fetch in same mission', () => {
+  it('supports both OAS call and traditional HTTP methods in same mission', () => {
     const source = `
       mission MixedFetch {
         source Petstore from "./examples/petstore.yaml" {
@@ -214,7 +214,7 @@ describe('OAS Parser Integration', () => {
         store pets: memory("pets")
 
         action FetchFromOAS {
-          fetch Petstore.listPets
+          call Petstore.listPets
           store response.pets -> pets { key: .id }
         }
 
@@ -241,11 +241,11 @@ describe('OAS Parser Integration', () => {
       const legacyFetch = legacyAction.steps[0];
 
       if (oasFetch.type === 'FetchStep' && legacyFetch.type === 'FetchStep') {
-        // OAS fetch
+        // OAS call
         expect(oasFetch.operationRef).toBeDefined();
         expect(oasFetch.method).toBeUndefined();
 
-        // Traditional fetch
+        // Traditional HTTP method
         expect(legacyFetch.operationRef).toBeUndefined();
         expect(legacyFetch.method).toBe('GET');
       }

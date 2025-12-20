@@ -13,7 +13,7 @@ mission SyncPets {
 
   // Fetch all pets using operationId from OAS
   action FetchPets {
-    fetch Petstore.listPets {
+    call Petstore.listPets {
       paginate: cursor(cursor, 20, "nextCursor"),
       until: response.pets.length == 0
     }

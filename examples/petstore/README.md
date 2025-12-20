@@ -29,7 +29,7 @@ Requires a `credentials.json`:
 
 - `source ... from "spec.yaml"` for OAS integration
 - `validateResponses: true` for response validation against spec
-- `fetch Source.operationId` syntax
+- `call Source.operationId` syntax
 - Cursor-based pagination
 - `match` expressions for value mapping
 - `validate` with `assume` constraints

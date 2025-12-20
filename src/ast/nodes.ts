@@ -130,7 +130,7 @@ export interface MatchArm {
 }
 
 // get "/Invoices" { paginate: ..., until: ... }
-// fetch Xero.getInvoices { paginate: ... }  -- OAS operationId reference
+// call Xero.getInvoices { paginate: ... }  -- OAS operationId reference
 // get "/Invoices" { since: lastSync }  -- Incremental sync
 export interface FetchStep {
   type: 'FetchStep';
