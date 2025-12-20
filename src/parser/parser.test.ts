@@ -367,4 +367,269 @@ describe('ReqonParser', () => {
       expect(mission.pipeline.stages[0].actions).toEqual(['X', 'Y', 'Z']);
     }
   });
+
+  // ============================================
+  // Parse-time validation tests
+  // ============================================
+
+  describe('parse-time validation', () => {
+    it('throws error for undefined store reference', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+
+          action FetchItems {
+            get "/items"
+            store response -> nonexistent { key: .id }
+          }
+
+          run FetchItems
+        }
+      `;
+
+      expect(() => parse(source)).toThrow(/Store 'nonexistent' is not defined/);
+    });
+
+    it('throws error for undefined action in pipeline', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+
+          action FetchItems {
+            get "/items"
+            store response -> items { key: .id }
+          }
+
+          run NonexistentAction
+        }
+      `;
+
+      expect(() => parse(source)).toThrow(/Action 'NonexistentAction' is not defined/);
+    });
+
+    it('throws error for undefined action in parallel pipeline', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+
+          action FetchItems {
+            get "/items"
+            store response -> items { key: .id }
+          }
+
+          run [FetchItems, MissingAction]
+        }
+      `;
+
+      expect(() => parse(source)).toThrow(/Action 'MissingAction' is not defined/);
+    });
+
+    it('throws error for undefined source in fetch step', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+
+          action FetchItems {
+            get "/items" {
+              source: NonexistentSource
+            }
+            store response -> items { key: .id }
+          }
+
+          run FetchItems
+        }
+      `;
+
+      expect(() => parse(source)).toThrow(/Source 'NonexistentSource' is not defined/);
+    });
+
+    it('throws error for undefined source in call step operationRef', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+
+          action FetchItems {
+            call NonexistentSource.getItems
+            store response -> items { key: .id }
+          }
+
+          run FetchItems
+        }
+      `;
+
+      expect(() => parse(source)).toThrow(/Source 'NonexistentSource' is not defined/);
+    });
+
+    it('throws error for undefined store in nested for loop', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+
+          action ProcessItems {
+            for item in items {
+              get "/item/{item.id}"
+              store response -> missing_store { key: .id }
+            }
+          }
+
+          run ProcessItems
+        }
+      `;
+
+      expect(() => parse(source)).toThrow(/Store 'missing_store' is not defined/);
+    });
+
+    it('includes available stores in error message', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+          store users: memory("users")
+
+          action FetchItems {
+            get "/items"
+            store response -> nonexistent { key: .id }
+          }
+
+          run FetchItems
+        }
+      `;
+
+      expect(() => parse(source)).toThrow(/Available stores: items, users/);
+    });
+
+    it('includes available actions in error message', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+
+          action FetchItems {
+            get "/items"
+            store response -> items { key: .id }
+          }
+
+          action ProcessItems {
+            get "/process"
+          }
+
+          run MissingAction
+        }
+      `;
+
+      expect(() => parse(source)).toThrow(/Available actions: FetchItems, ProcessItems/);
+    });
+
+    it('accepts valid store references', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+          store processed: memory("processed")
+
+          action FetchAndStore {
+            get "/items"
+            store response -> items { key: .id }
+            store response -> processed { key: .id }
+          }
+
+          run FetchAndStore
+        }
+      `;
+
+      expect(() => parse(source)).not.toThrow();
+    });
+
+    it('accepts valid action references in complex pipeline', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          store items: memory("items")
+
+          action Step1 { get "/1" }
+          action Step2 { get "/2" }
+          action Step3 { get "/3" }
+
+          run Step1 then [Step2, Step3]
+        }
+      `;
+
+      expect(() => parse(source)).not.toThrow();
+    });
+
+    it('accepts valid source reference in fetch step', () => {
+      const source = `
+        mission TestMission {
+          source API {
+            auth: bearer,
+            base: "https://api.example.com"
+          }
+
+          source OtherAPI {
+            auth: bearer,
+            base: "https://other.example.com"
+          }
+
+          store items: memory("items")
+
+          action FetchItems {
+            get "/items" {
+              source: OtherAPI
+            }
+            store response -> items { key: .id }
+          }
+
+          run FetchItems
+        }
+      `;
+
+      expect(() => parse(source)).not.toThrow();
+    });
+  });
 });

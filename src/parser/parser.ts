@@ -109,6 +109,15 @@ export class ReqonParser extends ReqonExpressionParser {
       throw this.error('Mission must have a run pipeline');
     }
 
+    // Build sets of defined names for validation
+    const definedStores = new Set(stores.map((s) => s.name));
+    const definedActions = new Set(actions.map((a) => a.name));
+    const definedSources = new Set(sources.map((s) => s.name));
+
+    // Validate all references
+    this.validateActionReferences(actions, definedStores, definedSources, definedActions);
+    this.validatePipelineReferences(pipeline, definedActions);
+
     return {
       type: 'MissionDefinition',
       name,
@@ -119,6 +128,121 @@ export class ReqonParser extends ReqonExpressionParser {
       actions,
       pipeline,
     };
+  }
+
+  /**
+   * Validate that all store, source, and action references in actions exist
+   */
+  private validateActionReferences(
+    actions: ActionDefinition[],
+    definedStores: Set<string>,
+    definedSources: Set<string>,
+    definedActions: Set<string>
+  ): void {
+    for (const action of actions) {
+      this.validateStepsReferences(
+        action.steps,
+        definedStores,
+        definedSources,
+        definedActions,
+        action.name
+      );
+    }
+  }
+
+  /**
+   * Recursively validate store, source, and action references in action steps
+   */
+  private validateStepsReferences(
+    steps: ActionStep[],
+    definedStores: Set<string>,
+    definedSources: Set<string>,
+    definedActions: Set<string>,
+    actionName: string
+  ): void {
+    for (const step of steps) {
+      if (step.type === 'StoreStep') {
+        if (!definedStores.has(step.target)) {
+          throw this.error(
+            `Store '${step.target}' is not defined. ` +
+              `Available stores: ${[...definedStores].join(', ') || 'none'}`
+          );
+        }
+      } else if (step.type === 'FetchStep') {
+        // Validate source reference if specified
+        if (step.source && !definedSources.has(step.source)) {
+          throw this.error(
+            `Source '${step.source}' is not defined. ` +
+              `Available sources: ${[...definedSources].join(', ') || 'none'}`
+          );
+        }
+        // Validate operationRef source if present
+        if (step.operationRef && !definedSources.has(step.operationRef.source)) {
+          throw this.error(
+            `Source '${step.operationRef.source}' is not defined. ` +
+              `Available sources: ${[...definedSources].join(', ') || 'none'}`
+          );
+        }
+      } else if (step.type === 'ForStep') {
+        // Recursively validate nested steps
+        this.validateStepsReferences(
+          step.steps,
+          definedStores,
+          definedSources,
+          definedActions,
+          actionName
+        );
+      } else if (step.type === 'MatchStep') {
+        // Validate steps in match arms
+        for (const arm of step.arms) {
+          if (arm.steps) {
+            this.validateStepsReferences(
+              arm.steps,
+              definedStores,
+              definedSources,
+              definedActions,
+              actionName
+            );
+          }
+          // Validate jump target in flow directive
+          if (arm.flow?.type === 'jump' && !definedActions.has(arm.flow.action)) {
+            throw this.error(
+              `Action '${arm.flow.action}' referenced in jump is not defined. ` +
+                `Available actions: ${[...definedActions].join(', ') || 'none'}`
+            );
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Validate that all action references in the pipeline exist
+   */
+  private validatePipelineReferences(
+    pipeline: PipelineDefinition,
+    definedActions: Set<string>
+  ): void {
+    for (const stage of pipeline.stages) {
+      if (stage.action) {
+        if (!definedActions.has(stage.action)) {
+          throw this.error(
+            `Action '${stage.action}' is not defined. ` +
+              `Available actions: ${[...definedActions].join(', ') || 'none'}`
+          );
+        }
+      }
+      if (stage.actions) {
+        for (const actionName of stage.actions) {
+          if (!definedActions.has(actionName)) {
+            throw this.error(
+              `Action '${actionName}' is not defined. ` +
+                `Available actions: ${[...definedActions].join(', ') || 'none'}`
+            );
+          }
+        }
+      }
+    }
   }
 
   // ============================================
