@@ -32,6 +32,8 @@ import type {
   IntervalSchedule,
   ScheduleRetryConfig,
   SinceConfig,
+  RateLimitSourceConfig,
+  CircuitBreakerSourceConfig,
 } from '../ast/nodes.js';
 
 export class ReqonParser extends ReqonExpressionParser {
@@ -290,6 +292,8 @@ export class ReqonParser extends ReqonExpressionParser {
     let auth: AuthConfig | undefined;
     let base: string | undefined;
     let validateResponses: boolean | undefined;
+    let rateLimit: RateLimitSourceConfig | undefined;
+    let circuitBreaker: CircuitBreakerSourceConfig | undefined;
     const headers: Record<string, Expression> = {};
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
@@ -314,6 +318,10 @@ export class ReqonParser extends ReqonExpressionParser {
           this.match(TokenType.COMMA);
         }
         this.consume(TokenType.RBRACE, "Expected '}'");
+      } else if (key === 'rateLimit') {
+        rateLimit = this.parseRateLimitConfig();
+      } else if (key === 'circuitBreaker') {
+        circuitBreaker = this.parseCircuitBreakerConfig();
       }
 
       this.match(TokenType.COMMA);
@@ -328,7 +336,74 @@ export class ReqonParser extends ReqonExpressionParser {
       base,
       validateResponses,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
+      rateLimit,
+      circuitBreaker,
     };
+  }
+
+  private parseRateLimitConfig(): RateLimitSourceConfig {
+    this.consume(TokenType.LBRACE, "Expected '{'");
+
+    const config: RateLimitSourceConfig = {};
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      const key = this.consume(TokenType.IDENTIFIER, 'Expected rate limit option').value;
+      this.consume(TokenType.COLON, "Expected ':'");
+
+      switch (key) {
+        case 'strategy':
+          config.strategy = this.consume(TokenType.IDENTIFIER, 'Expected strategy').value as 'pause' | 'throttle' | 'fail';
+          break;
+        case 'maxWait':
+          config.maxWait = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'fallbackRpm':
+          config.fallbackRpm = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        default:
+          throw this.error(`Unknown rate limit option: ${key}`);
+      }
+
+      this.match(TokenType.COMMA);
+    }
+
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    return config;
+  }
+
+  private parseCircuitBreakerConfig(): CircuitBreakerSourceConfig {
+    this.consume(TokenType.LBRACE, "Expected '{'");
+
+    const config: CircuitBreakerSourceConfig = {};
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      const key = this.consume(TokenType.IDENTIFIER, 'Expected circuit breaker option').value;
+      this.consume(TokenType.COLON, "Expected ':'");
+
+      switch (key) {
+        case 'failureThreshold':
+          config.failureThreshold = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'resetTimeout':
+          config.resetTimeout = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'successThreshold':
+          config.successThreshold = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'failureWindow':
+          config.failureWindow = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        default:
+          throw this.error(`Unknown circuit breaker option: ${key}`);
+      }
+
+      this.match(TokenType.COMMA);
+    }
+
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    return config;
   }
 
   private parseAuthConfig(): AuthConfig {

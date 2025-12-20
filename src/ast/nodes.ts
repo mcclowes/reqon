@@ -28,6 +28,18 @@ export interface SourceConfig {
   headers?: Record<string, Expression>;
   validateResponses?: boolean; // Validate responses against OAS schema
   rateLimit?: RateLimitSourceConfig; // Rate limiting configuration
+  circuitBreaker?: CircuitBreakerSourceConfig; // Circuit breaker configuration
+}
+
+export interface CircuitBreakerSourceConfig {
+  /** Number of failures before opening circuit (default: 5) */
+  failureThreshold?: number;
+  /** Time in seconds before attempting recovery (default: 30) */
+  resetTimeout?: number;
+  /** Number of successful requests in half-open to close circuit (default: 2) */
+  successThreshold?: number;
+  /** Time window in seconds for counting failures (default: 60) */
+  failureWindow?: number;
 }
 
 export interface RateLimitSourceConfig {

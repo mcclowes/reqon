@@ -27,3 +27,14 @@ export { InMemoryTokenStore, FileTokenStore } from './token-store.js';
 
 // Auth providers
 export { OAuth2AuthProvider, BearerTokenProvider, ApiKeyProvider } from './oauth2-provider.js';
+
+// Circuit breaker
+export {
+  CircuitBreaker,
+  CircuitBreakerError,
+  type CircuitBreakerConfig,
+  type CircuitBreakerStatus,
+  type CircuitBreakerEvent,
+  type CircuitBreakerCallbacks,
+  type CircuitState,
+} from './circuit-breaker.js';
