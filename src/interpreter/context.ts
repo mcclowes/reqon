@@ -1,4 +1,4 @@
-import type { Expression } from 'vague-lang';
+import type { Expression, SchemaDefinition } from 'vague-lang';
 import type { StoreAdapter } from '../stores/types.js';
 import type { HttpClient } from './http.js';
 import type { SourceDefinition, StoreDefinition } from '../ast/nodes.js';
@@ -9,6 +9,9 @@ export interface ExecutionContext {
 
   // Named HTTP clients (sources)
   sources: Map<string, HttpClient>;
+
+  // Schema definitions (for match step schema matching)
+  schemas: Map<string, SchemaDefinition>;
 
   // Variable bindings for current scope
   variables: Map<string, unknown>;
@@ -24,6 +27,7 @@ export function createContext(): ExecutionContext {
   return {
     stores: new Map(),
     sources: new Map(),
+    schemas: new Map(),
     variables: new Map(),
   };
 }
@@ -32,6 +36,7 @@ export function childContext(parent: ExecutionContext): ExecutionContext {
   return {
     stores: parent.stores,
     sources: parent.sources,
+    schemas: parent.schemas,
     variables: new Map(),
     parent,
   };

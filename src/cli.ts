@@ -2,7 +2,7 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
-import { fromFile, parse, Scheduler } from './index.js';
+import { fromPath, parse, Scheduler, loadMission } from './index.js';
 import type { ScheduleEvent } from './scheduler/index.js';
 import { ReqonError } from './errors/index.js';
 
@@ -14,7 +14,7 @@ async function main() {
 Reqon - A DSL for fetch, map, validate pipelines
 
 Usage:
-  reqon <file.reqon> [options]
+  reqon <file.reqon|folder> [options]
 
 Options:
   --dry-run        Run without making actual HTTP requests
@@ -27,6 +27,7 @@ Options:
 
 Examples:
   reqon sync-invoices.reqon --verbose
+  reqon ./sync-invoices/ --verbose        # folder with mission.reqon + action files
   reqon sync-invoices.reqon --auth ./credentials.json
   reqon sync-invoices.reqon --output ./output.json
   reqon sync-invoices.reqon --daemon --verbose
@@ -69,7 +70,7 @@ Examples:
   console.log(`Running: ${filePath}`);
 
   try {
-    const result = await fromFile(filePath, {
+    const result = await fromPath(filePath, {
       dryRun,
       verbose,
       auth: auth as Record<string, { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }>,
@@ -121,23 +122,17 @@ interface DaemonOptions {
 async function runDaemon(filePath: string, options: DaemonOptions): Promise<void> {
   const absolutePath = resolve(filePath);
 
-  let source: string;
-  try {
-    source = await readFile(absolutePath, 'utf-8');
-  } catch (error) {
-    console.error(`Error reading file: ${absolutePath}`);
-    console.error((error as Error).message);
-    process.exit(1);
-  }
-
   let program;
+  let baseDir: string;
   try {
-    program = parse(source);
+    const result = await loadMission(absolutePath);
+    program = result.program;
+    baseDir = result.baseDir;
   } catch (error) {
     if (error instanceof ReqonError) {
       console.error(error.format());
     } else {
-      console.error(`Parse error: ${(error as Error).message}`);
+      console.error(`Error loading mission: ${(error as Error).message}`);
     }
     process.exit(1);
   }

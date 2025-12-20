@@ -6,7 +6,7 @@ import type {
 } from 'vague-lang';
 
 // Reqon extends Vague's statements
-export type Statement = VagueStatement | MissionDefinition | SourceDefinition | StoreDefinition;
+export type Statement = VagueStatement | MissionDefinition | SourceDefinition | StoreDefinition | ActionDefinition;
 
 export interface ReqonProgram {
   type: 'ReqonProgram';
@@ -102,7 +102,32 @@ export interface ActionDefinition {
   steps: ActionStep[];
 }
 
-export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep;
+export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep | MatchStep;
+
+// Flow control directives for match arms
+export type FlowDirective =
+  | { type: 'continue' }                          // proceed to next pipeline stage
+  | { type: 'skip' }                              // skip remaining steps, move to next stage
+  | { type: 'abort'; message?: string }           // halt mission with error
+  | { type: 'retry'; backoff?: RetryConfig }      // retry current action
+  | { type: 'queue'; target?: string }            // queue for later processing
+  | { type: 'jump'; action: string; then?: 'retry' | 'continue' };  // jump to action
+
+// match response { Schema1 -> steps..., Schema2 -> flow directive }
+export interface MatchStep {
+  type: 'MatchStep';
+  target: Expression;  // what to match (usually 'response')
+  arms: MatchArm[];
+}
+
+export interface MatchArm {
+  /** Schema name to match against, or '_' for wildcard */
+  schema: string;
+  /** Steps to execute if matched */
+  steps?: ActionStep[];
+  /** Flow control directive (if no steps) */
+  flow?: FlowDirective;
+}
 
 // fetch GET "/Invoices" { paginate: ..., until: ... }
 // fetch Xero.getInvoices { paginate: ... }  -- OAS operationId reference

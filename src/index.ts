@@ -73,12 +73,20 @@ export {
   type SourceLocation,
   type ErrorContext,
 } from './errors/index.js';
+export {
+  loadMission,
+  isMissionFolder,
+  getMissionName,
+  type LoadResult,
+  type LoadOptions,
+} from './loader/index.js';
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { ReqonLexer } from './lexer/index.js';
 import { ReqonParser } from './parser/index.js';
 import { MissionExecutor, type ExecutorConfig } from './interpreter/index.js';
+import { loadMission } from './loader/index.js';
 import type { ReqonProgram } from './ast/index.js';
 
 export function parse(source: string, filePath?: string): ReqonProgram {
@@ -104,6 +112,22 @@ export async function fromFile(
   const absolutePath = resolve(filePath);
   const source = await readFile(absolutePath, 'utf-8');
   const program = parse(source, absolutePath);
+  const executor = new MissionExecutor(config);
+  return executor.execute(program);
+}
+
+/**
+ * Load and execute a mission from a file or folder.
+ *
+ * Supports both:
+ * - Single file: ./sync-invoices.reqon
+ * - Folder: ./sync-invoices/ (with mission.reqon + action files)
+ */
+export async function fromPath(
+  path: string,
+  config: ExecutorConfig = {}
+): Promise<import('./interpreter/index.js').ExecutionResult> {
+  const { program } = await loadMission(path);
   const executor = new MissionExecutor(config);
   return executor.execute(program);
 }

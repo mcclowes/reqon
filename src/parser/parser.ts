@@ -17,6 +17,9 @@ import type {
   MapStep,
   ValidateStep,
   StoreStep,
+  MatchStep,
+  MatchArm,
+  FlowDirective,
   PaginationConfig,
   RetryConfig,
   FieldMapping,
@@ -52,6 +55,7 @@ export class ReqonParser extends ReqonExpressionParser {
     if (this.check(ReqonTokenType.MISSION)) return this.parseMission();
     if (this.check(ReqonTokenType.SOURCE)) return this.parseSource();
     if (this.check(ReqonTokenType.STORE)) return this.parseStoreDefinition();
+    if (this.check(ReqonTokenType.ACTION)) return this.parseAction();
 
     // Vague statements (schema, import, let, etc.)
     if (this.check(TokenType.SCHEMA)) return this.parseSchema();
@@ -414,6 +418,7 @@ export class ReqonParser extends ReqonExpressionParser {
     if (this.check(ReqonTokenType.MAP)) return this.parseMapStep();
     if (this.check(TokenType.VALIDATE)) return this.parseValidateStep();
     if (this.check(ReqonTokenType.STORE)) return this.parseStoreStep();
+    if (this.check(TokenType.MATCH)) return this.parseMatchStep();
 
     throw this.error(`Expected action step, got: ${this.peek().value}`);
   }
@@ -827,6 +832,113 @@ export class ReqonParser extends ReqonExpressionParser {
     }
 
     return { type: 'StoreStep', source, target, options };
+  }
+
+  // ============================================
+  // Match step (schema overloading)
+  // ============================================
+
+  private parseMatchStep(): MatchStep {
+    this.consume(TokenType.MATCH, "Expected 'match'");
+    const target = this.parseExpression();
+
+    this.consume(TokenType.LBRACE, "Expected '{'");
+    const arms: MatchArm[] = [];
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      arms.push(this.parseMatchArm());
+      this.match(TokenType.COMMA);
+    }
+
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    return { type: 'MatchStep', target, arms };
+  }
+
+  private parseMatchArm(): MatchArm {
+    // Schema name or '_' for wildcard
+    const schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name or _').value;
+    this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
+
+    // After -> we have either:
+    // 1. A flow directive (continue, skip, abort, retry, queue, jump)
+    // 2. Steps in braces { ... }
+    // 3. A single step (store, fetch, etc.)
+
+    // Check for flow directives
+    const flow = this.tryParseFlowDirective();
+    if (flow) {
+      return { schema, flow };
+    }
+
+    // Check for step block
+    if (this.check(TokenType.LBRACE)) {
+      this.advance();
+      const steps: ActionStep[] = [];
+
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        steps.push(this.parseActionStep());
+        this.match(TokenType.COMMA);
+      }
+
+      this.consume(TokenType.RBRACE, "Expected '}'");
+      return { schema, steps };
+    }
+
+    // Single step
+    const step = this.parseActionStep();
+    return { schema, steps: [step] };
+  }
+
+  private tryParseFlowDirective(): FlowDirective | undefined {
+    if (this.match(ReqonTokenType.CONTINUE)) {
+      return { type: 'continue' };
+    }
+
+    if (this.match(ReqonTokenType.SKIP)) {
+      return { type: 'skip' };
+    }
+
+    if (this.match(ReqonTokenType.ABORT)) {
+      let message: string | undefined;
+      if (this.check(TokenType.STRING)) {
+        message = this.advance().value;
+      }
+      return { type: 'abort', message };
+    }
+
+    if (this.match(ReqonTokenType.RETRY)) {
+      let backoff: RetryConfig | undefined;
+      if (this.check(TokenType.LBRACE)) {
+        backoff = this.parseRetryConfig();
+      }
+      return { type: 'retry', backoff };
+    }
+
+    if (this.match(ReqonTokenType.QUEUE)) {
+      let target: string | undefined;
+      if (this.check(TokenType.IDENTIFIER)) {
+        target = this.advance().value;
+      }
+      return { type: 'queue', target };
+    }
+
+    if (this.match(ReqonTokenType.JUMP)) {
+      const action = this.consume(TokenType.IDENTIFIER, 'Expected action name').value;
+      let then: 'retry' | 'continue' | undefined;
+      if (this.match(TokenType.THEN)) {
+        if (this.match(ReqonTokenType.RETRY)) {
+          then = 'retry';
+        } else if (this.match(ReqonTokenType.CONTINUE)) {
+          then = 'continue';
+        } else {
+          throw this.error("Expected 'retry' or 'continue' after 'then'");
+        }
+      }
+      return { type: 'jump', action, then };
+    }
+
+    return undefined;
   }
 
   // ============================================

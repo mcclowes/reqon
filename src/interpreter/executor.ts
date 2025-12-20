@@ -1,4 +1,4 @@
-import type { Expression } from 'vague-lang';
+import type { Expression, SchemaDefinition } from 'vague-lang';
 import type {
   ReqonProgram,
   MissionDefinition,
@@ -9,6 +9,7 @@ import type {
   MapStep,
   ValidateStep,
   StoreStep,
+  MatchStep,
   PipelineDefinition,
   PipelineStage,
   SourceDefinition,
@@ -41,7 +42,18 @@ import {
   FileSyncStore,
 } from '../sync/index.js';
 import { FetchHandler } from './fetch-handler.js';
-import { ForHandler, MapHandler, ValidateHandler, StoreHandler } from './step-handlers/index.js';
+import {
+  ForHandler,
+  MapHandler,
+  ValidateHandler,
+  StoreHandler,
+  MatchHandler,
+  SkipSignal,
+  AbortError,
+  RetrySignal,
+  JumpSignal,
+  QueueSignal,
+} from './step-handlers/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -377,6 +389,12 @@ export class MissionExecutor {
     // Initialize stores
     for (const store of mission.stores) {
       await this.initializeStore(store);
+    }
+
+    // Initialize schemas (for match step schema matching)
+    for (const schema of mission.schemas) {
+      this.ctx.schemas.set(schema.name, schema);
+      this.log(`Registered schema: ${schema.name}`);
     }
 
     // Build action lookup
@@ -716,10 +734,24 @@ export class MissionExecutor {
         case 'StoreStep':
           await this.executeStore(step);
           break;
+        case 'MatchStep':
+          await this.executeMatch(step, actionName);
+          break;
         default:
           throw new Error(`Unknown step type: ${(step as ActionStep).type}`);
       }
     } catch (error) {
+      // Re-throw flow control signals without recording as errors
+      if (
+        error instanceof SkipSignal ||
+        error instanceof RetrySignal ||
+        error instanceof JumpSignal ||
+        error instanceof QueueSignal
+      ) {
+        throw error;
+      }
+
+      // AbortError is a controlled abort, still record it
       this.errors.push({
         action: actionName,
         step: step.type,
@@ -788,6 +820,17 @@ export class MissionExecutor {
       log: (msg) => this.log(msg),
     });
     await handler.execute(step);
+  }
+
+  private async executeMatch(step: MatchStep, actionName: string): Promise<void> {
+    const handler = new MatchHandler({
+      ctx: this.ctx,
+      log: (msg) => this.log(msg),
+      executeStep: (s, a, c) => this.executeStep(s, a, c),
+      actionName,
+    });
+    await handler.execute(step);
+    // Flow control signals (SkipSignal, RetrySignal, etc.) will propagate up
   }
 
   private log(message: string): void {

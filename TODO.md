@@ -5,7 +5,10 @@
 - [x] **State persistence** - Durable execution state for resumable missions with checkpointing
 - [x] **Incremental sync** - `since: lastSync` parameter for "only fetch changed since last run"
 - [ ] **Idempotency** - Upsert semantics and conflict resolution strategies
-- [ ] **Error handling modes** - Stop, skip, retry, or queue failed records
+- [x] **Schema overloading** - `match response { Schema1 -> ..., Schema2 -> ... }` - auto-fork based on response shape matching
+- [x] **Error handling via match** - Flow control directives (continue, skip, abort, retry, queue, jump) in match arms
+- [x] **Multi-file missions** - Split actions into separate files within a folder (mission.reqon + action files)
+- [ ] Consider what of reqon actually belongs in Vague - let's extend vague? And make reqon files .vague files.
 
 ## Store Adapters
 
@@ -24,9 +27,9 @@
 
 - [ ] **`is` type checking** - `assume .items is array` syntax
 - [x] **Parallel execution** - `run [Step1, Step2] then Step3` (bracket syntax for parallel stages)
-- [ ] **Conditional actions** - `run Step1 then Step2 if condition`
+- [x] **Conditional actions** - `run Step1 then Step2 if condition` (already implemented in parser)
 - [ ] **Variables/let bindings** - Reusable values within missions
-- [ ] **Schema definitions** - Full Vague schema support with validation
+- [x] **Schema definitions** - Full Vague schema support with validation and matching
 
 ## Developer Experience
 

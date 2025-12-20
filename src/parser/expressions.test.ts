@@ -14,9 +14,7 @@ describe('ReqonExpressionParser', () => {
   // Create a testable subclass that exposes parseExpression
   class TestableExpressionParser extends ReqonExpressionParser {
     constructor(tokens: ReqonToken[]) {
-      super();
-      (this as unknown as { tokens: ReqonToken[] }).tokens = tokens;
-      (this as unknown as { current: number }).current = 0;
+      super(tokens);
     }
   }
 

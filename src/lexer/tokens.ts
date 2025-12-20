@@ -61,6 +61,13 @@ export enum ReqonTokenType {
   SECONDS = 'SECONDS',
   DAYS = 'DAYS',
   WEEKS = 'WEEKS',
+
+  // Flow control directives
+  CONTINUE = 'CONTINUE',
+  SKIP = 'SKIP',
+  ABORT = 'ABORT',
+  QUEUE = 'QUEUE',
+  JUMP = 'JUMP',
 }
 
 // Combined token type
@@ -126,6 +133,13 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   seconds: ReqonTokenType.SECONDS,
   days: ReqonTokenType.DAYS,
   weeks: ReqonTokenType.WEEKS,
+
+  // Flow control directives
+  continue: ReqonTokenType.CONTINUE,
+  skip: ReqonTokenType.SKIP,
+  abort: ReqonTokenType.ABORT,
+  queue: ReqonTokenType.QUEUE,
+  jump: ReqonTokenType.JUMP,
 };
 
 export interface ReqonToken {
