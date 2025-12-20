@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { resolve, dirname } from 'node:path';
 import { fromFile } from './index.js';
 
 async function main() {
@@ -15,14 +15,16 @@ Usage:
   reqon <file.reqon> [options]
 
 Options:
-  --dry-run     Run without making actual HTTP requests
-  --verbose     Enable verbose logging
-  --auth <file> JSON file with auth credentials
-  --help, -h    Show this help message
+  --dry-run        Run without making actual HTTP requests
+  --verbose        Enable verbose logging
+  --auth <file>    JSON file with auth credentials
+  --output <path>  Export stores to JSON (file or directory)
+  --help, -h       Show this help message
 
 Example:
   reqon sync-invoices.reqon --verbose
   reqon sync-invoices.reqon --auth ./credentials.json
+  reqon sync-invoices.reqon --output ./output.json
 `);
     process.exit(0);
   }
@@ -39,6 +41,12 @@ Example:
     auth = JSON.parse(authContent);
   }
 
+  let outputPath: string | undefined;
+  const outputIndex = args.indexOf('--output');
+  if (outputIndex !== -1 && args[outputIndex + 1]) {
+    outputPath = resolve(args[outputIndex + 1]);
+  }
+
   console.log(`Running: ${filePath}`);
 
   try {
@@ -53,10 +61,19 @@ Example:
       console.log(`  Duration: ${result.duration}ms`);
       console.log(`  Actions run: ${result.actionsRun.join(' → ')}`);
 
-      // Print store stats
+      // Print store stats and optionally export
+      const storeData: Record<string, unknown[]> = {};
       for (const [name, store] of result.stores) {
         const items = await store.list();
         console.log(`  Store "${name}": ${items.length} items`);
+        storeData[name] = items;
+      }
+
+      // Export to JSON if requested
+      if (outputPath) {
+        await mkdir(dirname(outputPath), { recursive: true });
+        await writeFile(outputPath, JSON.stringify(storeData, null, 2));
+        console.log(`  Output written to: ${outputPath}`);
       }
     } else {
       console.log(`\n✗ Mission failed`);

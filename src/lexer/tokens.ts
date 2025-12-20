@@ -36,6 +36,7 @@ export enum ReqonTokenType {
   BEARER = 'BEARER',
   BASIC = 'BASIC',
   API_KEY = 'API_KEY',
+  NONE = 'NONE',
 
   // Pagination types
   OFFSET = 'OFFSET',
@@ -90,6 +91,7 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   bearer: ReqonTokenType.BEARER,
   basic: ReqonTokenType.BASIC,
   api_key: ReqonTokenType.API_KEY,
+  none: ReqonTokenType.NONE,
 
   // Pagination types
   offset: ReqonTokenType.OFFSET,

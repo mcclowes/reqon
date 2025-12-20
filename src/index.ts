@@ -13,7 +13,26 @@ export {
   type ExecutorConfig,
   type ExecutionContext,
 } from './interpreter/index.js';
-export { MemoryStore, type StoreAdapter, type StoreFilter, type StoreConfig } from './stores/index.js';
+export {
+  MemoryStore,
+  FileStore,
+  createStore,
+  type StoreAdapter,
+  type StoreFilter,
+  type StoreConfig,
+} from './stores/index.js';
+export {
+  createExecutionState,
+  findResumePoint,
+  canResume,
+  getProgress,
+  getExecutionSummary,
+  FileExecutionStore,
+  MemoryExecutionStore,
+  type ExecutionState,
+  type ExecutionStore,
+  type StageState,
+} from './execution/index.js';
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';

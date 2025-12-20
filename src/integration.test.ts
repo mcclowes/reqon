@@ -88,7 +88,7 @@ describe('Reqon Integration', () => {
 
   it('parses the Xero example file', async () => {
     const fs = await import('node:fs/promises');
-    const source = await fs.readFile('./examples/xero-invoices.reqon', 'utf-8');
+    const source = await fs.readFile('./examples/xero/invoices.reqon', 'utf-8');
 
     const program = parse(source);
 

@@ -13,15 +13,25 @@ import type {
   SourceDefinition,
   StoreDefinition,
   FieldMapping,
+  RateLimitSourceConfig,
 } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
 import { createContext, childContext, setVariable, getVariable } from './context.js';
 import { evaluate, interpolatePath } from './evaluator.js';
 import { HttpClient, BearerAuthProvider, OAuth2AuthProvider } from './http.js';
-import { MemoryStore } from '../stores/memory.js';
+import { createStore, resolveStoreType } from '../stores/index.js';
 import type { StoreAdapter } from '../stores/types.js';
 import { loadOAS, resolveOperation, getResponseSchema, validateResponse } from '../oas/index.js';
 import type { OASSource } from '../oas/index.js';
+import { AdaptiveRateLimiter } from '../auth/rate-limiter.js';
+import type { RateLimiter, RateLimitCallbacks } from '../auth/types.js';
+import {
+  createExecutionState,
+  findResumePoint,
+  type ExecutionState,
+  type ExecutionStore,
+  FileExecutionStore,
+} from '../execution/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -29,6 +39,10 @@ export interface ExecutionResult {
   actionsRun: string[];
   errors: ExecutionError[];
   stores: Map<string, StoreAdapter>;
+  /** Execution ID for resuming */
+  executionId?: string;
+  /** Execution state (if persistence enabled) */
+  state?: ExecutionState;
 }
 
 export interface ExecutionError {
@@ -47,10 +61,24 @@ export interface ExecutorConfig {
   dryRun?: boolean;
   // Verbose logging
   verbose?: boolean;
+  // Rate limit callbacks (optional)
+  rateLimitCallbacks?: RateLimitCallbacks;
+  // Development mode - use file stores instead of sql/nosql (default: true)
+  developmentMode?: boolean;
+  // Base directory for file stores (default: '.reqon-data')
+  dataDir?: string;
+  // Enable state persistence for resumable executions
+  persistState?: boolean;
+  // Custom execution store (defaults to FileExecutionStore)
+  executionStore?: ExecutionStore;
+  // Resume from a previous execution ID
+  resumeFrom?: string;
+  // Metadata to attach to execution state
+  metadata?: Record<string, unknown>;
 }
 
 interface AuthConfig {
-  type: 'bearer' | 'oauth2';
+  type: 'bearer' | 'oauth2' | 'none';
   token?: string;
   accessToken?: string;
   refreshToken?: string;
@@ -66,10 +94,49 @@ export class MissionExecutor {
   private actionsRun: string[] = [];
   private oasSources: Map<string, OASSource> = new Map();
   private sourceConfigs: Map<string, SourceDefinition> = new Map();
+  private rateLimiter: RateLimiter;
+  private executionStore?: ExecutionStore;
+  private executionState?: ExecutionState;
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
     this.ctx = createContext();
+    this.rateLimiter = new AdaptiveRateLimiter();
+
+    // Set up rate limit callbacks with default logging if verbose
+    const callbacks: RateLimitCallbacks = config.rateLimitCallbacks ?? {};
+    if (config.verbose && !callbacks.onRateLimited) {
+      callbacks.onRateLimited = (event) => {
+        console.log(
+          `[Reqon] Rate limited on ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+            `waiting ${event.waitSeconds}s (strategy: ${event.strategy})`
+        );
+      };
+    }
+    if (config.verbose && !callbacks.onResumed) {
+      callbacks.onResumed = (event) => {
+        console.log(
+          `[Reqon] Rate limit cleared for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} ` +
+            `(waited ${event.waitedSeconds}s)`
+        );
+      };
+    }
+    if (config.verbose && !callbacks.onWaiting) {
+      callbacks.onWaiting = (event) => {
+        console.log(
+          `[Reqon] Still waiting for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+            `${event.waitSeconds}s remaining (elapsed: ${event.elapsedSeconds}s)`
+        );
+      };
+    }
+    this.rateLimiter.setCallbacks(callbacks);
+
+    // Initialize execution store if persistence enabled
+    if (config.persistState) {
+      this.executionStore = config.executionStore ?? new FileExecutionStore(
+        `${config.dataDir ?? '.reqon-data'}/executions`
+      );
+    }
   }
 
   async execute(program: ReqonProgram): Promise<ExecutionResult> {
@@ -90,8 +157,19 @@ export class MissionExecutor {
       };
     }
 
+    // Initialize or resume execution state
+    await this.initializeExecutionState(mission);
+
     try {
       await this.executeMission(mission);
+
+      // Mark execution as completed
+      if (this.executionState) {
+        this.executionState.status = 'completed';
+        this.executionState.completedAt = new Date();
+        this.executionState.duration = Date.now() - startTime;
+        await this.saveExecutionState();
+      }
     } catch (error) {
       this.errors.push({
         action: 'mission',
@@ -99,6 +177,14 @@ export class MissionExecutor {
         message: (error as Error).message,
         details: error,
       });
+
+      // Mark execution as failed
+      if (this.executionState) {
+        this.executionState.status = 'failed';
+        this.executionState.completedAt = new Date();
+        this.executionState.duration = Date.now() - startTime;
+        await this.saveExecutionState();
+      }
     }
 
     return {
@@ -107,7 +193,74 @@ export class MissionExecutor {
       actionsRun: this.actionsRun,
       errors: this.errors,
       stores: this.ctx.stores,
+      executionId: this.executionState?.id,
+      state: this.executionState,
     };
+  }
+
+  private async initializeExecutionState(mission: MissionDefinition): Promise<void> {
+    if (!this.executionStore) return;
+
+    // Resume from previous execution?
+    if (this.config.resumeFrom) {
+      const previous = await this.executionStore.load(this.config.resumeFrom);
+      if (previous) {
+        this.executionState = previous;
+        this.executionState.status = 'running';
+        this.log(`Resuming execution ${previous.id} from previous run`);
+        await this.saveExecutionState();
+        return;
+      }
+      this.log(`Warning: Could not find execution ${this.config.resumeFrom} to resume`);
+    }
+
+    // Create new execution state
+    const stages = mission.pipeline.stages.map((s) => s.action);
+    this.executionState = createExecutionState({
+      mission: mission.name,
+      stages,
+      metadata: this.config.metadata,
+    });
+    this.executionState.status = 'running';
+    await this.saveExecutionState();
+    this.log(`Started execution ${this.executionState.id}`);
+  }
+
+  private async saveExecutionState(): Promise<void> {
+    if (this.executionStore && this.executionState) {
+      await this.executionStore.save(this.executionState);
+    }
+  }
+
+  private updateStageState(
+    stageIndex: number,
+    updates: Partial<{ status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'; error?: string }>
+  ): void {
+    if (!this.executionState) return;
+
+    const stage = this.executionState.stages[stageIndex];
+    if (!stage) return;
+
+    if (updates.status === 'running' && !stage.startedAt) {
+      stage.startedAt = new Date();
+    }
+    if (updates.status === 'completed' || updates.status === 'failed') {
+      stage.completedAt = new Date();
+    }
+    if (updates.status) {
+      stage.status = updates.status;
+    }
+    if (updates.error) {
+      stage.error = updates.error;
+      this.executionState.errors.push({
+        stageIndex,
+        action: stage.action,
+        step: 'unknown',
+        message: updates.error,
+        timestamp: new Date(),
+        attempt: stage.attempt,
+      });
+    }
   }
 
   private async executeMission(mission: MissionDefinition): Promise<void> {
@@ -129,11 +282,25 @@ export class MissionExecutor {
       actions.set(action.name, action);
     }
 
+    // Determine resume point
+    const resumeIndex = this.executionState ? findResumePoint(this.executionState) : 0;
+    if (resumeIndex > 0) {
+      this.log(`Resuming from stage ${resumeIndex} (${mission.pipeline.stages[resumeIndex]?.action})`);
+    }
+
     // Execute pipeline
-    for (const stage of mission.pipeline.stages) {
+    for (let i = 0; i < mission.pipeline.stages.length; i++) {
+      const stage = mission.pipeline.stages[i];
       const action = actions.get(stage.action);
+
       if (!action) {
         throw new Error(`Action not found: ${stage.action}`);
+      }
+
+      // Skip already completed stages when resuming
+      if (i < resumeIndex) {
+        this.log(`Skipping ${stage.action} (already completed)`);
+        continue;
       }
 
       // Check condition if present
@@ -141,12 +308,32 @@ export class MissionExecutor {
         const shouldRun = evaluate(stage.condition, this.ctx);
         if (!shouldRun) {
           this.log(`Skipping action ${stage.action} (condition not met)`);
+          this.updateStageState(i, { status: 'skipped' });
+          await this.saveExecutionState();
           continue;
         }
       }
 
-      await this.executeAction(action);
-      this.actionsRun.push(action.name);
+      // Update stage state to running
+      this.updateStageState(i, { status: 'running' });
+      await this.saveExecutionState();
+
+      try {
+        await this.executeAction(action);
+        this.actionsRun.push(action.name);
+
+        // Mark stage as completed
+        this.updateStageState(i, { status: 'completed' });
+        await this.saveExecutionState();
+      } catch (error) {
+        // Mark stage as failed
+        this.updateStageState(i, {
+          status: 'failed',
+          error: (error as Error).message,
+        });
+        await this.saveExecutionState();
+        throw error; // Re-throw to stop execution
+      }
     }
   }
 
@@ -191,9 +378,24 @@ export class MissionExecutor {
       throw new Error(`Source ${source.name} has no base URL (provide 'base' or OAS spec with servers)`);
     }
 
+    // Configure rate limiter for this source
+    if (source.config.rateLimit) {
+      this.rateLimiter.configure(source.name, {
+        strategy: source.config.rateLimit.strategy,
+        maxWait: source.config.rateLimit.maxWait,
+        fallbackRpm: source.config.rateLimit.fallbackRpm,
+      });
+      this.log(
+        `Rate limit config for ${source.name}: strategy=${source.config.rateLimit.strategy ?? 'pause'}, ` +
+          `maxWait=${source.config.rateLimit.maxWait ?? 300}s`
+      );
+    }
+
     const client = new HttpClient({
       baseUrl,
       auth: authProvider,
+      rateLimiter: this.rateLimiter,
+      sourceName: source.name,
     });
 
     this.ctx.sources.set(source.name, client);
@@ -204,11 +406,22 @@ export class MissionExecutor {
     // Check for custom store adapter
     if (this.config.stores?.[store.name]) {
       this.ctx.stores.set(store.name, this.config.stores[store.name]);
-    } else {
-      // Default to memory store
-      this.ctx.stores.set(store.name, new MemoryStore(store.target));
+      this.log(`Initialized store: ${store.name} (custom adapter)`);
+      return;
     }
-    this.log(`Initialized store: ${store.name} (${store.storeType})`);
+
+    // Use store factory to create appropriate adapter
+    const developmentMode = this.config.developmentMode ?? true;
+    const storeType = resolveStoreType(store.storeType, developmentMode);
+
+    const adapter = createStore({
+      type: storeType,
+      name: store.target,
+      baseDir: this.config.dataDir,
+    });
+
+    this.ctx.stores.set(store.name, adapter);
+    this.log(`Initialized store: ${store.name} (${storeType}${storeType !== store.storeType ? ` <- ${store.storeType}` : ''})`);
   }
 
   private async executeAction(action: ActionDefinition): Promise<void> {

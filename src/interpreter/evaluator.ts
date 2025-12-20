@@ -137,7 +137,9 @@ export function evaluate(expr: Expression, ctx: ExecutionContext, current?: unkn
       // Built-in functions
       switch (expr.callee) {
         case 'length':
-          return Array.isArray(args[0]) ? args[0].length : 0;
+          if (Array.isArray(args[0])) return args[0].length;
+          if (typeof args[0] === 'string') return args[0].length;
+          return 0;
         case 'sum':
           return (args[0] as number[]).reduce((a, b) => a + b, 0);
         case 'count':

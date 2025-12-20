@@ -10,7 +10,7 @@ describe('OAS Loader', () => {
   });
 
   it('loads and parses an OpenAPI spec', async () => {
-    const source = await loadOAS('./examples/petstore.yaml');
+    const source = await loadOAS('./examples/petstore/openapi.yaml');
 
     expect(source.baseUrl).toBe('https://api.petstore.example.com/v1');
     expect(source.operations.size).toBe(3);
@@ -18,7 +18,7 @@ describe('OAS Loader', () => {
   });
 
   it('resolves operations by operationId', async () => {
-    const source = await loadOAS('./examples/petstore.yaml');
+    const source = await loadOAS('./examples/petstore/openapi.yaml');
 
     const listPets = resolveOperation(source, 'listPets');
     expect(listPets.method).toBe('GET');
@@ -34,13 +34,13 @@ describe('OAS Loader', () => {
   });
 
   it('throws for unknown operationId', async () => {
-    const source = await loadOAS('./examples/petstore.yaml');
+    const source = await loadOAS('./examples/petstore/openapi.yaml');
 
     expect(() => resolveOperation(source, 'unknownOp')).toThrow(/not found/);
   });
 
   it('extracts response schemas', async () => {
-    const source = await loadOAS('./examples/petstore.yaml');
+    const source = await loadOAS('./examples/petstore/openapi.yaml');
 
     const schema = getResponseSchema(source, 'getPet');
     expect(schema).toBeDefined();

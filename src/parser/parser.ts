@@ -190,6 +190,9 @@ export class ReqonParser extends ReqonExpressionParser {
       case ReqonTokenType.API_KEY:
         type = 'api_key';
         break;
+      case ReqonTokenType.NONE:
+        type = 'none';
+        break;
       default:
         throw this.error(`Unknown auth type: ${typeToken.value}`);
     }

@@ -1,0 +1,52 @@
+// Petstore Sync Mission - demonstrating OAS integration
+// The API spec is loaded from petstore.yaml, so we don't need to specify paths or methods
+
+mission SyncPets {
+  // Load source from OpenAPI spec - base URL comes from spec's servers field
+  source Petstore from "./examples/petstore.yaml" {
+    auth: bearer,
+    validateResponses: true
+  }
+
+  store pets_raw: sql("pets_raw")
+  store pets_normalized: sql("pets_normalized")
+
+  // Fetch all pets using operationId from OAS
+  action FetchPets {
+    fetch Petstore.listPets {
+      paginate: cursor(cursor, 20, "nextCursor"),
+      until: response.pets.length == 0
+    }
+
+    store response.pets -> pets_raw {
+      key: .id
+    }
+  }
+
+  // Normalize to our internal schema
+  action NormalizePets {
+    for pet in pets_raw {
+      map pet -> InternalPet {
+        id: .id,
+        display_name: .name,
+        animal_type: match .species {
+          "dog" => "canine",
+          "cat" => "feline",
+          "bird" => "avian",
+          _ => "other"
+        },
+        age_years: .age
+      }
+
+      validate response {
+        assume .display_name != ""
+      }
+
+      store response -> pets_normalized {
+        key: .id
+      }
+    }
+  }
+
+  run FetchPets then NormalizePets
+}

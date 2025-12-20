@@ -1,0 +1,48 @@
+// JSONPlaceholder Posts Sync - Demo with public API
+// Fetches posts and their comments, normalizes to a standard schema
+
+mission SyncPosts {
+  source JSONPlaceholder {
+    auth: none,
+    base: "https://jsonplaceholder.typicode.com"
+  }
+
+  store posts_raw: sql("posts_raw")
+  store posts_normalized: sql("posts_normalized")
+
+  action FetchPosts {
+    fetch GET "/posts"
+
+    validate response {
+      assume length(response) > 0
+    }
+
+    store response -> posts_raw {
+      key: .id
+    }
+  }
+
+  action NormalizePosts {
+    for post in posts_raw {
+      map post -> StandardPost {
+        id: .id,
+        title: .title,
+        body: .body,
+        author_id: .userId,
+        origin: "jsonplaceholder"
+      }
+
+      validate response {
+        assume length(.title) > 0
+        assume .author_id > 0
+      }
+
+      store response -> posts_normalized {
+        key: .id
+      }
+    }
+  }
+
+  run FetchPosts
+    then NormalizePosts
+}

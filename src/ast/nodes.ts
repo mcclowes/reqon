@@ -27,10 +27,17 @@ export interface SourceConfig {
   base?: string; // Optional if using OAS (derived from spec)
   headers?: Record<string, Expression>;
   validateResponses?: boolean; // Validate responses against OAS schema
+  rateLimit?: RateLimitSourceConfig; // Rate limiting configuration
+}
+
+export interface RateLimitSourceConfig {
+  strategy?: 'pause' | 'throttle' | 'fail'; // Default: 'pause'
+  maxWait?: number; // Max seconds to wait (default: 300)
+  fallbackRpm?: number; // Fallback requests per minute if no headers
 }
 
 export interface AuthConfig {
-  type: 'oauth2' | 'bearer' | 'basic' | 'api_key';
+  type: 'oauth2' | 'bearer' | 'basic' | 'api_key' | 'none';
   // Details resolved at runtime from environment/config
 }
 

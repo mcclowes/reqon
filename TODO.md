@@ -2,22 +2,23 @@
 
 ## Core Features
 
-- [ ] **State persistence** - Durable execution state for resumable missions (like Temporal)
+- [x] **State persistence** - Durable execution state for resumable missions with checkpointing
 - [ ] **Incremental sync** - `since` parameter handling for "only fetch changed since last run"
 - [ ] **Idempotency** - Upsert semantics and conflict resolution strategies
 - [ ] **Error handling modes** - Stop, skip, retry, or queue failed records
 
 ## Store Adapters
 
+- [x] **File adapter** - JSON file-based storage in `.reqon-data/` for local development
 - [ ] **SQL adapter** - PostgreSQL/MySQL store implementation
 - [ ] **NoSQL adapter** - MongoDB/DynamoDB store implementation
-- [ ] **File adapter** - JSON/CSV file-based storage
 
 ## API Integration
 
 - [x] **OpenAPI integration** - Load sources from OAS, resolve operationIds, validate responses
-- [ ] **Rate limiting** - Respect API rate limits from response headers
-- [ ] **OAuth2 flow** - Full token refresh flow with automatic retry
+- [x] **Rate limiting** - Adaptive rate limiter, parses X-RateLimit-* headers, respects Retry-After, supports pause/throttle/fail strategies with callbacks
+- [x] **OAuth2 flow** - Token store interface, auto-refresh before expiry, 401 retry with refresh
+- [ ] **Connection registry** - Multi-tenant token management with proactive refresh
 
 ## DSL Enhancements
 

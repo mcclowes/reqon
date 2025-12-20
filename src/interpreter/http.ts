@@ -1,9 +1,14 @@
 import type { RetryConfig } from '../ast/nodes.js';
+import type { RateLimiter, RateLimitInfo } from '../auth/types.js';
+import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
 
 export interface HttpClientConfig {
   baseUrl: string;
   headers?: Record<string, string>;
   auth?: AuthProvider;
+  rateLimiter?: RateLimiter;
+  /** Source name for rate limit tracking */
+  sourceName?: string;
 }
 
 export interface AuthProvider {
@@ -54,7 +59,36 @@ export class HttpClient {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        // Wait for rate limit capacity if we have a rate limiter
+        if (this.config.rateLimiter && this.config.sourceName) {
+          await this.config.rateLimiter.waitForCapacity(this.config.sourceName, req.path);
+        }
+
         const response = await fetch(url, fetchOptions);
+
+        // Extract and record rate limit info from response headers
+        const responseHeaders: Record<string, string> = {};
+        response.headers.forEach((value, key) => {
+          responseHeaders[key] = value;
+        });
+
+        if (this.config.rateLimiter && this.config.sourceName) {
+          const rateLimitInfo = parseRateLimitHeaders(responseHeaders);
+
+          // Add retry-after from 429 responses
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('Retry-After');
+            if (retryAfter) {
+              rateLimitInfo.retryAfter = parseInt(retryAfter, 10);
+            }
+          }
+
+          this.config.rateLimiter.recordResponse(
+            this.config.sourceName,
+            rateLimitInfo,
+            req.path
+          );
+        }
 
         // Handle rate limiting
         if (response.status === 429) {
@@ -73,11 +107,17 @@ export class HttpClient {
           continue;
         }
 
+        // Handle 401 - try token refresh
+        if (response.status === 401 && this.config.auth?.refreshToken && attempt < maxAttempts) {
+          console.log('Token expired, refreshing...');
+          await this.config.auth.refreshToken();
+          // Rebuild headers with new token
+          const newHeaders = await this.buildHeaders(req.headers);
+          fetchOptions.headers = newHeaders;
+          continue;
+        }
+
         const data = await response.json() as T;
-        const responseHeaders: Record<string, string> = {};
-        response.headers.forEach((value, key) => {
-          responseHeaders[key] = value;
-        });
 
         return {
           status: response.status,
