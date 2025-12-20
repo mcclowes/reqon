@@ -59,6 +59,41 @@ export class ReqonParserBase {
     throw this.error(message);
   }
 
+  /**
+   * Consume an identifier, allowing HTTP method tokens to be used as identifiers.
+   * This is needed because 'get', 'post', etc. are valid variable/store names.
+   */
+  protected consumeIdentifier(message: string): ReqonToken {
+    const token = this.peek();
+    // Accept both regular identifiers and HTTP method tokens as identifiers
+    if (
+      token.type === TokenType.IDENTIFIER ||
+      token.type === ReqonTokenType.GET ||
+      token.type === ReqonTokenType.POST ||
+      token.type === ReqonTokenType.PUT ||
+      token.type === ReqonTokenType.PATCH ||
+      token.type === ReqonTokenType.DELETE
+    ) {
+      return this.advance();
+    }
+    throw this.error(message);
+  }
+
+  /**
+   * Check if current token is an identifier (including HTTP methods as identifiers)
+   */
+  protected checkIdentifier(): boolean {
+    const type = this.peek().type;
+    return (
+      type === TokenType.IDENTIFIER ||
+      type === ReqonTokenType.GET ||
+      type === ReqonTokenType.POST ||
+      type === ReqonTokenType.PUT ||
+      type === ReqonTokenType.PATCH ||
+      type === ReqonTokenType.DELETE
+    );
+  }
+
   protected isAtEnd(): boolean {
     return this.peek().type === TokenType.EOF;
   }

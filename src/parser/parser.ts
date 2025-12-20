@@ -364,7 +364,7 @@ export class ReqonParser extends ReqonExpressionParser {
 
   private parseStoreDefinition(): StoreDefinition {
     this.consume(ReqonTokenType.STORE, "Expected 'store'");
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected store name').value;
+    const name = this.consumeIdentifier('Expected store name').value;
     this.consume(TokenType.COLON, "Expected ':'");
 
     let storeType: StoreDefinition['storeType'];
@@ -774,7 +774,7 @@ export class ReqonParser extends ReqonExpressionParser {
 
   private parseForStep(): ForStep {
     this.consume(ReqonTokenType.FOR, "Expected 'for'");
-    const variable = this.consume(TokenType.IDENTIFIER, 'Expected variable name').value;
+    const variable = this.consumeIdentifier('Expected variable name').value;
     this.consume(TokenType.IN, "Expected 'in'");
     const collection = this.parseExpression();
 
@@ -810,7 +810,7 @@ export class ReqonParser extends ReqonExpressionParser {
     const mappings: FieldMapping[] = [];
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
-      const field = this.consume(TokenType.IDENTIFIER, 'Expected field name').value;
+      const field = this.consumeIdentifier('Expected field name').value;
       this.consume(TokenType.COLON, "Expected ':'");
       const expression = this.parseExpression();
       mappings.push({ field, expression });
@@ -866,7 +866,7 @@ export class ReqonParser extends ReqonExpressionParser {
 
     const source = this.parseExpression();
     this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
-    const target = this.consume(TokenType.IDENTIFIER, 'Expected store name').value;
+    const target = this.consumeIdentifier('Expected store name').value;
 
     const options: StoreOptions = {};
 
@@ -1103,11 +1103,15 @@ export class ReqonParser extends ReqonExpressionParser {
   }
 
   private parseFieldDefinition(): FieldDefinition {
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected field name').value;
+    const name = this.consumeIdentifier('Expected field name').value;
     this.consume(TokenType.COLON, "Expected ':'");
 
     // Simplified field type parsing - just grab the type name for now
+    // Type names are standard types (string, int, etc.) not HTTP methods
     const typeName = this.consume(TokenType.IDENTIFIER, 'Expected type').value;
+
+    // Handle optional/nullable type marker (?)
+    this.match(TokenType.QUESTION);
 
     return {
       type: 'FieldDefinition',
@@ -1127,7 +1131,7 @@ export class ReqonParser extends ReqonExpressionParser {
 
   private parseLet(): Statement {
     this.consume(TokenType.LET, "Expected 'let'");
-    const name = this.consume(TokenType.IDENTIFIER, 'Expected variable name').value;
+    const name = this.consumeIdentifier('Expected variable name').value;
     this.consume(TokenType.EQUALS, "Expected '='");
     const value = this.parseExpression();
 

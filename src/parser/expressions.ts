@@ -99,8 +99,10 @@ export class ReqonExpressionParser extends ReqonParserBase {
   parseComparison(): Expression {
     let left = this.parseRange();
 
-    while (this.checkAny(TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE, TokenType.DOUBLE_EQUALS)) {
-      const operator = this.advance().value;
+    while (this.checkAny(TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE, TokenType.DOUBLE_EQUALS, ReqonTokenType.NOT_EQUALS)) {
+      const token = this.advance();
+      // Normalize the operator value for NOT_EQUALS
+      const operator = token.type === ReqonTokenType.NOT_EQUALS ? '!=' : token.value;
       const right = this.parseRange();
       left = { type: 'BinaryExpression', operator, left, right };
     }
@@ -252,15 +254,15 @@ export class ReqonExpressionParser extends ReqonParserBase {
       return { type: 'Literal', value: false, dataType: 'boolean' };
     }
 
-    // Identifier
-    if (this.check(TokenType.IDENTIFIER)) {
+    // Identifier (including HTTP method tokens that can be used as identifiers)
+    if (this.checkIdentifier()) {
       const name = this.advance().value;
       return { type: 'Identifier', name };
     }
 
     // .field shorthand
     if (this.match(TokenType.DOT)) {
-      const name = this.consume(TokenType.IDENTIFIER, "Expected field name after '.'").value;
+      const name = this.consumeIdentifier("Expected field name after '.'").value;
       return { type: 'Identifier', name };
     }
 
