@@ -1,0 +1,153 @@
+import type {
+  Expression,
+  FieldDefinition,
+  SchemaDefinition,
+  Statement as VagueStatement,
+} from 'vague-lang';
+
+// Reqon extends Vague's statements
+export type Statement = VagueStatement | MissionDefinition | SourceDefinition | StoreDefinition;
+
+export interface ReqonProgram {
+  type: 'ReqonProgram';
+  statements: Statement[];
+}
+
+// source Xero { auth: oauth2, base: "https://api.xero.com/..." }
+export interface SourceDefinition {
+  type: 'SourceDefinition';
+  name: string;
+  config: SourceConfig;
+}
+
+export interface SourceConfig {
+  auth: AuthConfig;
+  base: string;
+  headers?: Record<string, Expression>;
+}
+
+export interface AuthConfig {
+  type: 'oauth2' | 'bearer' | 'basic' | 'api_key';
+  // Details resolved at runtime from environment/config
+}
+
+// store invoices_cache: nosql("invoices")
+// store invoices_sql: sql("accounting.invoices")
+export interface StoreDefinition {
+  type: 'StoreDefinition';
+  name: string;
+  storeType: 'nosql' | 'sql' | 'memory';
+  target: string; // collection/table name
+}
+
+// mission SyncXeroInvoices { ... }
+export interface MissionDefinition {
+  type: 'MissionDefinition';
+  name: string;
+  sources: SourceDefinition[];
+  stores: StoreDefinition[];
+  schemas: SchemaDefinition[];
+  actions: ActionDefinition[];
+  pipeline: PipelineDefinition;
+}
+
+// action FetchInvoiceList { ... }
+export interface ActionDefinition {
+  type: 'ActionDefinition';
+  name: string;
+  steps: ActionStep[];
+}
+
+export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep;
+
+// fetch GET "/Invoices" { paginate: ..., until: ... }
+export interface FetchStep {
+  type: 'FetchStep';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  path: Expression; // Can contain interpolations like "/Invoices/{id}"
+  source?: string; // Which source to use (defaults to first defined)
+  body?: Expression;
+  headers?: Record<string, Expression>;
+  paginate?: PaginationConfig;
+  until?: Expression; // Condition to stop pagination
+  retry?: RetryConfig;
+}
+
+export interface PaginationConfig {
+  type: 'offset' | 'cursor' | 'page';
+  param: string; // Query param name: "page", "offset", "cursor"
+  pageSize: number;
+  cursorPath?: string; // For cursor pagination: where to find next cursor in response
+}
+
+export interface RetryConfig {
+  maxAttempts: number;
+  backoff: 'exponential' | 'linear' | 'constant';
+  initialDelay: number; // ms
+  maxDelay?: number; // ms
+}
+
+// for invoice in invoices_cache where .partial == true { ... }
+export interface ForStep {
+  type: 'ForStep';
+  variable: string;
+  collection: Expression;
+  condition?: Expression; // where clause
+  steps: ActionStep[];
+}
+
+// map invoice -> StandardInvoice { id: .InvoiceID, ... }
+export interface MapStep {
+  type: 'MapStep';
+  source: Expression;
+  targetSchema: string;
+  mappings: FieldMapping[];
+}
+
+export interface FieldMapping {
+  field: string;
+  expression: Expression;
+}
+
+// validate response { assume .Total is decimal, ... }
+export interface ValidateStep {
+  type: 'ValidateStep';
+  target: Expression;
+  constraints: ValidationConstraint[];
+}
+
+export interface ValidationConstraint {
+  type: 'ValidationConstraint';
+  condition: Expression;
+  message?: string;
+  severity: 'error' | 'warning';
+}
+
+// store response -> invoices_cache { key: .InvoiceID, partial: false }
+export interface StoreStep {
+  type: 'StoreStep';
+  source: Expression;
+  target: string; // store name
+  options: StoreOptions;
+}
+
+export interface StoreOptions {
+  key?: Expression; // Primary key field
+  partial?: boolean; // Mark as partial entity
+  upsert?: boolean; // Update if exists
+}
+
+// run FetchInvoiceList then HydrateInvoices then NormalizeInvoices
+export interface PipelineDefinition {
+  type: 'PipelineDefinition';
+  stages: PipelineStage[];
+}
+
+export interface PipelineStage {
+  action: string;
+  condition?: Expression; // Optional: only run if condition true
+  parallel?: boolean; // Run in parallel with previous stage
+}
+
+// Re-export Vague types for convenience
+export type { Expression, FieldDefinition, SchemaDefinition } from 'vague-lang';

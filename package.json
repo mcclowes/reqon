@@ -1,0 +1,30 @@
+{
+  "name": "reqon",
+  "version": "0.1.0",
+  "description": "A DSL framework for fetch, map, validate pipelines - built on Vague",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "reqon": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Max Clayton Clowes <max@mcclowes.com>",
+  "license": "ISC",
+  "dependencies": {
+    "vague-lang": "file:../vague"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}
