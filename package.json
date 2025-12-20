@@ -13,7 +13,14 @@
     "dev": "tsc --watch",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "bench": "npx tsx src/benchmark/index.ts",
+    "bench:lexer": "npx tsx src/benchmark/index.ts --suite lexer",
+    "bench:parser": "npx tsx src/benchmark/index.ts --suite parser",
+    "bench:evaluator": "npx tsx src/benchmark/index.ts --suite evaluator",
+    "bench:store": "npx tsx src/benchmark/index.ts --suite store",
+    "bench:resilience": "npx tsx src/benchmark/index.ts --suite resilience",
+    "bench:e2e": "npx tsx src/benchmark/index.ts --suite e2e"
   },
   "engines": {
     "node": ">=18"
