@@ -1,0 +1,355 @@
+// E-Commerce Order Reconciliation Pipeline
+// Syncs and validates orders across Shopify, Stripe, and ShipStation
+// ~150 lines of declarative code vs ~1,500+ lines in Temporal
+
+mission OrderReconciliation {
+
+  // ============================================================
+  // SOURCES - API definitions with auth and rate limiting
+  // ============================================================
+
+  source Shopify {
+    auth: oauth2,
+    base: "https://mystore.myshopify.com/admin/api/2024-01",
+    headers: { "X-Shopify-Access-Token": "${SHOPIFY_TOKEN}" },
+    rateLimit: {
+      strategy: "pause",
+      maxWait: 120,
+      fallbackRpm: 40
+    }
+  }
+
+  source Stripe {
+    auth: bearer,
+    base: "https://api.stripe.com/v1",
+    rateLimit: {
+      strategy: "throttle",
+      maxWait: 60,
+      fallbackRpm: 100
+    }
+  }
+
+  source ShipStation {
+    auth: basic,
+    base: "https://ssapi.shipstation.com",
+    rateLimit: {
+      strategy: "pause",
+      maxWait: 30,
+      fallbackRpm: 40
+    }
+  }
+
+  // ============================================================
+  // STORES - Where we persist reconciled data
+  // ============================================================
+
+  store orders: sql("reconciled_orders")
+  store payments: sql("reconciled_payments")
+  store shipments: sql("reconciled_shipments")
+  store discrepancies: sql("audit_discrepancies")
+  store sync_state: sql("sync_checkpoints")
+
+  // ============================================================
+  // SCHEMAS - Unified data models
+  // ============================================================
+
+  schema UnifiedOrder {
+    order_id: string,
+    external_id: string,
+    source: string,
+    customer_email: string,
+    total_amount: decimal,
+    currency: string,
+    status: string,
+    created_at: date,
+    line_items_count: int,
+    payment_status: string,
+    fulfillment_status: string,
+    synced_at: date
+  }
+
+  schema UnifiedPayment {
+    payment_id: string,
+    order_id: string,
+    amount: decimal,
+    currency: string,
+    status: string,
+    method: string,
+    captured_at: date,
+    refunded_amount: decimal
+  }
+
+  schema UnifiedShipment {
+    shipment_id: string,
+    order_id: string,
+    carrier: string,
+    tracking_number: string,
+    status: string,
+    shipped_at: date,
+    delivered_at: date
+  }
+
+  schema Discrepancy {
+    id: string,
+    order_id: string,
+    type: string,
+    severity: string,
+    description: string,
+    shopify_value: string,
+    stripe_value: string,
+    shipstation_value: string,
+    detected_at: date
+  }
+
+  // ============================================================
+  // ACTION: Sync Shopify Orders (with incremental sync)
+  // ============================================================
+
+  action SyncShopifyOrders {
+    // Get last sync timestamp for incremental sync
+    fetch GET "/orders.json" {
+      source: "Shopify",
+      body: {
+        "status": "any",
+        "updated_at_min": sync_state.get("shopify_orders_last_sync"),
+        "limit": 250
+      },
+      paginate: cursor(page_info, 250, "link.next"),
+      until: response.orders.length == 0,
+      retry: {
+        maxAttempts: 5,
+        backoff: "exponential",
+        initialDelay: 2000,
+        maxDelay: 60000
+      }
+    },
+
+    // Transform each order to unified schema
+    for order in response.orders {
+      map order -> UnifiedOrder {
+        order_id: "shopify_" + .id,
+        external_id: .id,
+        source: "shopify",
+        customer_email: .customer.email,
+        total_amount: .total_price,
+        currency: .currency,
+        status: .status,
+        created_at: .created_at,
+        line_items_count: length(.line_items),
+        payment_status: match .financial_status {
+          "paid" => "captured",
+          "partially_paid" => "partial",
+          "pending" => "pending",
+          "refunded" => "refunded",
+          "partially_refunded" => "partial_refund",
+          _ => "unknown"
+        },
+        fulfillment_status: match .fulfillment_status {
+          "fulfilled" => "shipped",
+          "partial" => "partial",
+          null => "unfulfilled",
+          _ => .fulfillment_status
+        },
+        synced_at: now()
+      },
+
+      store response -> orders { key: .order_id, upsert: true }
+    },
+
+    // Update checkpoint
+    store { "shopify_orders_last_sync": now() } -> sync_state { key: "shopify_orders_last_sync" }
+  }
+
+  // ============================================================
+  // ACTION: Sync Stripe Payments
+  // ============================================================
+
+  action SyncStripePayments {
+    fetch GET "/payment_intents" {
+      source: "Stripe",
+      body: {
+        "limit": 100,
+        "created[gte]": sync_state.get("stripe_payments_last_sync"),
+        "expand[]": "data.charges"
+      },
+      paginate: cursor(starting_after, 100, "data[-1].id"),
+      until: response.has_more == false,
+      retry: {
+        maxAttempts: 3,
+        backoff: "exponential",
+        initialDelay: 1000
+      }
+    },
+
+    for payment in response.data where .metadata.shopify_order_id != null {
+      map payment -> UnifiedPayment {
+        payment_id: "stripe_" + .id,
+        order_id: "shopify_" + .metadata.shopify_order_id,
+        amount: .amount / 100,  // Stripe uses cents
+        currency: .currency,
+        status: match .status {
+          "succeeded" => "captured",
+          "requires_capture" => "authorized",
+          "canceled" => "voided",
+          _ => .status
+        },
+        method: .payment_method_types[0],
+        captured_at: .charges.data[0].created,
+        refunded_amount: .charges.data[0].amount_refunded / 100
+      },
+
+      store response -> payments { key: .payment_id, upsert: true }
+    },
+
+    store { "stripe_payments_last_sync": now() } -> sync_state { key: "stripe_payments_last_sync" }
+  }
+
+  // ============================================================
+  // ACTION: Sync ShipStation Shipments
+  // ============================================================
+
+  action SyncShipStationShipments {
+    fetch GET "/shipments" {
+      source: "ShipStation",
+      body: {
+        "pageSize": 500,
+        "createDateStart": sync_state.get("shipstation_last_sync"),
+        "sortBy": "CreateDate"
+      },
+      paginate: page(page, 500),
+      until: response.shipments.length == 0,
+      retry: {
+        maxAttempts: 4,
+        backoff: "exponential",
+        initialDelay: 3000
+      }
+    },
+
+    for shipment in response.shipments {
+      map shipment -> UnifiedShipment {
+        shipment_id: "ss_" + .shipmentId,
+        order_id: "shopify_" + .orderNumber,
+        carrier: .carrierCode,
+        tracking_number: .trackingNumber,
+        status: match .voided {
+          true => "voided",
+          _ => match .trackingNumber {
+            null => "label_created",
+            _ => "shipped"
+          }
+        },
+        shipped_at: .shipDate,
+        delivered_at: .deliveryDate
+      },
+
+      store response -> shipments { key: .shipment_id, upsert: true }
+    },
+
+    store { "shipstation_last_sync": now() } -> sync_state { key: "shipstation_last_sync" }
+  }
+
+  // ============================================================
+  // ACTION: Cross-Reference and Validate
+  // ============================================================
+
+  action ValidateReconciliation {
+    // Check for orders without payments
+    for order in orders where .payment_status == "pending" and .created_at < now() - days(3) {
+      let payment_exists = any of payments where .order_id == order.order_id,
+
+      validate order {
+        assume payment_exists == true
+      } or {
+        store {
+          id: "disc_" + order.order_id + "_no_payment",
+          order_id: order.order_id,
+          type: "missing_payment",
+          severity: "high",
+          description: "Order older than 3 days has no matching Stripe payment",
+          shopify_value: order.total_amount,
+          stripe_value: null,
+          shipstation_value: null,
+          detected_at: now()
+        } -> discrepancies { key: .id, upsert: true }
+      }
+    },
+
+    // Check for payment/order amount mismatches
+    for order in orders {
+      let matching_payments = payments where .order_id == order.order_id,
+      let total_paid = sum(matching_payments.amount),
+
+      validate order {
+        assume total_paid >= order.total_amount - 0.01,
+        assume total_paid <= order.total_amount + 0.01
+      } or {
+        store {
+          id: "disc_" + order.order_id + "_amount_mismatch",
+          order_id: order.order_id,
+          type: "amount_mismatch",
+          severity: match abs(order.total_amount - total_paid) {
+            x where x > 100 => "critical",
+            x where x > 10 => "high",
+            _ => "medium"
+          },
+          description: "Order total does not match payment total",
+          shopify_value: order.total_amount,
+          stripe_value: total_paid,
+          shipstation_value: null,
+          detected_at: now()
+        } -> discrepancies { key: .id, upsert: true }
+      }
+    },
+
+    // Check for shipped orders without shipment records
+    for order in orders where .fulfillment_status == "shipped" {
+      let shipment_exists = any of shipments where .order_id == order.order_id,
+
+      validate order {
+        assume shipment_exists == true
+      } or {
+        store {
+          id: "disc_" + order.order_id + "_no_shipment",
+          order_id: order.order_id,
+          type: "missing_shipment_record",
+          severity: "medium",
+          description: "Shopify shows fulfilled but no ShipStation shipment found",
+          shopify_value: order.fulfillment_status,
+          stripe_value: null,
+          shipstation_value: null,
+          detected_at: now()
+        } -> discrepancies { key: .id, upsert: true }
+      }
+    },
+
+    // Check for refund discrepancies
+    for payment in payments where .refunded_amount > 0 {
+      let order = first(orders where .order_id == payment.order_id),
+
+      validate payment {
+        assume order.payment_status == "refunded" or order.payment_status == "partial_refund"
+      } or {
+        store {
+          id: "disc_" + payment.order_id + "_refund_mismatch",
+          order_id: payment.order_id,
+          type: "refund_status_mismatch",
+          severity: "high",
+          description: "Stripe shows refund but Shopify payment status not updated",
+          shopify_value: order.payment_status,
+          stripe_value: payment.refunded_amount,
+          shipstation_value: null,
+          detected_at: now()
+        } -> discrepancies { key: .id, upsert: true }
+      }
+    }
+  }
+
+  // ============================================================
+  // PIPELINE: Execute in order with dependencies
+  // ============================================================
+
+  run SyncShopifyOrders
+    then SyncStripePayments
+    then SyncShipStationShipments
+    then ValidateReconciliation
+}
