@@ -33,6 +33,19 @@ export {
   type ExecutionStore,
   type StageState,
 } from './execution/index.js';
+export {
+  Scheduler,
+  parseCronExpression,
+  getNextRunTime,
+  intervalToMs,
+  shouldRunNow,
+  type ScheduledJob,
+  type SchedulerState,
+  type ScheduleEvent,
+  type SchedulerCallbacks,
+  type SchedulerConfig,
+  type ScheduledMission,
+} from './scheduler/index.js';
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';

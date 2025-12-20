@@ -48,6 +48,17 @@ export enum ReqonTokenType {
 
   // OAS integration
   FROM = 'FROM',
+
+  // Scheduling
+  SCHEDULE = 'SCHEDULE',
+  CRON = 'CRON',
+  EVERY = 'EVERY',
+  AT = 'AT',
+  HOURS = 'HOURS',
+  MINUTES = 'MINUTES',
+  SECONDS = 'SECONDS',
+  DAYS = 'DAYS',
+  WEEKS = 'WEEKS',
 }
 
 // Combined token type
@@ -100,6 +111,17 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
 
   // OAS integration
   from: ReqonTokenType.FROM,
+
+  // Scheduling
+  schedule: ReqonTokenType.SCHEDULE,
+  cron: ReqonTokenType.CRON,
+  every: ReqonTokenType.EVERY,
+  at: ReqonTokenType.AT,
+  hours: ReqonTokenType.HOURS,
+  minutes: ReqonTokenType.MINUTES,
+  seconds: ReqonTokenType.SECONDS,
+  days: ReqonTokenType.DAYS,
+  weeks: ReqonTokenType.WEEKS,
 };
 
 export interface ReqonToken {
