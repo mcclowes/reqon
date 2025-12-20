@@ -100,3 +100,7 @@ out/
 # Misc
 *.pem
 .certificates/
+
+# Reqon runtime data
+.reqon-data/
+output.json
