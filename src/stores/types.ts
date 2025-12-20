@@ -14,7 +14,9 @@ export interface StoreFilter {
 }
 
 export interface StoreConfig {
-  type: 'nosql' | 'sql' | 'memory';
+  type: 'nosql' | 'sql' | 'memory' | 'file';
   target: string;
   connection?: string;
+  /** For file stores: 'json' or 'csv' */
+  format?: 'json' | 'csv';
 }
