@@ -1,6 +1,14 @@
-import { mkdir, readFile, writeFile, readdir, unlink, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ExecutionState } from './state.js';
+import {
+  ensureDirectory,
+  writeJsonFile,
+  readJsonFile,
+  listFiles,
+  deleteFile,
+  restoreDates,
+  restoreDatesInArray,
+} from '../utils/file.js';
 
 /**
  * Execution state store interface
@@ -38,63 +46,42 @@ export class FileExecutionStore implements ExecutionStore {
 
   constructor(baseDir = '.reqon-data/executions') {
     this.baseDir = baseDir;
-    this.initialized = this.ensureDirectory();
-  }
-
-  private async ensureDirectory(): Promise<void> {
-    try {
-      await access(this.baseDir);
-    } catch {
-      await mkdir(this.baseDir, { recursive: true });
-    }
+    this.initialized = ensureDirectory(this.baseDir);
   }
 
   private getFilePath(id: string): string {
     return join(this.baseDir, `${id}.json`);
   }
 
-  private serialize(state: ExecutionState): string {
-    return JSON.stringify(state, null, 2);
-  }
-
-  private deserialize(content: string): ExecutionState {
-    const parsed = JSON.parse(content);
-
+  private deserialize(parsed: Record<string, unknown>): ExecutionState {
     // Restore Date objects
-    parsed.startedAt = new Date(parsed.startedAt);
-    if (parsed.completedAt) {
-      parsed.completedAt = new Date(parsed.completedAt);
+    restoreDates(parsed, ['startedAt', 'completedAt']);
+    if (parsed.checkpoint && typeof parsed.checkpoint === 'object') {
+      restoreDates(parsed.checkpoint as Record<string, unknown>, ['createdAt']);
     }
-    if (parsed.checkpoint?.createdAt) {
-      parsed.checkpoint.createdAt = new Date(parsed.checkpoint.createdAt);
-    }
-    for (const stage of parsed.stages) {
-      if (stage.startedAt) stage.startedAt = new Date(stage.startedAt);
-      if (stage.completedAt) stage.completedAt = new Date(stage.completedAt);
-    }
-    for (const error of parsed.errors) {
-      error.timestamp = new Date(error.timestamp);
-    }
+    restoreDatesInArray(
+      parsed.stages as Record<string, unknown>[],
+      ['startedAt', 'completedAt']
+    );
+    restoreDatesInArray(
+      parsed.errors as Record<string, unknown>[],
+      ['timestamp']
+    );
 
-    return parsed as ExecutionState;
+    return parsed as unknown as ExecutionState;
   }
 
   async save(state: ExecutionState): Promise<void> {
     await this.initialized;
     const filePath = this.getFilePath(state.id);
-    await writeFile(filePath, this.serialize(state), 'utf-8');
+    await writeJsonFile(filePath, state);
   }
 
   async load(id: string): Promise<ExecutionState | null> {
     await this.initialized;
     const filePath = this.getFilePath(id);
-
-    try {
-      const content = await readFile(filePath, 'utf-8');
-      return this.deserialize(content);
-    } catch {
-      return null;
-    }
+    const parsed = await readJsonFile<Record<string, unknown>>(filePath);
+    return parsed ? this.deserialize(parsed) : null;
   }
 
   async listByMission(mission: string): Promise<ExecutionState[]> {
@@ -105,22 +92,13 @@ export class FileExecutionStore implements ExecutionStore {
   async listRecent(limit = 50): Promise<ExecutionState[]> {
     await this.initialized;
 
-    let files: string[];
-    try {
-      const entries = await readdir(this.baseDir);
-      files = entries.filter((f) => f.endsWith('.json')).map((f) => join(this.baseDir, f));
-    } catch {
-      return [];
-    }
-
+    const files = await listFiles(this.baseDir, '.json');
     const states: ExecutionState[] = [];
 
     for (const file of files) {
-      try {
-        const content = await readFile(file, 'utf-8');
-        states.push(this.deserialize(content));
-      } catch {
-        // Skip corrupted files
+      const parsed = await readJsonFile<Record<string, unknown>>(file);
+      if (parsed) {
+        states.push(this.deserialize(parsed));
       }
     }
 
@@ -132,12 +110,7 @@ export class FileExecutionStore implements ExecutionStore {
 
   async delete(id: string): Promise<void> {
     await this.initialized;
-    const filePath = this.getFilePath(id);
-    try {
-      await unlink(filePath);
-    } catch {
-      // File doesn't exist, nothing to delete
-    }
+    await deleteFile(this.getFilePath(id));
   }
 
   async findLatest(mission: string): Promise<ExecutionState | null> {

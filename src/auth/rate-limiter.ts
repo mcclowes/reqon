@@ -16,6 +16,13 @@ interface RateLimitState {
   lastRequestAt?: Date;
 }
 
+/** Max age for stale entries (default: 1 hour) */
+const DEFAULT_MAX_STALE_AGE_MS = 60 * 60 * 1000;
+/** Cleanup interval (default: 5 minutes) */
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+/** Max number of entries before forced cleanup */
+const MAX_ENTRIES_BEFORE_CLEANUP = 1000;
+
 const DEFAULT_CONFIG: Required<RateLimitConfig> = {
   strategy: 'pause',
   maxWait: 300,
@@ -59,8 +66,62 @@ export class AdaptiveRateLimiter implements RateLimiter {
   private state: Map<string, RateLimitState> = new Map();
   private configs: Map<string, RateLimitConfig> = new Map();
   private callbacks: RateLimitCallbacks = {};
+  private lastCleanup: number = Date.now();
+  private maxStaleAgeMs: number;
 
-  constructor(private defaultConfig: Partial<RateLimitConfig> = {}) {}
+  constructor(
+    private defaultConfig: Partial<RateLimitConfig> = {},
+    options: { maxStaleAgeMs?: number } = {}
+  ) {
+    this.maxStaleAgeMs = options.maxStaleAgeMs ?? DEFAULT_MAX_STALE_AGE_MS;
+  }
+
+  /**
+   * Clean up stale entries from the state map to prevent memory leaks
+   */
+  private cleanup(): void {
+    const now = Date.now();
+
+    // Skip if cleanup was done recently and we're under the entry limit
+    if (
+      now - this.lastCleanup < CLEANUP_INTERVAL_MS &&
+      this.state.size < MAX_ENTRIES_BEFORE_CLEANUP
+    ) {
+      return;
+    }
+
+    this.lastCleanup = now;
+    const nowDate = new Date(now);
+    const staleThreshold = new Date(now - this.maxStaleAgeMs);
+
+    for (const [key, state] of this.state) {
+      // Remove if:
+      // 1. Reset time has passed AND no recent requests
+      // 2. Last request is older than max stale age
+      const isResetPassed = state.resetAt && state.resetAt < nowDate;
+      const isRetryPassed = !state.retryAfter || state.retryAfter < nowDate;
+      const isStale = state.lastRequestAt && state.lastRequestAt < staleThreshold;
+
+      if ((isResetPassed && isRetryPassed && isStale) || (!state.lastRequestAt && isResetPassed)) {
+        this.state.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Get the number of tracked endpoints (for monitoring)
+   */
+  getTrackedEndpointCount(): number {
+    return this.state.size;
+  }
+
+  /**
+   * Force cleanup of stale entries
+   */
+  forceCleanup(): void {
+    this.lastCleanup = 0;
+    this.cleanup();
+  }
 
   private getKey(source: string, endpoint?: string): string {
     return endpoint ? `${source}:${endpoint}` : source;
@@ -261,6 +322,9 @@ export class AdaptiveRateLimiter implements RateLimiter {
     state.lastRequestAt = now;
 
     this.state.set(key, state);
+
+    // Periodically clean up stale entries
+    this.cleanup();
   }
 
   getStatus(source: string, endpoint?: string): RateLimitStatus {

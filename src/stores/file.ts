@@ -1,7 +1,13 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { writeFile } from 'node:fs/promises';
+import { writeFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import type { StoreAdapter, StoreFilter } from './types.js';
 import { applyStoreFilter } from './types.js';
+import {
+  ensureDirectory,
+  readJsonFile,
+  serialize,
+} from '../utils/file.js';
 
 export interface FileStoreOptions {
   /** Base directory for data files (default: '.reqon-data') */
@@ -27,95 +33,101 @@ export class FileStore implements StoreAdapter {
   private filePath: string;
   private options: Required<FileStoreOptions>;
   private dirty = false;
+  private initialized: Promise<void>;
 
   constructor(name: string, options: FileStoreOptions = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
     this.filePath = join(this.options.baseDir, `${name}.json`);
-    this.ensureDirectory();
-    this.load();
+    this.initialized = this.init();
   }
 
-  private ensureDirectory(): void {
+  private async init(): Promise<void> {
     const dir = dirname(this.filePath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-      // Create .gitignore if it doesn't exist
-      const gitignorePath = join(dir, '.gitignore');
-      if (!existsSync(gitignorePath)) {
-        writeFileSync(gitignorePath, '# Reqon local data\n*.json\n');
-      }
+    await ensureDirectory(dir);
+    // Create .gitignore if it doesn't exist
+    const gitignorePath = join(dir, '.gitignore');
+    if (!existsSync(gitignorePath)) {
+      await writeFile(gitignorePath, '# Reqon local data\n*.json\n', 'utf-8');
+    }
+    await this.load();
+  }
+
+  private async load(): Promise<void> {
+    const parsed = await readJsonFile<Record<string, Record<string, unknown>>>(this.filePath);
+    if (parsed) {
+      this.data = new Map(Object.entries(parsed));
     }
   }
 
-  private load(): void {
-    if (existsSync(this.filePath)) {
-      try {
-        const content = readFileSync(this.filePath, 'utf-8');
-        const parsed = JSON.parse(content) as Record<string, Record<string, unknown>>;
-        this.data = new Map(Object.entries(parsed));
-      } catch {
-        // If file is corrupted, start fresh
-        this.data = new Map();
-      }
-    }
-  }
-
-  private persist(): void {
+  private async persist(): Promise<void> {
     if (this.options.persist === 'batch') {
       this.dirty = true;
       return;
     }
-    this.writeToDisk();
+    await this.writeToDisk();
   }
 
-  private writeToDisk(): void {
+  private async writeToDisk(): Promise<void> {
     const obj = Object.fromEntries(this.data);
-    const content = this.options.pretty
-      ? JSON.stringify(obj, null, 2)
-      : JSON.stringify(obj);
+    const content = serialize(obj, this.options.pretty);
+    await writeFile(this.filePath, content, 'utf-8');
+    this.dirty = false;
+  }
+
+  /** Synchronous write for flush/close operations */
+  private writeToDiskSync(): void {
+    const obj = Object.fromEntries(this.data);
+    const content = serialize(obj, this.options.pretty);
     writeFileSync(this.filePath, content, 'utf-8');
     this.dirty = false;
   }
 
   async get(key: string): Promise<Record<string, unknown> | null> {
+    await this.initialized;
     return this.data.get(key) ?? null;
   }
 
   async set(key: string, value: Record<string, unknown>): Promise<void> {
+    await this.initialized;
     this.data.set(key, { ...value });
-    this.persist();
+    await this.persist();
   }
 
   async update(key: string, value: Partial<Record<string, unknown>>): Promise<void> {
+    await this.initialized;
     const existing = this.data.get(key);
     if (existing) {
       this.data.set(key, { ...existing, ...value });
     } else {
       this.data.set(key, value as Record<string, unknown>);
     }
-    this.persist();
+    await this.persist();
   }
 
   async delete(key: string): Promise<void> {
+    await this.initialized;
     this.data.delete(key);
-    this.persist();
+    await this.persist();
   }
 
   async list(filter?: StoreFilter): Promise<Record<string, unknown>[]> {
+    await this.initialized;
     return applyStoreFilter(Array.from(this.data.values()), filter);
   }
 
   async clear(): Promise<void> {
+    await this.initialized;
     this.data.clear();
-    this.persist();
+    await this.persist();
   }
 
   /**
    * Flush pending changes to disk (only needed in 'batch' mode)
+   * Uses synchronous I/O to ensure data is written before process exits
    */
   flush(): void {
     if (this.dirty) {
-      this.writeToDisk();
+      this.writeToDiskSync();
     }
   }
 
@@ -130,8 +142,8 @@ export class FileStore implements StoreAdapter {
   /**
    * Reload data from disk (useful if file was modified externally)
    */
-  reload(): void {
-    this.load();
+  async reload(): Promise<void> {
+    await this.load();
   }
 
   // For debugging
