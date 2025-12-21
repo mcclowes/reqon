@@ -6,6 +6,7 @@ import { fromPath, parse, Scheduler, loadMission } from './index.js';
 import type { ScheduleEvent } from './scheduler/index.js';
 import { ReqonError } from './errors/index.js';
 import { loadEnv, loadCredentials } from './auth/credentials.js';
+import { WebhookServer } from './webhook/index.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -18,14 +19,17 @@ Usage:
   reqon <file.reqon|folder> [options]
 
 Options:
-  --dry-run        Run without making actual HTTP requests
-  --verbose        Enable verbose logging
-  --auth <file>    JSON file with auth credentials (supports env var interpolation)
-  --env <file>     Path to .env file (default: .env in current directory)
-  --output <path>  Export stores to JSON (file or directory)
-  --daemon         Run as daemon, executing scheduled missions
-  --once           Run scheduled missions once immediately, then exit
-  --help, -h       Show this help message
+  --dry-run            Run without making actual HTTP requests
+  --verbose            Enable verbose logging
+  --auth <file>        JSON file with auth credentials (supports env var interpolation)
+  --env <file>         Path to .env file (default: .env in current directory)
+  --output <path>      Export stores to JSON (file or directory)
+  --daemon             Run as daemon, executing scheduled missions
+  --once               Run scheduled missions once immediately, then exit
+  --webhook            Enable webhook server for 'wait' steps
+  --webhook-port <n>   Port for webhook server (default: 3000)
+  --webhook-url <url>  Base URL for webhook endpoints (default: http://localhost:3000)
+  --help, -h           Show this help message
 
 Environment Variables:
   Credentials in --auth files support env var interpolation:
@@ -43,6 +47,7 @@ Examples:
   reqon sync-invoices.reqon --env .env.production --auth ./credentials.json
   reqon sync-invoices.reqon --output ./output.json
   reqon sync-invoices.reqon --daemon --verbose
+  reqon sync-invoices.reqon --webhook --webhook-port 8080 --verbose
 `);
     process.exit(0);
   }
@@ -52,6 +57,20 @@ Examples:
   const verbose = args.includes('--verbose');
   const daemon = args.includes('--daemon');
   const once = args.includes('--once');
+  const webhookEnabled = args.includes('--webhook');
+
+  // Parse webhook options
+  let webhookPort = 3000;
+  const webhookPortIndex = args.indexOf('--webhook-port');
+  if (webhookPortIndex !== -1 && args[webhookPortIndex + 1]) {
+    webhookPort = parseInt(args[webhookPortIndex + 1], 10);
+  }
+
+  let webhookUrl: string | undefined;
+  const webhookUrlIndex = args.indexOf('--webhook-url');
+  if (webhookUrlIndex !== -1 && args[webhookUrlIndex + 1]) {
+    webhookUrl = args[webhookUrlIndex + 1];
+  }
 
   // Load .env file(s)
   let envFile: string | undefined;
@@ -96,11 +115,24 @@ Examples:
   // Single run mode (default)
   console.log(`Running: ${filePath}`);
 
+  // Start webhook server if enabled
+  let webhookServer: WebhookServer | undefined;
+  if (webhookEnabled) {
+    webhookServer = new WebhookServer({
+      port: webhookPort,
+      baseUrl: webhookUrl ?? `http://localhost:${webhookPort}`,
+      verbose,
+    });
+    await webhookServer.start();
+    console.log(`Webhook server started on port ${webhookPort}`);
+  }
+
   try {
     const result = await fromPath(filePath, {
       dryRun,
       verbose,
       auth: auth as Record<string, { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }>,
+      webhookServer,
     });
 
     if (result.success) {
@@ -136,6 +168,11 @@ Examples:
       console.error(`Error: ${(error as Error).message}`);
     }
     process.exit(1);
+  } finally {
+    // Stop webhook server if it was started
+    if (webhookServer) {
+      await webhookServer.stop();
+    }
   }
 }
 

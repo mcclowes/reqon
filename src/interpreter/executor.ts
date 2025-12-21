@@ -11,6 +11,7 @@ import type {
   StoreStep,
   MatchStep,
   LetStep,
+  WebhookStep,
   PipelineDefinition,
   PipelineStage,
   SourceDefinition,
@@ -50,12 +51,14 @@ import {
   ValidateHandler,
   StoreHandler,
   MatchHandler,
+  WebhookHandler,
   SkipSignal,
   AbortError,
   RetrySignal,
   JumpSignal,
   QueueSignal,
 } from './step-handlers/index.js';
+import type { WebhookServer } from '../webhook/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -154,6 +157,8 @@ export interface ExecutorConfig {
   syncStore?: SyncStore;
   // Progress callbacks for real-time UI updates
   progress?: ProgressCallbacks;
+  // Webhook server for handling wait steps
+  webhookServer?: WebhookServer;
 }
 
 interface AuthConfig {
@@ -811,6 +816,9 @@ export class MissionExecutor {
         case 'LetStep':
           await this.executeLet(step);
           break;
+        case 'WebhookStep':
+          await this.executeWebhook(step);
+          break;
         default:
           throw new Error(`Unknown step type: ${(step as ActionStep).type}`);
       }
@@ -911,6 +919,23 @@ export class MissionExecutor {
     const value = evaluate(step.value, this.ctx);
     setVariable(this.ctx, step.name, value);
     this.log(`Set variable '${step.name}' = ${JSON.stringify(value)}`);
+  }
+
+  private async executeWebhook(step: WebhookStep): Promise<void> {
+    if (!this.config.webhookServer) {
+      throw new Error(
+        'Webhook server not configured. Use --webhook flag or configure webhookServer in executor config.'
+      );
+    }
+
+    const handler = new WebhookHandler({
+      ctx: this.ctx,
+      webhookServer: this.config.webhookServer,
+      executionId: this.executionState?.id ?? 'ephemeral',
+      log: (msg) => this.log(msg),
+    });
+
+    await handler.execute(step);
   }
 
   private log(message: string): void {

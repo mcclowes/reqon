@@ -114,13 +114,38 @@ export interface ActionDefinition {
   steps: ActionStep[];
 }
 
-export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep | MatchStep | LetStep;
+export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep | MatchStep | LetStep | WebhookStep;
 
 // let myVar = expression
 export interface LetStep {
   type: 'LetStep';
   name: string;
   value: Expression;
+}
+
+// wait { timeout: 60000, path: "/webhooks/callback", ... }
+// Waits for an external webhook callback before continuing execution
+export interface WebhookStep {
+  type: 'WebhookStep';
+  /** Timeout in milliseconds to wait for webhook (default: 300000 = 5 minutes) */
+  timeout?: number;
+  /** Path for the webhook endpoint (e.g., "/webhooks/callback") */
+  path?: string;
+  /** Number of webhook events to collect before continuing (default: 1) */
+  expectedEvents?: number;
+  /** Filter expression for matching webhook events */
+  eventFilter?: Expression;
+  /** Retry configuration if timeout occurs */
+  retryOnTimeout?: RetryConfig;
+  /** Store configuration for saving webhook payloads */
+  storage?: WebhookStorageConfig;
+}
+
+export interface WebhookStorageConfig {
+  /** Store name to save webhook payloads */
+  target: string;
+  /** Expression for extracting key from webhook payload */
+  key?: Expression;
 }
 
 // Flow control directives for match arms
