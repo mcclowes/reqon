@@ -84,7 +84,7 @@ function CodeExample() {
             </Link>
           </div>
           <div className="col col--6">
-            <CodeBlock language="typescript" title="sync.vague">
+            <CodeBlock language="vague" title="sync.vague">
               {exampleCode}
             </CodeBlock>
           </div>

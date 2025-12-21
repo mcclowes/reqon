@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+description: Install Reqon and run your first data pipeline in minutes. Learn the basic mission structure with step-by-step examples.
+keywords: [reqon, installation, getting started, tutorial, first mission]
 ---
 
 # Getting Started
@@ -208,6 +210,10 @@ Now that you've run your first mission, explore these topics:
 
 ## Common Issues
 
+:::tip
+Use `--dry-run` to validate your mission syntax without making actual API calls.
+:::
+
 ### "Source not found" Error
 
 Make sure you've defined the source before using it in an action:
@@ -254,3 +260,7 @@ get "/data" {
   }
 }
 ```
+
+:::info
+For production use, always configure retry and rate limiting to handle transient failures gracefully.
+:::

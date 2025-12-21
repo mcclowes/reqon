@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+description: Configure authentication for Reqon API sources including OAuth2, Bearer tokens, API keys, and Basic auth with automatic token refresh.
+keywords: [reqon, authentication, OAuth2, bearer token, API key, credentials]
 ---
 
 # Authentication Overview
@@ -181,6 +183,10 @@ action RefreshToken {
 
 ## Security Best Practices
 
+:::danger Never Commit Credentials
+Always add credential files to `.gitignore` before committing. Exposed API tokens can lead to unauthorized access and data breaches.
+:::
+
 ### Never Commit Credentials
 
 Add to `.gitignore`:
@@ -202,6 +208,10 @@ reqon mission.vague
 ### Rotate Tokens Regularly
 
 For OAuth2, ensure refresh tokens are valid.
+
+:::tip Use Environment Variables
+Store credentials in environment variables for local development and use secret management services (AWS Secrets Manager, HashiCorp Vault) in production.
+:::
 
 ### Use Least Privilege
 

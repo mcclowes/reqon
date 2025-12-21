@@ -1,5 +1,7 @@
 ---
 sidebar_position: 20
+description: Real-world Reqon examples including Xero integration, multi-source reconciliation, OpenAPI, error handling with DLQ, and scheduled syncs.
+keywords: [reqon, examples, Xero, Shopify, Stripe, GitHub, OAuth2, pagination]
 ---
 
 # Examples

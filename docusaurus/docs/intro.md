@@ -1,6 +1,8 @@
 ---
 sidebar_position: 1
 slug: /
+description: Reqon is a declarative DSL framework for building fetch, map, validate data pipelines with automatic pagination, retries, and error handling.
+keywords: [reqon, data pipeline, ETL, API sync, declarative DSL]
 ---
 
 # Introduction to Reqon

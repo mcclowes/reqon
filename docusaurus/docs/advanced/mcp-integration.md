@@ -1,5 +1,7 @@
 ---
 sidebar_position: 5
+description: Integrate Reqon with AI assistants via the Model Context Protocol (MCP) server for AI-driven data pipeline execution and querying.
+keywords: [reqon, MCP, Model Context Protocol, Claude, AI, integration]
 ---
 
 # MCP Integration
@@ -181,7 +183,7 @@ Resource: reqon://stores
 Returns: JSON array of store names and counts
 ```
 
-### reqon://stores/{name}
+### reqon://stores/\{name\}
 
 Access data from a specific store:
 

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+description: Complete reference for the Reqon CLI including options for dry-run, daemon mode, webhooks, authentication, and CI/CD integration.
+keywords: [reqon, CLI, command line, daemon, webhook, CI/CD]
 ---
 
 # Command Line Interface
