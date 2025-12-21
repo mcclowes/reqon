@@ -18,6 +18,9 @@ This directory contains examples demonstrating Reqon's features for declarative 
 | [circuit-breaker](./circuit-breaker/) | Resilient API calls | **Circuit breaker**, fallback sources, health monitoring |
 | [database-sync](./database-sync/) | Multi-store operations | **SQL/NoSQL stores**, upsert, partial updates |
 | [data-enrichment](./data-enrichment/) | Data transformation | **`let` bindings**, **spread operator**, computed fields |
+| [postgrest-sync](./postgrest-sync/) | PostgREST integration | **`postgrest()` store**, PostgreSQL via REST |
+| [crud-operations](./crud-operations/) | Full CRUD lifecycle | **PUT, PATCH, DELETE** methods, resource management |
+| [file-export](./file-export/) | Data export workflows | **`file()` store**, reports, backups, scheduling |
 
 ## Feature Index
 
@@ -171,12 +174,58 @@ See: [data-enrichment](./data-enrichment/)
 ### Store Types
 Multiple storage backends:
 ```vague
-store structured: sql("table")      # SQL database
-store flexible: nosql("collection") # NoSQL database
-store temp: memory("cache")         # In-memory
-store export: file("output")        # File system
+store structured: sql("table")       # SQL database
+store flexible: nosql("collection")  # NoSQL database
+store temp: memory("cache")          # In-memory
+store export: file("output")         # File system
+store api: postgrest("table")        # PostgreSQL via PostgREST
 ```
-See: [database-sync](./database-sync/)
+See: [database-sync](./database-sync/), [postgrest-sync](./postgrest-sync/), [file-export](./file-export/)
+
+### HTTP Methods (CRUD Operations)
+Full support for REST operations:
+```vague
+get "/resources"                     # Read
+post "/resources" { body: {...} }    # Create
+put "/resources/{id}" { body: {...} }   # Replace (full update)
+patch "/resources/{id}" { body: {...} } # Partial update
+delete "/resources/{id}"             # Delete
+```
+See: [crud-operations](./crud-operations/)
+
+### PostgREST Store
+Direct PostgreSQL access via PostgREST:
+```vague
+store users: postgrest("users")
+
+// Upsert to PostgREST-backed table
+store user -> users {
+  key: .id,
+  upsert: true
+}
+
+// Partial updates
+store { id: user.id, status: "active" } -> users {
+  key: .id,
+  partial: true
+}
+```
+See: [postgrest-sync](./postgrest-sync/)
+
+### File Export
+Generate exports, reports, and backups:
+```vague
+store orders_export: file("exports/orders")
+store daily_summary: file("exports/daily-summary")
+store backup: file("backups/full-backup")
+
+// Export with metadata
+store {
+  ...order,
+  exported_at: now()
+} -> orders_export { key: order.id }
+```
+See: [file-export](./file-export/)
 
 ## Running Examples
 

@@ -1,0 +1,305 @@
+// File Export Example
+// Demonstrates: file() store type for exporting data to files
+// Use case: Generating CSV/JSON exports, backup files, and report artifacts
+
+mission DataExport {
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source SalesAPI {
+    auth: api_key,
+    base: "https://api.sales.example.com/v2"
+  }
+
+  source InventoryAPI {
+    auth: bearer,
+    base: "https://inventory.example.com/api"
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  // Memory stores for processing
+  store orders: memory("orders")
+  store products: memory("products")
+  store customers: memory("customers")
+
+  // File stores for exports
+  store orders_export: file("exports/orders")
+  store inventory_report: file("exports/inventory")
+  store customer_export: file("exports/customers")
+  store daily_summary: file("exports/daily-summary")
+  store backup: file("backups/full-backup")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema Order {
+    id: string,
+    customer_id: string,
+    items: array,
+    total: decimal,
+    status: string,
+    created_at: date
+  }
+
+  schema Product {
+    sku: string,
+    name: string,
+    price: decimal,
+    quantity: int,
+    category: string
+  }
+
+  schema Customer {
+    id: string,
+    name: string,
+    email: string,
+    total_orders: int,
+    lifetime_value: decimal
+  }
+
+  schema ExportMetadata {
+    export_type: string,
+    record_count: int,
+    generated_at: date,
+    format: string
+  }
+
+  // ============================================================
+  // ACTION: Fetch Data for Export
+  // ============================================================
+
+  action FetchData {
+    // Fetch orders
+    get "/orders" {
+      source: SalesAPI,
+      paginate: page(page, 100),
+      until: response.orders.length == 0,
+      since: lastSync
+    }
+
+    for order in response.orders {
+      map order -> Order {
+        id: .id,
+        customer_id: .customer.id,
+        items: .line_items,
+        total: .total_amount,
+        status: .status,
+        created_at: .created_at
+      }
+
+      store response -> orders { key: .id }
+    }
+
+    // Fetch products
+    get "/products" {
+      source: InventoryAPI,
+      paginate: cursor(cursor, 200, "pagination.next")
+    }
+
+    for product in response.products {
+      map product -> Product {
+        sku: .sku,
+        name: .name,
+        price: .price,
+        quantity: .stock_level,
+        category: .category.name
+      }
+
+      store response -> products { key: .sku }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Export Orders to File
+  // ============================================================
+
+  action ExportOrders {
+    // Export each order to file store
+    for order in orders {
+      // Flatten order for CSV-style export
+      store {
+        order_id: order.id,
+        customer_id: order.customer_id,
+        item_count: length(order.items),
+        total: order.total,
+        status: order.status,
+        created_at: order.created_at,
+        exported_at: now()
+      } -> orders_export {
+        key: order.id
+      }
+    }
+
+    // Store export metadata
+    store {
+      export_type: "orders",
+      record_count: length(orders),
+      generated_at: now(),
+      format: "json"
+    } -> orders_export {
+      key: "_metadata"
+    }
+  }
+
+  // ============================================================
+  // ACTION: Generate Inventory Report
+  // ============================================================
+
+  action GenerateInventoryReport {
+    // Group products by category for reporting
+    let categories = ["Electronics", "Clothing", "Home", "Sports", "Other"]
+
+    for category in categories {
+      let category_products = products where .category == category
+      let total_value = sum(category_products.price * category_products.quantity)
+      let low_stock = category_products where .quantity < 10
+
+      store {
+        category: category,
+        product_count: length(category_products),
+        total_inventory_value: total_value,
+        low_stock_items: length(low_stock),
+        low_stock_skus: low_stock.sku,
+        generated_at: now()
+      } -> inventory_report {
+        key: category
+      }
+    }
+
+    // Overall summary
+    let total_products = length(products)
+    let total_value = sum(products.price * products.quantity)
+    let out_of_stock = products where .quantity == 0
+
+    store {
+      total_products: total_products,
+      total_inventory_value: total_value,
+      out_of_stock_count: length(out_of_stock),
+      out_of_stock_skus: out_of_stock.sku,
+      report_generated: now()
+    } -> inventory_report {
+      key: "_summary"
+    }
+  }
+
+  // ============================================================
+  // ACTION: Export Customer Data
+  // ============================================================
+
+  action ExportCustomers {
+    // Aggregate customer data from orders
+    let customer_ids = orders.customer_id
+
+    for customer_id in customer_ids {
+      let customer_orders = orders where .customer_id == customer_id
+      let order_count = length(customer_orders)
+      let total_spent = sum(customer_orders.total)
+
+      // Only export customers with purchases
+      validate customer_orders {
+        assume order_count > 0
+      } or {
+        skip
+      }
+
+      store {
+        id: customer_id,
+        total_orders: order_count,
+        lifetime_value: total_spent,
+        average_order: total_spent / order_count,
+        first_order: min(customer_orders.created_at),
+        last_order: max(customer_orders.created_at),
+        exported_at: now()
+      } -> customer_export {
+        key: customer_id
+      }
+    }
+
+    // Export summary
+    store {
+      export_type: "customers",
+      unique_customers: length(customer_ids),
+      total_revenue: sum(orders.total),
+      generated_at: now()
+    } -> customer_export {
+      key: "_metadata"
+    }
+  }
+
+  // ============================================================
+  // ACTION: Generate Daily Summary
+  // ============================================================
+
+  action GenerateDailySummary {
+    let today = now()
+    let today_orders = orders where .created_at >= today - hours(24)
+
+    // Daily metrics
+    store {
+      date: today,
+      orders: {
+        count: length(today_orders),
+        total_revenue: sum(today_orders.total),
+        average_order_value: sum(today_orders.total) / max(length(today_orders), 1),
+        by_status: {
+          pending: length(today_orders where .status == "pending"),
+          processing: length(today_orders where .status == "processing"),
+          shipped: length(today_orders where .status == "shipped"),
+          delivered: length(today_orders where .status == "delivered"),
+          cancelled: length(today_orders where .status == "cancelled")
+        }
+      },
+      inventory: {
+        total_products: length(products),
+        out_of_stock: length(products where .quantity == 0),
+        low_stock: length(products where .quantity < 10 and .quantity > 0)
+      },
+      generated_at: now()
+    } -> daily_summary {
+      key: today
+    }
+  }
+
+  // ============================================================
+  // ACTION: Full Backup
+  // ============================================================
+
+  action CreateBackup {
+    // Backup all data to file store
+    store {
+      backup_type: "full",
+      timestamp: now(),
+      data: {
+        orders: orders,
+        products: products
+      },
+      record_counts: {
+        orders: length(orders),
+        products: length(products)
+      }
+    } -> backup {
+      key: "backup_" + now()
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  run FetchData
+    then [ExportOrders, ExportCustomers, GenerateInventoryReport]  // Parallel exports
+    then GenerateDailySummary
+    then CreateBackup
+
+  // ============================================================
+  // SCHEDULE: Run daily at 2 AM
+  // ============================================================
+
+  schedule: cron "0 2 * * *"
+}
