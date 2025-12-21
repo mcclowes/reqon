@@ -1,13 +1,23 @@
 .heroBanner {
-  padding: 4rem 0;
+  padding: 6rem 0 5rem;
   text-align: center;
   position: relative;
   overflow: hidden;
 }
 
+.heroBanner::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--reqon-border-color), transparent);
+}
+
 @media screen and (max-width: 996px) {
   .heroBanner {
-    padding: 2rem;
+    padding: 3rem 1.5rem;
   }
 }
 
@@ -17,32 +27,126 @@
   justify-content: center;
   gap: 1rem;
   flex-wrap: wrap;
+  margin-top: 2.5rem;
+  animation: fadeInUp 0.6s ease-out 0.2s both;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .codeExample {
-  padding: 4rem 0;
-  background-color: var(--ifm-background-color);
+  padding: 5rem 0 6rem;
+  background: linear-gradient(180deg, var(--ifm-background-color) 0%, var(--ifm-background-surface-color) 50%, var(--ifm-background-color) 100%);
+  position: relative;
+}
+
+.codeExample::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--reqon-border-color), transparent);
+}
+
+.codeExampleContent {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100%;
 }
 
 .codeExample h2 {
+  font-size: 2rem;
+  font-weight: 700;
   margin-bottom: 1rem;
+  background: linear-gradient(135deg, var(--ifm-color-primary-dark), var(--reqon-gradient-end));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+[data-theme='dark'] .codeExample h2 {
+  background: linear-gradient(135deg, var(--ifm-color-primary-light), var(--reqon-gradient-end));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.codeExample p {
+  font-size: 1.1rem;
+  color: var(--ifm-color-emphasis-700);
+  line-height: 1.7;
 }
 
 .codeExample ul {
-  margin: 1.5rem 0;
-  padding-left: 1.5rem;
+  margin: 1.5rem 0 2rem;
+  padding-left: 0;
+  list-style: none;
 }
 
 .codeExample li {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-left: 1.75rem;
+  position: relative;
+  line-height: 1.6;
+}
+
+.codeExample li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.5em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--reqon-gradient-start), var(--reqon-gradient-end));
+}
+
+.codeBlockWrapper {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--reqon-shadow-lg), var(--reqon-shadow-glow);
+  border: 1px solid var(--reqon-border-color);
 }
 
 @media screen and (max-width: 996px) {
+  .codeExample {
+    padding: 3rem 0 4rem;
+  }
+
   .codeExample .row {
     flex-direction: column-reverse;
   }
 
   .codeExample .col {
     margin-bottom: 2rem;
+  }
+
+  .codeExample h2 {
+    font-size: 1.75rem;
+    text-align: center;
+  }
+
+  .codeExample p {
+    text-align: center;
+  }
+
+  .codeExample ul {
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .buttons {
+    flex-direction: column;
   }
 }
