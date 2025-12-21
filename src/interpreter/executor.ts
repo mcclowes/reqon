@@ -59,6 +59,12 @@ import {
   QueueSignal,
 } from './step-handlers/index.js';
 import type { WebhookServer } from '../webhook/index.js';
+import type {
+  EventEmitter,
+  StepType,
+  StructuredLogger,
+} from '../observability/index.js';
+import { createEmitter, createStructuredLogger } from '../observability/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -159,6 +165,10 @@ export interface ExecutorConfig {
   progress?: ProgressCallbacks;
   // Webhook server for handling wait steps
   webhookServer?: WebhookServer;
+  // Event emitter for observability
+  eventEmitter?: EventEmitter;
+  // Structured logger (defaults to console if verbose)
+  logger?: StructuredLogger;
 }
 
 interface AuthConfig {
@@ -184,6 +194,9 @@ export class MissionExecutor {
   private executionState?: ExecutionState;
   private syncStore?: SyncStore;
   private missionName?: string;
+  private eventEmitter?: EventEmitter;
+  private logger?: StructuredLogger;
+  private stepIndex = 0;
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
@@ -261,6 +274,20 @@ export class MissionExecutor {
         `${config.dataDir ?? '.reqon-data'}/executions`
       );
     }
+
+    // Initialize event emitter if provided
+    this.eventEmitter = config.eventEmitter;
+
+    // Initialize logger if verbose or provided
+    if (config.logger) {
+      this.logger = config.logger;
+    } else if (config.verbose) {
+      this.logger = createStructuredLogger({
+        prefix: 'Reqon',
+        level: 'debug',
+        context: {},
+      });
+    }
   }
 
   async execute(program: ReqonProgram): Promise<ExecutionResult> {
@@ -336,6 +363,24 @@ export class MissionExecutor {
       errors: this.errors,
     });
 
+    // Emit mission.complete or mission.failed event
+    if (success) {
+      this.eventEmitter?.emit('mission.complete', {
+        success: true,
+        stagesCompleted,
+        stagesFailed,
+        stagesSkipped: this.executionState?.stages.filter(s => s.status === 'skipped').length ?? 0,
+        errorCount: this.errors.length,
+      });
+    } else {
+      const failedStage = this.executionState?.stages.find(s => s.status === 'failed');
+      this.eventEmitter?.emit('mission.failed', {
+        error: this.errors[0]?.message ?? 'Unknown error',
+        failedStage: failedStage?.action,
+        stagesCompleted,
+      });
+    }
+
     return {
       success,
       duration,
@@ -385,6 +430,14 @@ export class MissionExecutor {
       mission: mission.name,
       stageCount: mission.pipeline.stages.length,
       isResume,
+      metadata: this.config.metadata,
+    });
+
+    // Emit mission.start event
+    this.eventEmitter?.emit('mission.start', {
+      stageCount: mission.pipeline.stages.length,
+      isResume,
+      resumeFromStage: isResume ? findResumePoint(this.executionState!) : undefined,
       metadata: this.config.metadata,
     });
   }
@@ -529,6 +582,14 @@ export class MissionExecutor {
       totalStages: mission.pipeline.stages.length,
     });
 
+    // Emit stage.start event
+    this.eventEmitter?.emit('stage.start', {
+      stageIndex,
+      stageName: actionName,
+      totalStages: mission.pipeline.stages.length,
+      isParallel: false,
+    });
+
     try {
       await this.executeAction(action);
       this.actionsRun.push(action.name);
@@ -547,6 +608,13 @@ export class MissionExecutor {
         success: true,
         duration: Date.now() - stageStartTime,
       });
+
+      // Emit stage.complete event
+      this.eventEmitter?.emit('stage.complete', {
+        stageIndex,
+        stageName: actionName,
+        success: true,
+      });
     } catch (error) {
       // Mark stage as failed
       this.updateStageState(stageIndex, {
@@ -564,6 +632,14 @@ export class MissionExecutor {
         totalStages: mission.pipeline.stages.length,
         success: false,
         duration: Date.now() - stageStartTime,
+        error: (error as Error).message,
+      });
+
+      // Emit stage.complete event (failure)
+      this.eventEmitter?.emit('stage.complete', {
+        stageIndex,
+        stageName: actionName,
+        success: false,
         error: (error as Error).message,
       });
 
@@ -605,6 +681,15 @@ export class MissionExecutor {
       totalStages: mission.pipeline.stages.length,
     });
 
+    // Emit stage.start event (parallel)
+    this.eventEmitter?.emit('stage.start', {
+      stageIndex,
+      stageName,
+      totalStages: mission.pipeline.stages.length,
+      isParallel: true,
+      parallelActions: actionNames,
+    });
+
     this.log(`Executing parallel stage: ${stageName}`);
 
     try {
@@ -643,6 +728,13 @@ export class MissionExecutor {
         success: true,
         duration: Date.now() - stageStartTime,
       });
+
+      // Emit stage.complete event (success)
+      this.eventEmitter?.emit('stage.complete', {
+        stageIndex,
+        stageName,
+        success: true,
+      });
     } catch (error) {
       // Mark stage as failed
       this.updateStageState(stageIndex, {
@@ -660,6 +752,14 @@ export class MissionExecutor {
         totalStages: mission.pipeline.stages.length,
         success: false,
         duration: Date.now() - stageStartTime,
+        error: (error as Error).message,
+      });
+
+      // Emit stage.complete event (failure)
+      this.eventEmitter?.emit('stage.complete', {
+        stageIndex,
+        stageName,
+        success: false,
         error: (error as Error).message,
       });
 
@@ -793,6 +893,19 @@ export class MissionExecutor {
       this.ctx = ctx;
     }
 
+    // Track step index for events
+    const currentStepIndex = this.stepIndex++;
+    const stepType = this.getStepType(step.type);
+
+    // Emit step.start event
+    this.eventEmitter?.emit('step.start', {
+      actionName,
+      stepIndex: currentStepIndex,
+      stepType,
+    });
+
+    const stepStartTime = Date.now();
+
     try {
       switch (step.type) {
         case 'FetchStep':
@@ -822,6 +935,14 @@ export class MissionExecutor {
         default:
           throw new Error(`Unknown step type: ${(step as ActionStep).type}`);
       }
+
+      // Emit step.complete event (success)
+      this.eventEmitter?.emit('step.complete', {
+        actionName,
+        stepIndex: currentStepIndex,
+        stepType,
+        success: true,
+      });
     } catch (error) {
       // Re-throw flow control signals without recording as errors
       if (
@@ -830,8 +951,24 @@ export class MissionExecutor {
         error instanceof JumpSignal ||
         error instanceof QueueSignal
       ) {
+        // Emit step.complete for flow control (not an error)
+        this.eventEmitter?.emit('step.complete', {
+          actionName,
+          stepIndex: currentStepIndex,
+          stepType,
+          success: true, // Flow control is not a failure
+        });
         throw error;
       }
+
+      // Emit step.complete event (failure)
+      this.eventEmitter?.emit('step.complete', {
+        actionName,
+        stepIndex: currentStepIndex,
+        stepType,
+        success: false,
+        error: (error as Error).message,
+      });
 
       // AbortError is a controlled abort, still record it
       this.errors.push({
@@ -859,6 +996,7 @@ export class MissionExecutor {
       executionId: this.executionState?.id,
       dryRun: this.config.dryRun,
       log: (msg) => this.log(msg),
+      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
 
     const result = await fetchHandler.execute(step);
@@ -874,6 +1012,7 @@ export class MissionExecutor {
     const handler = new ForHandler({
       ctx: this.ctx,
       log: (msg) => this.log(msg),
+      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
       executeStep: (s, a, c) => this.executeStep(s, a, c),
       actionName,
     });
@@ -884,6 +1023,7 @@ export class MissionExecutor {
     const handler = new MapHandler({
       ctx: this.ctx,
       log: (msg) => this.log(msg),
+      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
     await handler.execute(step);
   }
@@ -892,6 +1032,7 @@ export class MissionExecutor {
     const handler = new ValidateHandler({
       ctx: this.ctx,
       log: (msg) => this.log(msg),
+      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
     await handler.execute(step);
   }
@@ -900,6 +1041,7 @@ export class MissionExecutor {
     const handler = new StoreHandler({
       ctx: this.ctx,
       log: (msg) => this.log(msg),
+      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
     await handler.execute(step);
   }
@@ -908,6 +1050,7 @@ export class MissionExecutor {
     const handler = new MatchHandler({
       ctx: this.ctx,
       log: (msg) => this.log(msg),
+      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
       executeStep: (s, a, c) => this.executeStep(s, a, c),
       actionName,
     });
@@ -933,14 +1076,41 @@ export class MissionExecutor {
       webhookServer: this.config.webhookServer,
       executionId: this.executionState?.id ?? 'ephemeral',
       log: (msg) => this.log(msg),
+      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
 
     await handler.execute(step);
   }
 
   private log(message: string): void {
-    if (this.config.verbose) {
+    if (this.logger) {
+      this.logger.info(message);
+    } else if (this.config.verbose) {
       console.log(`[Reqon] ${message}`);
     }
+  }
+
+  private getStepType(stepType: string): StepType {
+    const mapping: Record<string, StepType> = {
+      FetchStep: 'fetch',
+      ForStep: 'for',
+      MapStep: 'map',
+      ValidateStep: 'validate',
+      StoreStep: 'store',
+      MatchStep: 'match',
+      LetStep: 'let',
+      WebhookStep: 'webhook',
+    };
+    return mapping[stepType] ?? 'fetch';
+  }
+
+  /** Get the event emitter (for external access) */
+  getEventEmitter(): EventEmitter | undefined {
+    return this.eventEmitter;
+  }
+
+  /** Get the structured logger (for external access) */
+  getLogger(): StructuredLogger | undefined {
+    return this.logger;
   }
 }

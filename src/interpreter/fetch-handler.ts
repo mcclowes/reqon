@@ -6,6 +6,7 @@ import { resolveOperation, getResponseSchema, validateResponse } from '../oas/in
 import type { OASSource } from '../oas/index.js';
 import { generateCheckpointKey, formatSinceDate, type SyncStore } from '../sync/index.js';
 import { extractNestedValue } from '../utils/path.js';
+import type { EventType } from '../observability/index.js';
 import { createPaginationStrategy, type PaginationContext } from './pagination.js';
 
 /** Maximum pages to fetch to prevent infinite loops */
@@ -20,6 +21,8 @@ export interface FetchHandlerDeps {
   executionId?: string;
   dryRun?: boolean;
   log: (message: string) => void;
+  /** Optional event emitter for observability */
+  emit?: <T>(type: EventType, payload: T) => void;
 }
 
 export interface FetchResult {
@@ -53,6 +56,19 @@ export class FetchHandler {
       resolved.path
     );
 
+    // Emit fetch.start event
+    this.deps.emit?.('fetch.start', {
+      source: resolved.sourceName,
+      method: resolved.method,
+      path: resolved.path,
+      isOAS: !!resolved.operationId,
+      operationId: resolved.operationId,
+      hasPagination: !!step.paginate,
+      hasSince: !!step.since,
+    });
+
+    const fetchStartTime = Date.now();
+
     if (this.deps.dryRun) {
       this.deps.log('(dry run - skipping actual request)');
       return { data: { dryRun: true }, checkpointKey };
@@ -60,32 +76,72 @@ export class FetchHandler {
 
     // Execute with or without pagination
     let data: unknown;
-    if (step.paginate) {
-      data = await this.executePaginated(
-        step,
-        client,
-        resolved.path,
-        resolved.method,
-        resolved.sourceName,
-        resolved.operationId,
-        sinceQuery
-      );
-    } else {
-      const response = await client.request(
-        {
-          method: resolved.method,
-          path: resolved.path,
-          query: Object.keys(sinceQuery).length > 0 ? sinceQuery : undefined,
-          body: step.body ? evaluate(step.body, this.deps.ctx) : undefined,
-        },
-        step.retry
-      );
+    let pagesFetched: number | undefined;
+    let statusCode = 200;
 
-      await this.validateOASResponse(resolved.sourceName, resolved.operationId, response.data);
-      data = response.data;
+    try {
+      if (step.paginate) {
+        const result = await this.executePaginated(
+          step,
+          client,
+          resolved.path,
+          resolved.method,
+          resolved.sourceName,
+          resolved.operationId,
+          sinceQuery
+        );
+        data = result;
+        pagesFetched = Array.isArray(result) ? undefined : 1; // Will be set by executePaginated
+      } else {
+        const response = await client.request(
+          {
+            method: resolved.method,
+            path: resolved.path,
+            query: Object.keys(sinceQuery).length > 0 ? sinceQuery : undefined,
+            body: step.body ? evaluate(step.body, this.deps.ctx) : undefined,
+          },
+          step.retry
+        );
+
+        await this.validateOASResponse(resolved.sourceName, resolved.operationId, response.data);
+        data = response.data;
+        statusCode = response.status ?? 200;
+      }
+
+      // Emit fetch.complete event
+      this.deps.emit?.('fetch.complete', {
+        source: resolved.sourceName,
+        method: resolved.method,
+        path: resolved.path,
+        statusCode,
+        recordCount: this.countRecords(data) ?? 0,
+        pagesFetched,
+      });
+    } catch (error) {
+      // Emit fetch.error event
+      this.deps.emit?.('fetch.error', {
+        source: resolved.sourceName,
+        path: resolved.path,
+        error: (error as Error).message,
+        retryable: this.isRetryableError(error),
+      });
+      throw error;
     }
 
     return { data, checkpointKey };
+  }
+
+  private isRetryableError(error: unknown): boolean {
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      return message.includes('timeout') ||
+             message.includes('network') ||
+             message.includes('rate limit') ||
+             message.includes('429') ||
+             message.includes('503') ||
+             message.includes('502');
+    }
+    return false;
   }
 
   /**
@@ -121,6 +177,14 @@ export class FetchHandler {
     });
 
     this.deps.log(`Recorded sync checkpoint: ${key} at ${syncedAt.toISOString()}`);
+
+    // Emit sync.checkpoint event
+    this.deps.emit?.('sync.checkpoint', {
+      checkpointKey: key,
+      lastSyncTime: syncedAt.toISOString(),
+      recordsFetched: recordCount ?? 0,
+      isIncremental: true,
+    });
   }
 
   private resolveFetchTarget(step: FetchStep): {

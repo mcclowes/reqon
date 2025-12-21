@@ -1,5 +1,6 @@
 import type { ActionStep } from '../../ast/nodes.js';
 import type { ExecutionContext } from '../context.js';
+import type { EventEmitter, EventType } from '../../observability/index.js';
 
 /**
  * Dependencies injected into step handlers
@@ -7,6 +8,8 @@ import type { ExecutionContext } from '../context.js';
 export interface StepHandlerDeps {
   ctx: ExecutionContext;
   log: (message: string) => void;
+  /** Optional event emitter for observability */
+  emit?: <T>(type: EventType, payload: T) => void;
 }
 
 /**

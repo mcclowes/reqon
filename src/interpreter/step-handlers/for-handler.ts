@@ -17,18 +17,53 @@ export class ForHandler implements StepHandler<ForStep> {
 
   async execute(step: ForStep): Promise<void> {
     const collection = await this.getCollection(step);
+    const originalCount = collection.length;
 
     // Apply filter if present
     const filtered = step.condition
       ? collection.filter((item) => evaluate(step.condition!, this.deps.ctx, item))
       : collection;
 
+    // Emit loop.start event
+    this.deps.emit?.('loop.start', {
+      variable: step.variable,
+      collectionSize: filtered.length,
+      hasFilter: !!step.condition,
+    });
+
     this.deps.log(`Iterating over ${filtered.length} items`);
 
+    let processedCount = 0;
+    let failedCount = 0;
+
     // Execute steps for each item
-    for (const item of filtered) {
-      await this.executeForItem(step, item);
+    for (let i = 0; i < filtered.length; i++) {
+      const item = filtered[i];
+
+      // Emit loop.iteration event
+      this.deps.emit?.('loop.iteration', {
+        variable: step.variable,
+        itemIndex: i,
+        totalItems: filtered.length,
+      });
+
+      try {
+        await this.executeForItem(step, item);
+        processedCount++;
+      } catch (error) {
+        failedCount++;
+        throw error; // Re-throw to propagate
+      }
     }
+
+    // Emit loop.complete event
+    this.deps.emit?.('loop.complete', {
+      variable: step.variable,
+      totalItems: filtered.length,
+      itemsProcessed: processedCount,
+      itemsSkipped: originalCount - filtered.length,
+      itemsFailed: failedCount,
+    });
   }
 
   private async getCollection(step: ForStep): Promise<unknown[]> {
