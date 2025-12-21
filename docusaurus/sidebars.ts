@@ -37,6 +37,8 @@ const sidebars: SidebarsConfig = {
         'dsl-syntax/match',
         'dsl-syntax/pipelines',
         'dsl-syntax/expressions',
+        'dsl-syntax/wait',
+        'dsl-syntax/variables',
       ],
     },
     {
@@ -134,6 +136,20 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Observability',
+      link: {
+        type: 'generated-index',
+        title: 'Observability',
+        description: 'Monitor and debug mission execution',
+      },
+      items: [
+        'observability/overview',
+        'observability/structured-logging',
+        'observability/opentelemetry',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Advanced Topics',
       link: {
         type: 'generated-index',
@@ -145,6 +161,7 @@ const sidebars: SidebarsConfig = {
         'advanced/execution-state',
         'advanced/parallel-execution',
         'advanced/extending-reqon',
+        'advanced/mcp-integration',
       ],
     },
     'examples',

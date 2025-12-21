@@ -389,7 +389,36 @@ type ActionStep =
   | MapStep
   | ValidateStep
   | StoreStep
-  | MatchStep;
+  | MatchStep
+  | LetStep
+  | WebhookStep;
+```
+
+### LetStep
+
+```typescript
+interface LetStep {
+  type: 'LetStep';
+  name: string;
+  value: Expression;
+}
+```
+
+### WebhookStep
+
+```typescript
+interface WebhookStep {
+  type: 'WebhookStep';
+  timeout?: number;
+  path?: string;
+  expectedEvents?: number;
+  eventFilter?: Expression;
+  retryOnTimeout?: RetryConfig;
+  storage?: {
+    target: string;
+    key?: Expression;
+  };
+}
 ```
 
 ## CLI Programmatic Usage
@@ -409,6 +438,114 @@ await cli.run(['./missions/', '--daemon']);
 await cli.run(['./mission.vague', '--auth', './credentials.json']);
 ```
 
+## Observability
+
+### createStructuredLogger
+
+Create a structured logger with multiple outputs.
+
+```typescript
+import { createStructuredLogger, ConsoleOutput, JsonLinesOutput } from 'reqon';
+
+const logger = createStructuredLogger({
+  prefix: 'MyApp',
+  level: 'info',
+  console: true,
+  jsonLines: true,
+  context: { service: 'data-sync' }
+});
+
+logger.info('Starting sync', { count: 100 });
+const span = logger.span('fetchData');
+// ... do work
+span.end();
+```
+
+### createEmitter
+
+Create an event emitter for observability.
+
+```typescript
+import { createEmitter } from 'reqon';
+
+const emitter = createEmitter();
+
+emitter.on('fetch.complete', (event) => {
+  console.log(`Fetched ${event.url} in ${event.duration}ms`);
+});
+
+emitter.on('mission.complete', (event) => {
+  console.log(`Mission ${event.mission} completed`);
+});
+```
+
+### OTLPExporter
+
+Export traces to OpenTelemetry collectors.
+
+```typescript
+import { OTLPExporter, createOTelListener } from 'reqon';
+
+const exporter = new OTLPExporter({
+  endpoint: 'http://localhost:4318/v1/traces',
+  serviceName: 'reqon-pipeline'
+});
+
+const otelListener = createOTelListener(exporter);
+```
+
+### Event Types
+
+```typescript
+type EventType =
+  | 'mission.start' | 'mission.complete' | 'mission.failed'
+  | 'stage.start' | 'stage.complete'
+  | 'step.start' | 'step.complete'
+  | 'fetch.start' | 'fetch.complete' | 'fetch.retry' | 'fetch.error'
+  | 'data.transform' | 'data.validate' | 'data.store'
+  | 'loop.start' | 'loop.iteration' | 'loop.complete'
+  | 'match.attempt' | 'match.result'
+  | 'webhook.register' | 'webhook.event' | 'webhook.complete'
+  | 'checkpoint.save' | 'checkpoint.resume' | 'sync.checkpoint'
+  | 'ratelimit.hit' | 'circuitbreaker.state';
+```
+
+## MCP Server
+
+### Starting the Server
+
+```typescript
+// As a separate process
+import { spawn } from 'child_process';
+spawn('npx', ['reqon-mcp-server', '--verbose']);
+```
+
+### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `reqon.execute` | Execute mission from source |
+| `reqon.execute_file` | Execute mission from file |
+| `reqon.parse` | Parse and validate source |
+| `reqon.query_store` | Query store data |
+| `reqon.list_stores` | List registered stores |
+| `reqon.register_store` | Register a store |
+
+## Plugin System
+
+### reqonPlugin
+
+```typescript
+import { reqonPlugin, registerReqonPlugin, unregisterReqonPlugin } from 'reqon';
+
+// Check if registered
+import { isReqonPluginRegistered } from 'reqon';
+console.log(isReqonPluginRegistered()); // true (auto-registered on import)
+
+// Unregister if needed
+unregisterReqonPlugin();
+```
+
 ## Environment Variables
 
 | Variable | Description |
@@ -417,6 +554,8 @@ await cli.run(['./mission.vague', '--auth', './credentials.json']);
 | `REQON_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` |
 | `REQON_LOG_FORMAT` | Log format: `text`, `json` |
 | `REQON_DRY_RUN` | Enable dry-run mode |
+| `REQON_OTEL_ENDPOINT` | OTLP exporter endpoint |
+| `REQON_OTEL_SERVICE` | Service name for traces |
 
 ## Error Classes
 

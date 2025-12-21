@@ -31,9 +31,13 @@ reqon ./missions/customer-sync/
 | `--dry-run` | Parse and validate without executing HTTP requests |
 | `--verbose` | Enable detailed logging output |
 | `--auth <file>` | Path to JSON file containing authentication credentials |
+| `--env <file>` | Path to .env file (default: .env in current directory) |
 | `--output <path>` | Export store contents to JSON files after execution |
 | `--daemon` | Run scheduled missions continuously |
 | `--once` | Run scheduled missions once, then exit |
+| `--webhook` | Enable webhook server for `wait` steps |
+| `--webhook-port <n>` | Port for webhook server (default: 3000) |
+| `--webhook-url <url>` | Base URL for webhook endpoints (default: http://localhost:3000) |
 
 ## Examples
 
@@ -126,6 +130,32 @@ reqon ./missions/ --once
 
 Useful for cron-triggered executions where you want external scheduling.
 
+### Webhook Server
+
+Enable the webhook server for missions that use `wait` steps:
+
+```bash
+reqon payment-flow.vague --webhook --verbose
+```
+
+With custom port and URL (for production or tunnels):
+
+```bash
+reqon payment-flow.vague --webhook --webhook-port 8080 --webhook-url https://my-server.ngrok.io
+```
+
+### Environment Files
+
+Load environment variables from a specific file:
+
+```bash
+reqon sync-data.vague --env .env.production --auth ./credentials.json
+```
+
+The `--env` flag supports:
+- Custom `.env` file paths
+- Environment variable interpolation in auth files
+
 ## Exit Codes
 
 | Code | Meaning |
@@ -142,6 +172,45 @@ Useful for cron-triggered executions where you want external scheduling.
 | `REQON_STATE_DIR` | Directory for execution state (default: `.vague-data`) |
 | `REQON_LOG_LEVEL` | Logging level: `debug`, `info`, `warn`, `error` |
 | `REQON_DRY_RUN` | Enable dry-run mode (same as `--dry-run`) |
+
+### Auto-Discovery from Environment
+
+Reqon can automatically discover credentials from environment variables:
+
+| Variable Pattern | Description |
+|------------------|-------------|
+| `REQON_{SOURCE}_TOKEN` | Bearer token for a source |
+| `REQON_{SOURCE}_TYPE` | Auth type: `bearer`, `oauth2`, `api_key`, `basic` |
+| `REQON_{SOURCE}_API_KEY` | API key for a source |
+
+Example:
+```bash
+export REQON_GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+export REQON_GITHUB_TYPE="bearer"
+
+# No --auth file needed for GitHub source
+reqon sync-repos.vague
+```
+
+### Credential File Interpolation
+
+Auth files support environment variable interpolation:
+
+```json
+{
+  "Xero": {
+    "type": "oauth2",
+    "clientId": "$XERO_CLIENT_ID",
+    "clientSecret": "${XERO_CLIENT_SECRET}",
+    "accessToken": "${XERO_ACCESS_TOKEN:-default-token}"
+  }
+}
+```
+
+Supported formats:
+- `$VAR_NAME` - Simple variable
+- `${VAR_NAME}` - Braced variable
+- `${VAR_NAME:-default}` - With default value
 
 ## Multi-File Missions
 

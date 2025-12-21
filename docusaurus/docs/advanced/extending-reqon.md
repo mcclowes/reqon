@@ -151,6 +151,33 @@ action WithNotification {
 }
 ```
 
+## Vague Plugin Integration
+
+Reqon extends Vague (the underlying DSL layer) via its plugin system. This allows Reqon keywords to be recognized by Vague's lexer.
+
+### Registering Reqon
+
+Reqon auto-registers with Vague on import:
+
+```typescript
+import { parse } from 'reqon';  // Auto-registers reqonPlugin
+
+// Or explicitly register
+import { registerReqonPlugin } from 'reqon';
+registerReqonPlugin();
+```
+
+### Plugin Structure
+
+The Reqon plugin adds keywords to Vague:
+
+```typescript
+import { reqonPlugin, registerReqonPlugin, unregisterReqonPlugin } from 'reqon';
+
+console.log(reqonPlugin.name);     // 'reqon'
+console.log(reqonPlugin.keywords); // Array of Reqon keywords
+```
+
 ## Plugins
 
 ### Creating a Plugin
