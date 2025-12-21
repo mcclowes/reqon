@@ -1,12 +1,12 @@
 ---
 name: reqon
 # prettier-ignore
-description: Reqon DSL for declarative fetch, map, validate pipelines with HTTP orchestration
+description: Use when writing or editing .vague files for Reqon declarative API data pipelines
 ---
 
 # Reqon
 
-Declarative DSL for API data pipelines. File extension: `.vague`
+Declarative DSL for fetch, map, validate pipelines. File extension: `.vague`
 
 ## Quick Start
 
@@ -26,59 +26,23 @@ mission SyncData {
 
 ## Core Constructs
 
-- `mission` - Pipeline container with sources, stores, schemas, actions
-- `source` - API config: auth (bearer/basic/api_key/oauth2), base URL, headers, rateLimit
-- `store` - Storage: `memory("name")`, `file("path")`, `sql("table")`
-- `schema` - Type definitions for response matching
-- `action` - Pipeline step with fetch/map/validate/store
+- `mission` - Pipeline container (sources, stores, schemas, actions, schedule)
+- `source` - API: auth (bearer/basic/api_key/oauth2/none), base, headers, rateLimit
+- `source Name from "./spec.yaml"` - OAS-based source
+- `store` - Storage: `memory("name")`, `file("path")`, `sql("table")`, `postgrest("table")`
+- `action` - Pipeline step: fetch, map, validate, store, wait
 - `run [A, B] then C` - Parallel then sequential execution
-
-## HTTP Fetch
-
-```
-get "/path" {
-  source: SourceName,
-  body: { "key": "value" },
-  paginate: page(page, 100),      // or cursor(.next_cursor) or offset(offset, 50)
-  until: length(response) == 0,
-  retry: { maxAttempts: 3, backoff: "exponential", initialDelay: 1000 }
-}
-```
-
-## Pattern Matching
-
-```
-match response {
-  [Schema] -> { store response -> items { key: .id } },
-  ErrorSchema -> retry { maxAttempts: 3 },
-  _ where .status == "error" -> abort "Failed",
-  _ -> skip
-}
-```
-
-## Transformation
-
-```
-for item in items where .active == true {
-  map item -> OutputSchema {
-    id: .id,
-    name: .title,
-    status: match .state { "open" => "active", _ => "inactive" }
-  }
-  validate response { assume length(.name) > 0 }
-  store response -> output { key: .id, upsert: true }
-}
-```
+- `match response { Schema -> ..., _ -> skip }` - Pattern matching
+- `for item in store where .active { ... }` - Iteration with filter
+- `call Source.operationId` - OAS-based fetch by operationId
+- `wait { timeout, path, eventFilter, storage }` - Webhook/callback waiting
+- `schedule: every N hours` or `schedule: cron "..."` or `schedule: at "datetime"`
 
 ## Flow Control
 
-- `continue` - Proceed to next step
-- `skip` - Skip current item in loop
-- `abort "message"` - Stop mission with error
-- `retry { maxAttempts, backoff, initialDelay }` - Retry current operation
-- `queue storeName` - Send to dead letter queue
-- `jump ActionName then retry` - Execute action then retry
+`continue`, `skip`, `abort "msg"`, `retry {...}`, `queue dlq`, `jump Action then retry`
 
 ## Reference Files
 
-See [references/](references/) for detailed syntax and examples.
+- [references/syntax.md](references/syntax.md) - Full DSL syntax
+- [references/examples.md](references/examples.md) - Complete examples
