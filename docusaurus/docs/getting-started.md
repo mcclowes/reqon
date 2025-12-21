@@ -1,0 +1,256 @@
+---
+sidebar_position: 2
+---
+
+# Getting Started
+
+This guide will help you install Reqon and run your first data pipeline.
+
+## Prerequisites
+
+- Node.js 18 or later
+- npm or yarn
+
+## Installation
+
+```bash
+npm install reqon
+```
+
+Or if you prefer yarn:
+
+```bash
+yarn add reqon
+```
+
+## Your First Mission
+
+Create a file called `hello.reqon`:
+
+```reqon
+mission HelloWorld {
+  source JSONPlaceholder {
+    auth: none,
+    base: "https://jsonplaceholder.typicode.com"
+  }
+
+  store posts: memory("posts")
+
+  action FetchPosts {
+    get "/posts"
+
+    for post in response {
+      map post -> Post {
+        id: .id,
+        title: .title,
+        body: .body,
+        userId: .userId
+      }
+      store post -> posts { key: .id }
+    }
+  }
+
+  run FetchPosts
+}
+```
+
+## Running Your Mission
+
+### Using the CLI
+
+```bash
+npx reqon hello.reqon
+```
+
+With verbose output:
+
+```bash
+npx reqon hello.reqon --verbose
+```
+
+### Using the API
+
+```typescript
+import { execute } from 'reqon';
+
+const result = await execute(`
+  mission HelloWorld {
+    source JSONPlaceholder { auth: none, base: "https://jsonplaceholder.typicode.com" }
+    store posts: memory("posts")
+
+    action FetchPosts {
+      get "/posts"
+      store response -> posts { key: .id }
+    }
+
+    run FetchPosts
+  }
+`);
+
+console.log(`Fetched ${result.stores.get('posts')?.list().length} posts`);
+```
+
+## Understanding the Output
+
+When you run a mission, Reqon provides detailed execution information:
+
+```
+[Reqon] Starting mission: HelloWorld
+[Reqon] Running action: FetchPosts
+[Reqon] GET https://jsonplaceholder.typicode.com/posts
+[Reqon] Stored 100 items to posts
+[Reqon] Mission completed in 234ms
+```
+
+## Mission Structure
+
+Every Reqon mission follows this structure:
+
+```reqon
+mission MissionName {
+  // 1. Define data sources (APIs)
+  source SourceName { auth: type, base: "url" }
+
+  // 2. Define storage targets
+  store storeName: adapter("name")
+
+  // 3. Define schemas (optional, for validation)
+  schema SchemaName { field: type }
+
+  // 4. Define actions (processing steps)
+  action ActionName {
+    // Steps: fetch, map, validate, store, for, match
+  }
+
+  // 5. Define the pipeline
+  run ActionName then AnotherAction
+}
+```
+
+## Adding Transformations
+
+Use `map` to transform data:
+
+```reqon
+action TransformPosts {
+  get "/posts"
+
+  for post in response {
+    map post -> BlogPost {
+      id: .id,
+      title: .title,
+      excerpt: substring(.body, 0, 100),
+      author: concat("User ", toString(.userId))
+    }
+    store post -> posts { key: .id }
+  }
+}
+```
+
+## Adding Validation
+
+Use `validate` to check constraints:
+
+```reqon
+action ValidatedFetch {
+  get "/posts"
+
+  for post in response {
+    validate post {
+      assume .id > 0,
+      assume length(.title) > 0,
+      assume .userId is number
+    }
+    store post -> posts { key: .id }
+  }
+}
+```
+
+## Handling Pagination
+
+Most APIs require pagination. Reqon makes this easy:
+
+```reqon
+action FetchAllPosts {
+  get "/posts" {
+    paginate: offset(page, 20),
+    until: length(response) == 0
+  }
+
+  store response -> posts { key: .id }
+}
+```
+
+## Error Handling
+
+Use `match` for pattern-based error handling:
+
+```reqon
+action RobustFetch {
+  get "/posts"
+
+  match response {
+    { error: _ } -> abort "API returned error",
+    { data: _ } -> continue,
+    _ -> store response -> posts { key: .id }
+  }
+}
+```
+
+## Next Steps
+
+Now that you've run your first mission, explore these topics:
+
+- [Core Concepts](./category/core-concepts) - Understand missions, actions, sources, and stores
+- [DSL Syntax](./category/dsl-syntax) - Learn the complete Reqon syntax
+- [Authentication](./category/authentication) - Connect to authenticated APIs
+- [Examples](./examples) - See more complex examples
+
+## Common Issues
+
+### "Source not found" Error
+
+Make sure you've defined the source before using it in an action:
+
+```reqon
+mission Example {
+  source API { auth: none, base: "https://api.example.com" }  // Define first
+
+  action FetchData {
+    get "/data"  // Uses the default source
+  }
+
+  run FetchData
+}
+```
+
+### "Store not found" Error
+
+Ensure stores are defined at the mission level:
+
+```reqon
+mission Example {
+  store myData: memory("data")  // Define at mission level
+
+  action SaveData {
+    get "/data"
+    store response -> myData { key: .id }  // Use in actions
+  }
+
+  run SaveData
+}
+```
+
+### Network Errors
+
+Add retry configuration for unreliable networks:
+
+```reqon
+get "/data" {
+  retry: {
+    maxAttempts: 3,
+    backoff: exponential,
+    initialDelay: 1000
+  }
+}
+```
