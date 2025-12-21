@@ -259,8 +259,27 @@ npx ts-node src/client/schedule.ts schedule
 
 ## Files
 
-### Reqon Solution
-- `reconciliation.vague` - **The complete solution in ~280 lines**
+### Reqon Solutions
+
+Reqon supports both single-file and modular folder structures:
+
+**Single File** (`reconciliation.vague`):
+- The complete solution in ~280 lines
+- Best for quick prototyping or small pipelines
+
+**Modular Folder** (`reconciliation/`):
+```
+reconciliation/
+├── mission.vague        # Sources, stores, schemas, and pipeline orchestration
+├── sync-shopify.vague   # SyncShopifyOrders action
+├── sync-stripe.vague    # SyncStripePayments action
+├── sync-shipstation.vague # SyncShipStationShipments action
+└── validate.vague       # ValidateReconciliation action
+```
+- Same functionality, separated by concern
+- Actions are automatically merged at load time
+- Best for larger pipelines or team collaboration
+- Run with: `reqon reconciliation/` (folder path)
 
 ### Temporal Solution (11 files, ~1,500 lines)
 ```

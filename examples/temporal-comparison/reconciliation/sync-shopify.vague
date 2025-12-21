@@ -1,0 +1,56 @@
+// Sync Shopify Orders (with incremental sync)
+
+action SyncShopifyOrders {
+  // Get last sync timestamp for incremental sync
+  get "/orders.json" {
+    source: "Shopify",
+    body: {
+      "status": "any",
+      "updated_at_min": sync_state.get("shopify_orders_last_sync"),
+      "limit": 250
+    },
+    paginate: cursor(page_info, 250, "link.next"),
+    until: response.orders.length == 0,
+    retry: {
+      maxAttempts: 5,
+      backoff: "exponential",
+      initialDelay: 2000,
+      maxDelay: 60000
+    }
+  },
+
+  // Transform each order to unified schema
+  for order in response.orders {
+    map order -> UnifiedOrder {
+      order_id: "shopify_" + .id,
+      external_id: .id,
+      source: "shopify",
+      customer_email: .customer.email,
+      total_amount: .total_price,
+      currency: .currency,
+      status: .status,
+      created_at: .created_at,
+      line_items_count: length(.line_items),
+      payment_status: match .financial_status {
+        "paid" => "captured",
+        "partially_paid" => "partial",
+        "pending" => "pending",
+        "refunded" => "refunded",
+        "partially_refunded" => "partial_refund",
+        _ => "unknown"
+      },
+      fulfillment_status: match .fulfillment_status {
+        "fulfilled" => "shipped",
+        "partial" => "partial",
+        null => "unfulfilled",
+        _ => .fulfillment_status
+      },
+      synced_at: now()
+    },
+
+    store response -> orders { key: .order_id, upsert: true }
+  },
+
+  // Update checkpoint
+  store { "shopify_orders_last_sync": now() } -> sync_state { key: "shopify_orders_last_sync" }
+}

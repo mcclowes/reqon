@@ -1,0 +1,118 @@
+// E-Commerce Order Reconciliation Pipeline
+// Syncs and validates orders across Shopify, Stripe, and ShipStation
+//
+// This folder demonstrates Reqon's modular structure:
+//   mission.vague          - Sources, stores, schemas, and pipeline
+//   sync-shopify.vague     - Shopify order sync action
+//   sync-stripe.vague      - Stripe payment sync action
+//   sync-shipstation.vague - ShipStation shipment sync action
+//   validate.vague         - Cross-source validation action
+
+mission OrderReconciliation {
+
+  // ============================================================
+  // SOURCES - API definitions with auth and rate limiting
+  // ============================================================
+
+  source Shopify {
+    auth: oauth2,
+    base: "https://mystore.myshopify.com/admin/api/2024-01",
+    headers: { "X-Shopify-Access-Token": "${SHOPIFY_TOKEN}" },
+    rateLimit: {
+      strategy: "pause",
+      maxWait: 120,
+      fallbackRpm: 40
+    }
+  }
+
+  source Stripe {
+    auth: bearer,
+    base: "https://api.stripe.com/v1",
+    rateLimit: {
+      strategy: "throttle",
+      maxWait: 60,
+      fallbackRpm: 100
+    }
+  }
+
+  source ShipStation {
+    auth: basic,
+    base: "https://ssapi.shipstation.com",
+    rateLimit: {
+      strategy: "pause",
+      maxWait: 30,
+      fallbackRpm: 40
+    }
+  }
+
+  // ============================================================
+  // STORES - Where we persist reconciled data
+  // ============================================================
+
+  store orders: sql("reconciled_orders")
+  store payments: sql("reconciled_payments")
+  store shipments: sql("reconciled_shipments")
+  store discrepancies: sql("audit_discrepancies")
+  store sync_state: sql("sync_checkpoints")
+
+  // ============================================================
+  // SCHEMAS - Unified data models
+  // ============================================================
+
+  schema UnifiedOrder {
+    order_id: string,
+    external_id: string,
+    source: string,
+    customer_email: string,
+    total_amount: decimal,
+    currency: string,
+    status: string,
+    created_at: date,
+    line_items_count: int,
+    payment_status: string,
+    fulfillment_status: string,
+    synced_at: date
+  }
+
+  schema UnifiedPayment {
+    payment_id: string,
+    order_id: string,
+    amount: decimal,
+    currency: string,
+    status: string,
+    method: string,
+    captured_at: date,
+    refunded_amount: decimal
+  }
+
+  schema UnifiedShipment {
+    shipment_id: string,
+    order_id: string,
+    carrier: string,
+    tracking_number: string,
+    status: string,
+    shipped_at: date,
+    delivered_at: date
+  }
+
+  schema Discrepancy {
+    id: string,
+    order_id: string,
+    type: string,
+    severity: string,
+    description: string,
+    shopify_value: string,
+    stripe_value: string,
+    shipstation_value: string,
+    detected_at: date
+  }
+
+  // ============================================================
+  // PIPELINE: Parallel fetch, then sequential validation
+  // ============================================================
+
+  // Fetch from all three APIs in parallel for maximum performance
+  // ValidateReconciliation runs after all three complete
+  run [SyncShopifyOrders, SyncStripePayments, SyncShipStationShipments]
+    then ValidateReconciliation
+}
