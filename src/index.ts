@@ -146,6 +146,7 @@ export {
   type OTelSpan,
   type OTLPExporterConfig,
 } from './observability/index.js';
+export { MCP_SERVER_VERSION } from './mcp/index.js';
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
