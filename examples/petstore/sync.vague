@@ -1,9 +1,9 @@
 // Petstore Sync Mission - demonstrating OAS integration
-// The API spec is loaded from petstore.yaml, so we don't need to specify paths or methods
+// The API spec is loaded from openapi.yaml, so we don't need to specify paths or methods
 
 mission SyncPets {
   // Load source from OpenAPI spec - base URL comes from spec's servers field
-  source Petstore from "./examples/petstore.yaml" {
+  source Petstore from "./openapi.yaml" {
     auth: bearer,
     validateResponses: true
   }

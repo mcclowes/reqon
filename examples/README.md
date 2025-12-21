@@ -59,6 +59,32 @@ Six directives for controlling execution flow:
 
 See: [error-handling](./error-handling/)
 
+### Validation with Fallback Actions
+Handle validation failures with custom logic using `validate...or`:
+```vague
+validate order {
+  assume payment_exists == true
+} or {
+  store {
+    type: "missing_payment",
+    order_id: order.id,
+    detected_at: now()
+  } -> discrepancies { key: .order_id }
+}
+```
+See: [temporal-comparison](./temporal-comparison/)
+
+### Array Schema Matching
+Match responses that are arrays of a schema type using `[Schema]`:
+```vague
+match response {
+  [GitHubIssue] -> { store response -> issues { key: .id } },
+  RateLimitError -> retry { maxAttempts: 5 },
+  _ -> skip
+}
+```
+See: [github-sync](./github-sync/)
+
 ### Authentication Types
 ```vague
 source API { auth: none }           # Public API
