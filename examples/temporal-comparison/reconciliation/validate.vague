@@ -1,0 +1,93 @@
+// Cross-Reference and Validate
+
+action ValidateReconciliation {
+  // Check for orders without payments
+  for order in orders where .payment_status == "pending" and .created_at < now() - days(3) {
+    let payment_exists = any of payments where .order_id == order.order_id,
+
+    validate order {
+      assume payment_exists == true
+    } or {
+      store {
+        id: "disc_" + order.order_id + "_no_payment",
+        order_id: order.order_id,
+        type: "missing_payment",
+        severity: "high",
+        description: "Order older than 3 days has no matching Stripe payment",
+        shopify_value: order.total_amount,
+        stripe_value: null,
+        shipstation_value: null,
+        detected_at: now()
+      } -> discrepancies { key: .id, upsert: true }
+    }
+  },
+
+  // Check for payment/order amount mismatches
+  for order in orders {
+    let matching_payments = payments where .order_id == order.order_id,
+    let total_paid = sum(matching_payments.amount),
+
+    validate order {
+      assume total_paid >= order.total_amount - 0.01,
+      assume total_paid <= order.total_amount + 0.01
+    } or {
+      store {
+        id: "disc_" + order.order_id + "_amount_mismatch",
+        order_id: order.order_id,
+        type: "amount_mismatch",
+        severity: match abs(order.total_amount - total_paid) {
+          x where x > 100 => "critical",
+          x where x > 10 => "high",
+          _ => "medium"
+        },
+        description: "Order total does not match payment total",
+        shopify_value: order.total_amount,
+        stripe_value: total_paid,
+        shipstation_value: null,
+        detected_at: now()
+      } -> discrepancies { key: .id, upsert: true }
+    }
+  },
+
+  // Check for shipped orders without shipment records
+  for order in orders where .fulfillment_status == "shipped" {
+    let shipment_exists = any of shipments where .order_id == order.order_id,
+
+    validate order {
+      assume shipment_exists == true
+    } or {
+      store {
+        id: "disc_" + order.order_id + "_no_shipment",
+        order_id: order.order_id,
+        type: "missing_shipment_record",
+        severity: "medium",
+        description: "Shopify shows fulfilled but no ShipStation shipment found",
+        shopify_value: order.fulfillment_status,
+        stripe_value: null,
+        shipstation_value: null,
+        detected_at: now()
+      } -> discrepancies { key: .id, upsert: true }
+    }
+  },
+
+  // Check for refund discrepancies
+  for payment in payments where .refunded_amount > 0 {
+    let order = first(orders where .order_id == payment.order_id),
+
+    validate payment {
+      assume order.payment_status == "refunded" or order.payment_status == "partial_refund"
+    } or {
+      store {
+        id: "disc_" + payment.order_id + "_refund_mismatch",
+        order_id: payment.order_id,
+        type: "refund_status_mismatch",
+        severity: "high",
+        description: "Stripe shows refund but Shopify payment status not updated",
+        shopify_value: order.payment_status,
+        stripe_value: payment.refunded_amount,
+        shipstation_value: null,
+        detected_at: now()
+      } -> discrepancies { key: .id, upsert: true }
+    }
+  }
+}

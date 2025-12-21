@@ -1,0 +1,41 @@
+// Sync Stripe Payments
+
+action SyncStripePayments {
+  get "/payment_intents" {
+    source: "Stripe",
+    body: {
+      "limit": 100,
+      "created[gte]": sync_state.get("stripe_payments_last_sync"),
+      "expand[]": "data.charges"
+    },
+    paginate: cursor(starting_after, 100, "data[-1].id"),
+    until: response.has_more == false,
+    retry: {
+      maxAttempts: 3,
+      backoff: "exponential",
+      initialDelay: 1000
+    }
+  },
+
+  for payment in response.data where .metadata.shopify_order_id != null {
+    map payment -> UnifiedPayment {
+      payment_id: "stripe_" + .id,
+      order_id: "shopify_" + .metadata.shopify_order_id,
+      amount: .amount / 100,  // Stripe uses cents
+      currency: .currency,
+      status: match .status {
+        "succeeded" => "captured",
+        "requires_capture" => "authorized",
+        "canceled" => "voided",
+        _ => .status
+      },
+      method: .payment_method_types[0],
+      captured_at: .charges.data[0].created,
+      refunded_amount: .charges.data[0].amount_refunded / 100
+    },
+
+    store response -> payments { key: .payment_id, upsert: true }
+  },
+
+  store { "stripe_payments_last_sync": now() } -> sync_state { key: "stripe_payments_last_sync" }
+}

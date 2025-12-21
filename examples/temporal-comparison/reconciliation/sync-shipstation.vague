@@ -1,0 +1,41 @@
+// Sync ShipStation Shipments
+
+action SyncShipStationShipments {
+  get "/shipments" {
+    source: "ShipStation",
+    body: {
+      "pageSize": 500,
+      "createDateStart": sync_state.get("shipstation_last_sync"),
+      "sortBy": "CreateDate"
+    },
+    paginate: page(page, 500),
+    until: response.shipments.length == 0,
+    retry: {
+      maxAttempts: 4,
+      backoff: "exponential",
+      initialDelay: 3000
+    }
+  },
+
+  for shipment in response.shipments {
+    map shipment -> UnifiedShipment {
+      shipment_id: "ss_" + .shipmentId,
+      order_id: "shopify_" + .orderNumber,
+      carrier: .carrierCode,
+      tracking_number: .trackingNumber,
+      status: match .voided {
+        true => "voided",
+        _ => match .trackingNumber {
+          null => "label_created",
+          _ => "shipped"
+        }
+      },
+      shipped_at: .shipDate,
+      delivered_at: .deliveryDate
+    },
+
+    store response -> shipments { key: .shipment_id, upsert: true }
+  },
+
+  store { "shipstation_last_sync": now() } -> sync_state { key: "shipstation_last_sync" }
+}
