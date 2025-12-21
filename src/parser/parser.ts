@@ -1307,6 +1307,13 @@ export class ReqonParser extends ReqonExpressionParser {
   private parseMatchArm(): MatchArm {
     // Schema name or '_' for wildcard
     const schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name or _').value;
+
+    // Optional guard condition: _ where <condition>
+    let guard: Expression | undefined;
+    if (this.match(TokenType.WHERE)) {
+      guard = this.parseExpression();
+    }
+
     this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
 
     // After -> we have either:
@@ -1317,7 +1324,7 @@ export class ReqonParser extends ReqonExpressionParser {
     // Check for flow directives
     const flow = this.tryParseFlowDirective();
     if (flow) {
-      return { schema, flow };
+      return { schema, guard, flow };
     }
 
     // Check for step block
@@ -1331,12 +1338,12 @@ export class ReqonParser extends ReqonExpressionParser {
       }
 
       this.consume(TokenType.RBRACE, "Expected '}'");
-      return { schema, steps };
+      return { schema, guard, steps };
     }
 
     // Single step
     const step = this.parseActionStep();
-    return { schema, steps: [step] };
+    return { schema, guard, steps: [step] };
   }
 
   private tryParseFlowDirective(): FlowDirective | undefined {

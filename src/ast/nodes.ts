@@ -168,6 +168,8 @@ export interface MatchStep {
 export interface MatchArm {
   /** Schema name to match against, or '_' for wildcard */
   schema: string;
+  /** Optional guard condition (when using 'where' clause) */
+  guard?: Expression;
   /** Steps to execute if matched */
   steps?: ActionStep[];
   /** Flow control directive (if no steps) */

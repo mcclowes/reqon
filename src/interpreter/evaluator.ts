@@ -1,9 +1,26 @@
 import type { Expression } from 'vague-lang';
 import type { ExecutionContext } from './context.js';
 import { getVariable } from './context.js';
-import type { IsExpression } from '../parser/expressions.js';
+import type { IsExpression, ObjectLiteralExpression } from '../parser/expressions.js';
 
-export function evaluate(expr: Expression, ctx: ExecutionContext, current?: unknown): unknown {
+export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpression, ctx: ExecutionContext, current?: unknown): unknown {
+  // Handle IsExpression before the switch (custom Reqon type, not in vague-lang Expression union)
+  if (expr.type === 'IsExpression') {
+    const isExpr = expr as IsExpression;
+    const value = evaluate(isExpr.operand, ctx, current);
+    return checkType(value, isExpr.typeCheck);
+  }
+
+  // Handle ObjectLiteral before the switch (custom Reqon type)
+  if (expr.type === 'ObjectLiteral') {
+    const objExpr = expr as ObjectLiteralExpression;
+    const result: Record<string, unknown> = {};
+    for (const prop of objExpr.properties) {
+      result[prop.key] = evaluate(prop.value, ctx, current);
+    }
+    return result;
+  }
+
   switch (expr.type) {
     case 'Literal':
       return expr.value;
@@ -166,6 +183,10 @@ export function evaluate(expr: Expression, ctx: ExecutionContext, current?: unkn
           return Math.floor(args[0] as number);
         case 'ceil':
           return Math.ceil(args[0] as number);
+        case 'now':
+          return new Date().toISOString();
+        case 'env':
+          return process.env[args[0] as string] ?? '';
         default:
           throw new Error(`Unknown function: ${expr.callee}`);
       }
@@ -180,13 +201,6 @@ export function evaluate(expr: Expression, ctx: ExecutionContext, current?: unkn
       }
 
       return collection[Math.floor(Math.random() * collection.length)];
-    }
-
-    case 'IsExpression': {
-      // Type checking expression: value is array, value is string, etc.
-      const isExpr = expr as unknown as IsExpression;
-      const value = evaluate(isExpr.operand, ctx, current);
-      return checkType(value, isExpr.typeCheck);
     }
 
     case 'OrderedSequenceType': {

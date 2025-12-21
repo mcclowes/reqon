@@ -9,6 +9,17 @@ export interface IsExpression {
   typeCheck: string; // 'array', 'object', 'string', 'number', 'boolean', 'null', 'undefined'
 }
 
+// Object literal expression: { key: value, ... }
+export interface ObjectLiteralExpression {
+  type: 'ObjectLiteral';
+  properties: ObjectProperty[];
+}
+
+export interface ObjectProperty {
+  key: string;
+  value: Expression;
+}
+
 export class ReqonExpressionParser extends ReqonParserBase {
   parseExpression(): Expression {
     return this.parseTernary();
@@ -304,6 +315,11 @@ export class ReqonExpressionParser extends ReqonParserBase {
       return { type: 'Literal', value: false, dataType: 'boolean' };
     }
 
+    // Object literal: { key: value, ... }
+    if (this.match(TokenType.LBRACE)) {
+      return this.parseObjectLiteral();
+    }
+
     // Identifier (including HTTP method tokens that can be used as identifiers)
     if (this.checkIdentifier()) {
       const name = this.advance().value;
@@ -350,6 +366,35 @@ export class ReqonExpressionParser extends ReqonParserBase {
     this.consume(TokenType.RBRACKET, "Expected ']'");
 
     return { type: 'OrderedSequenceType', elements };
+  }
+
+  private parseObjectLiteral(): Expression {
+    const properties: ObjectProperty[] = [];
+
+    // Handle empty object {}
+    if (this.check(TokenType.RBRACE)) {
+      this.advance();
+      return { type: 'ObjectLiteral', properties } as unknown as Expression;
+    }
+
+    do {
+      // Key can be an identifier or a string
+      let key: string;
+      if (this.check(TokenType.STRING)) {
+        key = this.advance().value;
+      } else if (this.checkIdentifier()) {
+        key = this.advance().value;
+      } else {
+        throw this.error('Expected property key (identifier or string)');
+      }
+
+      this.consume(TokenType.COLON, "Expected ':' after property key");
+      const value = this.parseExpression();
+      properties.push({ key, value });
+    } while (this.match(TokenType.COMMA) && !this.check(TokenType.RBRACE));
+
+    this.consume(TokenType.RBRACE, "Expected '}'");
+    return { type: 'ObjectLiteral', properties } as unknown as Expression;
   }
 
   parseQualifiedName(): QualifiedName {
