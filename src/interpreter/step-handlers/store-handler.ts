@@ -27,8 +27,11 @@ export class StoreHandler implements StepHandler<StoreStep> {
   private async storeMany(step: StoreStep, store: StoreAdapter, items: unknown[]): Promise<void> {
     const operation = step.options.upsert ? 'upsert' : 'set';
 
-    // Use bulk operation if available and not doing upserts (which need individual handling)
-    if (store.bulkSet && !step.options.upsert) {
+    // Check if we can use bulk operations
+    const canBulkSet = store.bulkSet && !step.options.upsert;
+    const canBulkUpsert = store.bulkUpsert && step.options.upsert;
+
+    if (canBulkSet || canBulkUpsert) {
       const records: Array<{ key: string; value: Record<string, unknown> }> = [];
       for (const item of items) {
         const record = item as Record<string, unknown>;
@@ -41,9 +44,14 @@ export class StoreHandler implements StepHandler<StoreStep> {
         }
         records.push({ key, value: record });
       }
-      await store.bulkSet(records);
+
+      if (canBulkUpsert) {
+        await store.bulkUpsert!(records);
+      } else {
+        await store.bulkSet!(records);
+      }
     } else {
-      // Fall back to individual operations for upserts or stores without bulkSet
+      // Fall back to individual operations for stores without bulk methods
       for (const item of items) {
         const record = item as Record<string, unknown>;
         await this.storeRecord(step, store, record);
