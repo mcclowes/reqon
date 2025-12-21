@@ -6,16 +6,16 @@ sidebar_position: 3
 
 Call OpenAPI operations using the `call` syntax with operation IDs.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 call SourceName.operationId
 call SourceName.operationId { options }
 ```
 
-## Simple Calls
+## Simple calls
 
-### GET Operations
+### GET operations
 
 ```vague
 // OpenAPI: GET /pets with operationId: listPets
@@ -25,7 +25,7 @@ call Petstore.listPets
 call Petstore.getPetById { params: { petId: "123" } }
 ```
 
-### POST Operations
+### POST operations
 
 ```vague
 // OpenAPI: POST /pets with operationId: addPet
@@ -37,7 +37,7 @@ call Petstore.addPet {
 }
 ```
 
-### PUT/PATCH Operations
+### PUT/PATCH operations
 
 ```vague
 // PUT - full replacement
@@ -53,7 +53,7 @@ call API.patchItem {
 }
 ```
 
-### DELETE Operations
+### DELETE operations
 
 ```vague
 call API.deleteItem {
@@ -63,7 +63,7 @@ call API.deleteItem {
 
 ## Parameters
 
-### Path Parameters
+### Path parameters
 
 For `/pets/{petId}`:
 
@@ -74,7 +74,7 @@ call Petstore.getPetById {
 // Generates: GET /pets/123
 ```
 
-### Query Parameters
+### Query parameters
 
 For `/pets?limit=10&status=available`:
 
@@ -87,7 +87,7 @@ call Petstore.listPets {
 }
 ```
 
-### Combined Parameters
+### Combined parameters
 
 ```vague
 call API.listUserOrders {
@@ -100,9 +100,9 @@ call API.listUserOrders {
 // Generates: GET /users/123/orders?status=pending&limit=50
 ```
 
-## Request Body
+## Request body
 
-### Simple Body
+### Simple body
 
 ```vague
 call API.createItem {
@@ -113,7 +113,7 @@ call API.createItem {
 }
 ```
 
-### Dynamic Body
+### Dynamic body
 
 ```vague
 for item in items {
@@ -130,7 +130,7 @@ for item in items {
 }
 ```
 
-### From Variable
+### From variable
 
 ```vague
 map data -> Payload {
@@ -143,7 +143,7 @@ call API.createItem { body: data }
 
 ## Headers
 
-### Custom Headers
+### Custom headers
 
 ```vague
 call API.listItems {
@@ -154,7 +154,7 @@ call API.listItems {
 }
 ```
 
-### Tenant Headers
+### Tenant headers
 
 ```vague
 call Xero.listInvoices {
@@ -164,7 +164,7 @@ call Xero.listInvoices {
 }
 ```
 
-## Pagination with Operations
+## Pagination with operations
 
 ```vague
 call API.listItems {
@@ -174,7 +174,7 @@ call API.listItems {
 }
 ```
 
-### Cursor Pagination
+### Cursor pagination
 
 ```vague
 call API.listItems {
@@ -183,7 +183,7 @@ call API.listItems {
 }
 ```
 
-## Combining Options
+## Combining options
 
 ```vague
 call API.searchItems {
@@ -203,7 +203,7 @@ call API.searchItems {
 }
 ```
 
-## Response Handling
+## Response handling
 
 ```vague
 action FetchWithHandling {
@@ -217,7 +217,7 @@ action FetchWithHandling {
 }
 ```
 
-## Operation Chaining
+## Operation chaining
 
 ```vague
 action CreateAndFetch {
@@ -235,7 +235,7 @@ action CreateAndFetch {
 }
 ```
 
-## Error Handling
+## Error handling
 
 ```vague
 call API.riskyOperation { params: { id: "123" } }
@@ -250,9 +250,9 @@ match response {
 }
 ```
 
-## Dynamic Operation Calls
+## Dynamic operation calls
 
-### Based on Condition
+### Based on condition
 
 ```vague
 action SmartSync {
@@ -270,7 +270,7 @@ action SmartSync {
 }
 ```
 
-## Best Practices
+## Best practices
 
 ### Match Operation IDs
 
@@ -283,7 +283,7 @@ operationId: listUsers  # camelCase recommended
 call API.listUsers  # Match exactly
 ```
 
-### Use Descriptive Operations
+### Use descriptive operations
 
 ```yaml
 # Good
@@ -296,7 +296,7 @@ operationId: post1
 operationId: get2
 ```
 
-### Handle All Response Codes
+### Handle all response codes
 
 ```vague
 call API.operation

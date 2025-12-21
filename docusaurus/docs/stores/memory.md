@@ -13,7 +13,7 @@ store cache: memory("cache")
 store tempData: memory("temp-processing")
 ```
 
-## Use Cases
+## Use cases
 
 ### Testing
 
@@ -28,7 +28,7 @@ mission TestSync {
 }
 ```
 
-### Temporary Processing
+### Temporary processing
 
 ```vague
 mission Transform {
@@ -72,7 +72,7 @@ mission CachedLookup {
 }
 ```
 
-### Intermediate Results
+### Intermediate results
 
 ```vague
 mission Pipeline {
@@ -112,7 +112,7 @@ Memory stores are the fastest option:
 - No I/O overhead
 - No serialization
 
-### Size Limits
+### Size limits
 
 Limited by available memory:
 - Suitable for thousands to millions of small records
@@ -126,9 +126,9 @@ Data is not persisted:
 - Lost on errors/crashes
 - Not suitable for critical data
 
-## Best Practices
+## Best practices
 
-### Use for Temporary Data
+### Use for temporary data
 
 ```vague
 // Good: temporary processing
@@ -138,7 +138,7 @@ store temp: memory("temp")
 store customers: memory("customers")  // Use file or sql instead
 ```
 
-### Combine with Persistent Stores
+### Combine with persistent stores
 
 ```vague
 mission Hybrid {
@@ -159,7 +159,7 @@ mission Hybrid {
 }
 ```
 
-### Clear When Done
+### Clear when done
 
 Memory is automatically released when mission ends, but you can clear explicitly:
 
@@ -170,7 +170,7 @@ action CleanUp {
 }
 ```
 
-## Programmatic Access
+## Programmatic access
 
 ```typescript
 import { execute } from 'reqon';
@@ -183,7 +183,7 @@ const items = await cache.list();
 const item = await cache.get('key');
 ```
 
-## Comparison with Other Stores
+## Comparison with other stores
 
 | Feature | Memory | File | SQL |
 |---------|--------|------|-----|

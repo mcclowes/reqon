@@ -8,7 +8,7 @@ keywords: [reqon, mission, data pipeline, actions, sources, stores]
 
 A **Mission** is the top-level container in Reqon. It defines a complete data pipeline, including all the sources, stores, schemas, actions, and the execution flow.
 
-## Basic Structure
+## Basic structure
 
 ```vague
 mission MissionName {
@@ -31,7 +31,7 @@ mission MissionName {
 }
 ```
 
-## Mission Components
+## Mission components
 
 ### Sources
 
@@ -119,7 +119,7 @@ mission DataSync {
 }
 ```
 
-## Multiple Missions
+## Multiple missions
 
 A Reqon file can contain multiple missions:
 
@@ -149,7 +149,7 @@ mission SyncOrders {
 }
 ```
 
-## Scheduled Missions
+## Scheduled missions
 
 Add a schedule to run missions automatically:
 
@@ -171,7 +171,7 @@ mission DailySync {
 
 See [Scheduling](../category/scheduling) for more details.
 
-## Mission Options
+## Mission options
 
 Missions can include additional options:
 
@@ -196,9 +196,9 @@ mission RobustSync {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Keep Missions Focused
+### Keep missions focused
 
 Each mission should have a single responsibility:
 
@@ -213,7 +213,7 @@ mission SyncPayments {
 }
 ```
 
-### Use Descriptive Names
+### Use descriptive names
 
 ```vague
 // Good
@@ -223,7 +223,7 @@ mission SyncXeroInvoicesToQuickBooks { }
 mission Sync1 { }
 ```
 
-### Organize Complex Missions
+### Organize complex missions
 
 For complex pipelines, use [multi-file missions](../advanced/multi-file-missions):
 
@@ -236,7 +236,7 @@ missions/
     └── export.vague      # Export actions
 ```
 
-### Handle Errors Gracefully
+### Handle errors gracefully
 
 Always include error handling:
 
@@ -253,7 +253,7 @@ mission RobustSync {
 }
 ```
 
-## Execution Context
+## Execution context
 
 When a mission runs, Reqon creates an execution context that includes:
 

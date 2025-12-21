@@ -6,13 +6,13 @@ sidebar_position: 4
 
 A **Store** is a named data persistence target. Stores allow you to save, retrieve, update, and query data during mission execution.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 store storeName: adapter("identifier")
 ```
 
-## Available Adapters
+## Available adapters
 
 | Adapter | Description | Use Case |
 |---------|-------------|----------|
@@ -21,7 +21,7 @@ store storeName: adapter("identifier")
 | `sql` | SQL database | Production with PostgreSQL/MySQL |
 | `nosql` | NoSQL database | Production with MongoDB/DynamoDB |
 
-## Memory Store
+## Memory store
 
 In-memory storage that doesn't persist between runs:
 
@@ -35,7 +35,7 @@ Best for:
 - Temporary processing data
 - Intermediate results
 
-## File Store
+## File store
 
 JSON file storage in the `.vague-data` directory:
 
@@ -56,7 +56,7 @@ Best for:
 - Small to medium datasets
 - Simple persistence without database setup
 
-## SQL Store
+## SQL store
 
 SQL database storage via PostgREST or direct connection:
 
@@ -81,7 +81,7 @@ Requires configuration:
 
 See [PostgREST Store](../stores/postgrest) for details.
 
-## NoSQL Store
+## NoSQL store
 
 NoSQL database storage:
 
@@ -92,9 +92,9 @@ store logs: nosql("activity_logs")
 
 Currently falls back to file storage in development. Full MongoDB/DynamoDB support planned.
 
-## Store Operations
+## Store operations
 
-### Writing Data
+### Writing data
 
 ```vague
 action SaveData {
@@ -111,7 +111,7 @@ action SaveData {
 }
 ```
 
-### Key Option
+### Key option
 
 The `key` option specifies which field to use as the unique identifier:
 
@@ -121,7 +121,7 @@ store response -> users { key: .email }
 store response -> users { key: concat(.orgId, "-", .userId) }
 ```
 
-### Upsert Mode
+### Upsert mode
 
 Insert or update based on key:
 
@@ -132,7 +132,7 @@ store response -> users {
 }
 ```
 
-### Partial Updates
+### Partial updates
 
 Update only provided fields:
 
@@ -143,7 +143,7 @@ store response -> users {
 }
 ```
 
-## Reading From Stores
+## Reading from stores
 
 Stores are available as variables in actions:
 
@@ -162,7 +162,7 @@ action ProcessStoredData {
 }
 ```
 
-## Store Interface
+## Store interface
 
 Stores implement this interface:
 
@@ -188,7 +188,7 @@ interface StoreAdapter {
 }
 ```
 
-## Filtering Store Data
+## Filtering store data
 
 Use `where` clauses when iterating:
 
@@ -211,7 +211,7 @@ action ProcessFiltered {
 }
 ```
 
-## Store Aggregations
+## Store aggregations
 
 Access store metadata:
 
@@ -230,7 +230,7 @@ action CheckStore {
 }
 ```
 
-## Cross-Store Operations
+## Cross-store operations
 
 Reference multiple stores:
 
@@ -251,9 +251,9 @@ action Reconcile {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Use Appropriate Adapters
+### Use appropriate adapters
 
 ```vague
 // Development
@@ -263,7 +263,7 @@ store data: file("data")
 store data: sql("data_table")
 ```
 
-### Always Specify Keys
+### Always specify keys
 
 ```vague
 // Good: explicit key
@@ -273,7 +273,7 @@ store response -> users { key: .id }
 store response -> users
 ```
 
-### Use Upsert for Sync Operations
+### Use upsert for sync operations
 
 ```vague
 action IncrementalSync {
@@ -285,7 +285,7 @@ action IncrementalSync {
 }
 ```
 
-### Clean Up Temporary Stores
+### Clean up temporary stores
 
 ```vague
 mission CleanPipeline {
@@ -299,7 +299,7 @@ mission CleanPipeline {
 }
 ```
 
-### Use Descriptive Store Names
+### Use descriptive store names
 
 ```vague
 // Good
@@ -312,7 +312,7 @@ store data: file("data")
 store temp: file("temp")
 ```
 
-## Exporting Store Data
+## Exporting store data
 
 Use the CLI to export stores after execution:
 

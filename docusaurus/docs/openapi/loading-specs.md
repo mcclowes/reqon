@@ -6,9 +6,9 @@ sidebar_position: 2
 
 Reqon can load OpenAPI specifications from files or URLs.
 
-## Local Files
+## Local files
 
-### YAML Format
+### YAML format
 
 ```vague
 source API from "./openapi.yaml" {
@@ -16,7 +16,7 @@ source API from "./openapi.yaml" {
 }
 ```
 
-### JSON Format
+### JSON format
 
 ```vague
 source API from "./openapi.json" {
@@ -24,7 +24,7 @@ source API from "./openapi.json" {
 }
 ```
 
-### Relative Paths
+### Relative paths
 
 ```vague
 // Relative to mission file
@@ -36,7 +36,7 @@ source API from "/home/user/specs/api.yaml"
 
 ## Remote URLs
 
-### Public Specs
+### Public specs
 
 ```vague
 source Petstore from "https://petstore3.swagger.io/api/v3/openapi.json" {
@@ -44,7 +44,7 @@ source Petstore from "https://petstore3.swagger.io/api/v3/openapi.json" {
 }
 ```
 
-### Authenticated Specs
+### Authenticated specs
 
 ```vague
 source PrivateAPI from "https://api.company.com/openapi.json" {
@@ -56,7 +56,7 @@ source PrivateAPI from "https://api.company.com/openapi.json" {
 }
 ```
 
-## Spec Caching
+## Spec caching
 
 Reqon caches resolved specs:
 
@@ -67,7 +67,7 @@ source API from "https://api.example.com/openapi.json"
 // Subsequent runs: uses cache
 ```
 
-### Cache Location
+### Cache location
 
 ```
 .vague-data/
@@ -75,7 +75,7 @@ source API from "https://api.example.com/openapi.json"
     └── api.example.com-openapi.json
 ```
 
-### Force Refresh
+### Force refresh
 
 ```bash
 # Clear cache
@@ -85,9 +85,9 @@ rm -rf .vague-data/oas-cache/
 reqon mission.vague --no-oas-cache
 ```
 
-## Spec Structure
+## Spec structure
 
-### Minimum Required
+### Minimum required
 
 ```yaml
 openapi: 3.0.0
@@ -105,7 +105,7 @@ paths:
           description: Success
 ```
 
-### Full Example
+### Full example
 
 ```yaml
 openapi: 3.0.0
@@ -179,9 +179,9 @@ components:
         - name
 ```
 
-## Server Selection
+## Server selection
 
-### Default Server
+### Default server
 
 Uses first server in spec:
 
@@ -200,7 +200,7 @@ source API from "./spec.yaml" {
 }
 ```
 
-### Environment-Based
+### Environment-based
 
 ```vague
 source API from "./spec.yaml" {
@@ -209,7 +209,7 @@ source API from "./spec.yaml" {
 }
 ```
 
-## Reference Resolution
+## Reference resolution
 
 Reqon resolves `$ref` references:
 
@@ -223,7 +223,7 @@ $ref: './schemas/product.yaml'
 
 ## Validation
 
-### On Load
+### On load
 
 Reqon validates the spec structure:
 
@@ -232,7 +232,7 @@ Reqon validates the spec structure:
 [Reqon] Spec valid: 15 operations found
 ```
 
-### Invalid Specs
+### Invalid specs
 
 ```
 [Reqon] Error: Invalid OpenAPI spec
@@ -240,9 +240,9 @@ Reqon validates the spec structure:
   - Invalid path: /items must start with /
 ```
 
-## Multiple Specs
+## Multiple specs
 
-### Per-Source
+### Per-source
 
 ```vague
 mission MultiAPI {
@@ -258,7 +258,7 @@ mission MultiAPI {
 }
 ```
 
-### Shared Components
+### Shared components
 
 If specs share schemas, use a single bundled spec:
 
@@ -295,7 +295,7 @@ paths:
       operationId: listItems  # Must match call API.listItems
 ```
 
-### Network Issues
+### Network issues
 
 For remote specs:
 

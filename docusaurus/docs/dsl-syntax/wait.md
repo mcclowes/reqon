@@ -2,11 +2,11 @@
 sidebar_position: 8
 ---
 
-# Wait Steps (Webhooks)
+# Wait steps (webhooks)
 
 Wait steps pause execution until an external webhook callback is received. This enables async workflows where you need to wait for third-party systems to notify you of events.
 
-## Basic Usage
+## Basic usage
 
 ```vague
 action ProcessPayment {
@@ -53,7 +53,7 @@ wait {
 }
 ```
 
-### Expected Events
+### Expected events
 
 Wait for multiple webhook events before continuing. Default: 1.
 
@@ -70,7 +70,7 @@ for event in response {
 }
 ```
 
-### Event Filter
+### Event filter
 
 Filter incoming webhooks using an expression. Only matching events are collected.
 
@@ -97,7 +97,7 @@ wait {
 }
 ```
 
-### Retry on Timeout
+### Retry on timeout
 
 Retry the entire action if the webhook times out:
 
@@ -113,7 +113,7 @@ wait {
 }
 ```
 
-## Webhook URL in Response
+## Webhook URL in response
 
 After a `wait` step is registered, `response` contains the webhook URL info:
 
@@ -137,7 +137,7 @@ action CreateOrderWithCallback {
 }
 ```
 
-## CLI Configuration
+## CLI configuration
 
 Enable the webhook server with CLI flags:
 
@@ -152,7 +152,7 @@ reqon mission.vague --webhook --webhook-port 8080
 reqon mission.vague --webhook --webhook-url https://my-server.ngrok.io
 ```
 
-## Complete Example
+## Complete example
 
 ```vague
 mission PaymentProcessing {
@@ -207,9 +207,9 @@ mission PaymentProcessing {
 }
 ```
 
-## Use Cases
+## Use cases
 
-### Async API Callbacks
+### Async API callbacks
 
 Many APIs use webhooks for async operations:
 
@@ -218,7 +218,7 @@ Many APIs use webhooks for async operations:
 - Long-running computations
 - Third-party integrations
 
-### Event-Driven Pipelines
+### Event-driven pipelines
 
 Wait for external events to trigger pipeline stages:
 
@@ -240,7 +240,7 @@ action WaitForApproval {
 }
 ```
 
-### Batch Processing
+### Batch processing
 
 Collect multiple webhook events before processing:
 

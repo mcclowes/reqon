@@ -2,11 +2,11 @@
 sidebar_position: 1
 ---
 
-# Store Adapters Overview
+# Store adapters overview
 
 Store adapters provide pluggable backends for data persistence. Reqon includes several built-in adapters and supports custom implementations.
 
-## Available Adapters
+## Available adapters
 
 | Adapter | Description | Best For |
 |---------|-------------|----------|
@@ -15,7 +15,7 @@ Store adapters provide pluggable backends for data persistence. Reqon includes s
 | `sql` | SQL database (via PostgREST) | Production with PostgreSQL |
 | `nosql` | NoSQL database | MongoDB, DynamoDB |
 
-## Quick Start
+## Quick start
 
 ```vague
 mission DataSync {
@@ -33,7 +33,7 @@ mission DataSync {
 }
 ```
 
-## Store Interface
+## Store interface
 
 All adapters implement this interface:
 
@@ -53,21 +53,21 @@ interface StoreAdapter {
 }
 ```
 
-## Writing Data
+## Writing data
 
-### Basic Store
+### Basic store
 
 ```vague
 store response -> myStore
 ```
 
-### With Key
+### With key
 
 ```vague
 store response -> myStore { key: .id }
 ```
 
-### Upsert Mode
+### Upsert mode
 
 Insert or update based on key:
 
@@ -75,7 +75,7 @@ Insert or update based on key:
 store response -> myStore { key: .id, upsert: true }
 ```
 
-### Partial Update
+### Partial update
 
 Update only specified fields:
 
@@ -83,9 +83,9 @@ Update only specified fields:
 store response -> myStore { key: .id, partial: true }
 ```
 
-## Reading Data
+## Reading data
 
-### In For Loops
+### In for loops
 
 ```vague
 for item in myStore {
@@ -93,7 +93,7 @@ for item in myStore {
 }
 ```
 
-### With Filtering
+### With filtering
 
 ```vague
 for item in myStore where .status == "active" {
@@ -101,7 +101,7 @@ for item in myStore where .status == "active" {
 }
 ```
 
-### Multiple Conditions
+### Multiple conditions
 
 ```vague
 for item in myStore where .status == "pending" and .priority > 5 {
@@ -109,9 +109,9 @@ for item in myStore where .status == "pending" and .priority > 5 {
 }
 ```
 
-## Store Operations
+## Store operations
 
-### Check Existence
+### Check existence
 
 ```vague
 match myStore {
@@ -120,7 +120,7 @@ match myStore {
 }
 ```
 
-### Count Items
+### Count items
 
 ```vague
 validate {
@@ -128,7 +128,7 @@ validate {
 }
 ```
 
-### Cross-Store Operations
+### Cross-store operations
 
 ```vague
 for order in orders {
@@ -138,7 +138,7 @@ for order in orders {
 }
 ```
 
-## Choosing an Adapter
+## Choosing an adapter
 
 ### Development
 
@@ -161,7 +161,7 @@ store testData: memory("test")
 store data: sql("items")
 ```
 
-## Environment-Based Selection
+## Environment-based selection
 
 ```vague
 mission AdaptiveSync {
@@ -174,7 +174,7 @@ mission AdaptiveSync {
 }
 ```
 
-## Store Configuration
+## Store configuration
 
 ### Via CLI
 
@@ -182,7 +182,7 @@ mission AdaptiveSync {
 reqon mission.vague --store-config ./stores.json
 ```
 
-### Configuration File
+### Configuration file
 
 ```json
 {
@@ -199,7 +199,7 @@ reqon mission.vague --store-config ./stores.json
 }
 ```
 
-## Exporting Data
+## Exporting data
 
 ### Via CLI
 
@@ -228,9 +228,9 @@ for (const [name, store] of result.stores) {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Use Descriptive Names
+### Use descriptive names
 
 ```vague
 // Good
@@ -242,7 +242,7 @@ store data1: file("data1")
 store temp: file("temp")
 ```
 
-### Always Specify Keys
+### Always specify keys
 
 ```vague
 // Good: explicit key
@@ -252,14 +252,14 @@ store response -> items { key: .id }
 store response -> items
 ```
 
-### Use Upsert for Syncs
+### Use upsert for syncs
 
 ```vague
 // For incremental syncs
 store response -> items { key: .id, upsert: true }
 ```
 
-### Match Adapter to Use Case
+### Match adapter to use case
 
 | Use Case | Recommended |
 |----------|-------------|
@@ -269,6 +269,6 @@ store response -> items { key: .id, upsert: true }
 | Staging | `sql` (separate DB) |
 | Production | `sql` or `nosql` |
 
-## Custom Adapters
+## Custom adapters
 
 See [Custom Adapters](./custom-adapters) for implementing your own store adapter.

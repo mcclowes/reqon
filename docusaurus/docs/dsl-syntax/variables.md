@@ -2,11 +2,11 @@
 sidebar_position: 9
 ---
 
-# Variables and Let Bindings
+# Variables and let bindings
 
 Reqon supports variable bindings using `let` statements and object composition with the spread operator.
 
-## Let Bindings
+## Let bindings
 
 Create named variables to store intermediate values:
 
@@ -30,7 +30,7 @@ action ProcessOrder {
 }
 ```
 
-### Expression Bindings
+### Expression bindings
 
 Variables can hold any expression result:
 
@@ -59,11 +59,11 @@ action FetchData {
 }
 ```
 
-## Spread Operator
+## Spread operator
 
 Use the spread operator (`...`) to compose objects:
 
-### Merging Objects
+### Merging objects
 
 ```vague
 map response -> EnrichedOrder {
@@ -73,7 +73,7 @@ map response -> EnrichedOrder {
 }
 ```
 
-### Combining Data
+### Combining data
 
 ```vague
 action EnrichCustomer {
@@ -92,7 +92,7 @@ action EnrichCustomer {
 }
 ```
 
-### Selective Spreading
+### Selective spreading
 
 Spread specific nested objects:
 
@@ -105,9 +105,9 @@ map order -> FlatOrder {
 }
 ```
 
-## Common Patterns
+## Common patterns
 
-### Extracting and Reusing Values
+### Extracting and reusing values
 
 ```vague
 action SyncWithPagination {
@@ -133,7 +133,7 @@ action SyncWithPagination {
 }
 ```
 
-### Building Request Bodies
+### Building request bodies
 
 ```vague
 action CreateOrder {
@@ -157,7 +157,7 @@ action CreateOrder {
 }
 ```
 
-### Conditional Field Addition
+### Conditional field addition
 
 ```vague
 action ProcessRecord {
@@ -179,7 +179,7 @@ action ProcessRecord {
 }
 ```
 
-### Transforming Collections
+### Transforming collections
 
 ```vague
 action TransformItems {
@@ -197,7 +197,7 @@ action TransformItems {
 }
 ```
 
-## Variable Naming
+## Variable naming
 
 Use descriptive names that indicate the variable's purpose:
 

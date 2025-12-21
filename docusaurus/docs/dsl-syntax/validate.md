@@ -6,7 +6,7 @@ sidebar_position: 4
 
 Validate steps check data constraints before processing or storing. They help ensure data quality and catch issues early.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 validate target {
@@ -15,7 +15,7 @@ validate target {
 }
 ```
 
-## Simple Validation
+## Simple validation
 
 ```vague
 action ValidateUsers {
@@ -33,9 +33,9 @@ action ValidateUsers {
 }
 ```
 
-## Constraint Types
+## Constraint types
 
-### Type Checking
+### Type checking
 
 ```vague
 validate data {
@@ -48,7 +48,7 @@ validate data {
 }
 ```
 
-### Existence Checks
+### Existence checks
 
 ```vague
 validate data {
@@ -58,7 +58,7 @@ validate data {
 }
 ```
 
-### String Constraints
+### String constraints
 
 ```vague
 validate user {
@@ -70,7 +70,7 @@ validate user {
 }
 ```
 
-### Numeric Constraints
+### Numeric constraints
 
 ```vague
 validate order {
@@ -81,7 +81,7 @@ validate order {
 }
 ```
 
-### Array Constraints
+### Array constraints
 
 ```vague
 validate response {
@@ -99,9 +99,9 @@ validate event {
 }
 ```
 
-## Complex Constraints
+## Complex constraints
 
-### Logical Operators
+### Logical operators
 
 ```vague
 validate user {
@@ -111,7 +111,7 @@ validate user {
 }
 ```
 
-### Conditional Validation
+### Conditional validation
 
 ```vague
 validate order {
@@ -123,9 +123,9 @@ validate order {
 }
 ```
 
-## Validation Responses
+## Validation responses
 
-### Warnings vs Errors
+### Warnings vs errors
 
 By default, failed validations are warnings and don't stop execution:
 
@@ -136,7 +136,7 @@ validate user {
 // Execution continues even if validation fails
 ```
 
-### Strict Validation
+### Strict validation
 
 Combine with match for strict validation:
 
@@ -159,7 +159,7 @@ action StrictValidation {
 }
 ```
 
-## Validating Nested Data
+## Validating nested data
 
 ```vague
 validate order {
@@ -171,7 +171,7 @@ validate order {
 }
 ```
 
-## Validating Arrays
+## Validating arrays
 
 ```vague
 action ValidateAllItems {
@@ -196,7 +196,7 @@ action ValidateAllItems {
 }
 ```
 
-## Custom Validation Messages
+## Custom validation messages
 
 Use match for custom error handling:
 
@@ -222,7 +222,7 @@ action ValidateWithMessages {
 }
 ```
 
-## Validation Before Store
+## Validation before store
 
 Always validate before storing:
 
@@ -246,7 +246,7 @@ action SafeStore {
 }
 ```
 
-## Validation Schemas
+## Validation schemas
 
 Use schemas for reusable validation:
 
@@ -269,7 +269,7 @@ action ValidateAgainstSchema {
 }
 ```
 
-## Built-in Validation Functions
+## Built-in validation functions
 
 ```vague
 validate data {
@@ -292,7 +292,7 @@ validate data {
 }
 ```
 
-## Complete Example
+## Complete example
 
 ```vague
 mission DataValidation {
@@ -349,9 +349,9 @@ mission DataValidation {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Validate Early
+### Validate early
 
 ```vague
 action Process {
@@ -368,7 +368,7 @@ action Process {
 }
 ```
 
-### Use Specific Constraints
+### Use specific constraints
 
 ```vague
 // Good: specific constraints
@@ -384,7 +384,7 @@ validate user {
 }
 ```
 
-### Log Validation Failures
+### Log validation failures
 
 ```vague
 action ValidateWithLogging {

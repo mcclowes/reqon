@@ -2,11 +2,11 @@
 sidebar_position: 2
 ---
 
-# Retry Strategies
+# Retry strategies
 
 Reqon provides configurable retry strategies for handling transient failures. Choose the right strategy based on your API's behavior.
 
-## Retry Configuration
+## Retry configuration
 
 ```vague
 retry: {
@@ -17,9 +17,9 @@ retry: {
 }
 ```
 
-## Backoff Strategies
+## Backoff strategies
 
-### Exponential Backoff
+### Exponential backoff
 
 Best for most APIs. Delays double after each attempt:
 
@@ -43,7 +43,7 @@ Attempt 4: wait 4000ms (4s)
 Attempt 5: wait 8000ms (8s)
 ```
 
-### Linear Backoff
+### Linear backoff
 
 Delays increase by a fixed amount:
 
@@ -67,7 +67,7 @@ Attempt 4: wait 6000ms (6s)
 Attempt 5: wait 8000ms (8s)
 ```
 
-### Constant Backoff
+### Constant backoff
 
 Same delay every time:
 
@@ -91,7 +91,7 @@ Attempt 4: wait 5000ms (5s)
 Attempt 5: wait 5000ms (5s)
 ```
 
-## Maximum Delay
+## Maximum delay
 
 Prevent extremely long waits:
 
@@ -116,7 +116,7 @@ Attempt 8: wait 30000ms (30s)
 Attempt 9: wait 30000ms (30s)
 ```
 
-## Fixed Delay
+## Fixed delay
 
 Override backoff calculation:
 
@@ -130,9 +130,9 @@ match response {
 }
 ```
 
-## Retry Based on Error Type
+## Retry based on error type
 
-### Transient Errors (Should Retry)
+### Transient errors (should retry)
 
 ```vague
 match response {
@@ -146,7 +146,7 @@ match response {
 }
 ```
 
-### Permanent Errors (Don't Retry)
+### Permanent errors (don't retry)
 
 ```vague
 match response {
@@ -159,7 +159,7 @@ match response {
 }
 ```
 
-### Conditional Retry
+### Conditional retry
 
 ```vague
 match response {
@@ -188,7 +188,7 @@ match response {
 }
 ```
 
-## Retry-After Header
+## Retry-After header
 
 Respect API's `Retry-After` header:
 
@@ -206,7 +206,7 @@ match response {
 }
 ```
 
-## Retry with Token Refresh
+## Retry with token refresh
 
 ```vague
 action FetchProtectedData {
@@ -227,7 +227,7 @@ action RefreshToken {
 }
 ```
 
-## Retry at Source Level
+## Retry at source level
 
 Configure default retry for all requests:
 
@@ -253,7 +253,7 @@ get "/critical-endpoint" {
 }
 ```
 
-## Choosing the Right Strategy
+## Choosing the right strategy
 
 | Scenario | Recommended Strategy |
 |----------|---------------------|
@@ -263,9 +263,9 @@ get "/critical-endpoint" {
 | Flaky network | Constant, short delays |
 | Critical operations | Exponential with high maxAttempts |
 
-## Best Practices
+## Best practices
 
-### Start Small, Increase Gradually
+### Start small, increase gradually
 
 ```vague
 retry: {
@@ -276,7 +276,7 @@ retry: {
 }
 ```
 
-### Be Respectful to APIs
+### Be respectful to APIs
 
 ```vague
 // Good: respect rate limits
@@ -294,7 +294,7 @@ retry: {
 }
 ```
 
-### Log Retry Attempts
+### Log retry attempts
 
 ```vague
 match response {
@@ -310,7 +310,7 @@ match response {
 }
 ```
 
-### Have a Fallback
+### Have a fallback
 
 ```vague
 match response {
@@ -325,7 +325,7 @@ match response {
 
 ## Troubleshooting
 
-### Retries Not Happening
+### Retries not happening
 
 Ensure match directive triggers retry:
 
@@ -342,7 +342,7 @@ get "/data" {
 }
 ```
 
-### Too Many Retries
+### Too many retries
 
 Lower maxAttempts or add maxDelay:
 
@@ -353,7 +353,7 @@ retry: {
 }
 ```
 
-### Retrying Wrong Errors
+### Retrying wrong errors
 
 Be specific about which errors to retry:
 

@@ -13,9 +13,9 @@ Reqon integrates with OpenAPI (Swagger) specifications for type-safe API calls a
 - **Response validation**: Validate against schema definitions
 - **Documentation sync**: API changes reflected automatically
 
-## Quick Start
+## Quick start
 
-### 1. Define Source from Spec
+### 1. Define source from spec
 
 ```vague
 source Petstore from "./petstore.yaml" {
@@ -24,7 +24,7 @@ source Petstore from "./petstore.yaml" {
 }
 ```
 
-### 2. Call Operations
+### 2. Call operations
 
 ```vague
 action FetchPets {
@@ -36,9 +36,9 @@ action FetchPets {
 }
 ```
 
-## How It Works
+## How it works
 
-### Loading Specs
+### Loading specs
 
 Reqon loads and parses OpenAPI specs:
 
@@ -50,7 +50,7 @@ source API from "./api.yaml" { auth: bearer }
 source API from "https://api.example.com/openapi.json" { auth: bearer }
 ```
 
-### Operation Resolution
+### Operation resolution
 
 Reqon maps `call Source.operationId` to:
 
@@ -72,7 +72,7 @@ servers:
   - url: https://api.example.com/v1
 ```
 
-## Configuration Options
+## Configuration options
 
 ```vague
 source API from "./spec.yaml" {
@@ -84,7 +84,7 @@ source API from "./spec.yaml" {
 }
 ```
 
-## Example Workflow
+## Example workflow
 
 ```vague
 mission PetstoreSync {
@@ -126,7 +126,7 @@ mission PetstoreSync {
 
 ## Comparison: Traditional vs OAS
 
-### Traditional Approach
+### Traditional approach
 
 ```vague
 source API { auth: bearer, base: "https://api.example.com" }
@@ -157,13 +157,13 @@ action Fetch {
 | Documentation | Separate | Integrated |
 | IDE support | Limited | Full autocomplete |
 
-## Supported Spec Formats
+## Supported spec formats
 
 - OpenAPI 3.0.x (recommended)
 - OpenAPI 3.1.x
 - Swagger 2.0 (converted internally)
 
-### Format Detection
+### Format detection
 
 ```vague
 // YAML
@@ -176,9 +176,9 @@ source API from "./spec.json"
 source API from "https://api.example.com/openapi.json"
 ```
 
-## Common Patterns
+## Common patterns
 
-### Fetch with Pagination
+### Fetch with pagination
 
 ```vague
 call API.listItems {
@@ -188,7 +188,7 @@ call API.listItems {
 }
 ```
 
-### Conditional Operations
+### Conditional operations
 
 ```vague
 action SyncItem {
@@ -205,7 +205,7 @@ action SyncItem {
 }
 ```
 
-## Next Steps
+## Next steps
 
 - [Loading Specs](./loading-specs) - Loading and caching specs
 - [Operation Calls](./operation-calls) - Calling operations

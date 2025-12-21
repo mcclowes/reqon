@@ -2,11 +2,11 @@
 sidebar_position: 3
 ---
 
-# Parallel Execution
+# Parallel execution
 
 Reqon supports parallel execution of independent actions for improved performance.
 
-## Basic Parallel Execution
+## Basic parallel execution
 
 ```vague
 run [ActionA, ActionB, ActionC] then MergeResults
@@ -21,7 +21,7 @@ Execution:
 
 ## Syntax
 
-### Parallel Group
+### Parallel group
 
 ```vague
 run [Action1, Action2, Action3]
@@ -29,7 +29,7 @@ run [Action1, Action2, Action3]
 
 All actions run simultaneously.
 
-### Parallel Then Sequential
+### Parallel then sequential
 
 ```vague
 run [Fetch1, Fetch2] then Process then [Export1, Export2]
@@ -41,9 +41,9 @@ run [Fetch1, Fetch2] then Process then [Export1, Export2]
 └─ Fetch2 ─┘     └─ Export2 ─┘
 ```
 
-## Use Cases
+## Use cases
 
-### Fetching from Multiple Sources
+### Fetching from multiple sources
 
 ```vague
 mission MultiSourceSync {
@@ -78,7 +78,7 @@ mission MultiSourceSync {
 }
 ```
 
-### Independent Processing
+### Independent processing
 
 ```vague
 mission DataProcessing {
@@ -108,7 +108,7 @@ mission DataProcessing {
 }
 ```
 
-### Fan-Out Fan-In
+### Fan-out fan-in
 
 ```vague
 mission FanOutFanIn {
@@ -146,9 +146,9 @@ mission FanOutFanIn {
 }
 ```
 
-## Concurrency Control
+## Concurrency control
 
-### Limit Parallel Actions
+### Limit parallel actions
 
 ```vague
 mission ControlledParallel {
@@ -159,7 +159,7 @@ mission ControlledParallel {
 }
 ```
 
-### Per-Action Limits
+### Per-action limits
 
 ```vague
 action FetchWithLimit {
@@ -171,9 +171,9 @@ action FetchWithLimit {
 }
 ```
 
-## Error Handling
+## Error handling
 
-### Default Behavior
+### Default behavior
 
 All parallel actions run even if one fails:
 
@@ -182,7 +182,7 @@ run [ActionA, ActionB, ActionC]
 // If ActionB fails, ActionA and ActionC still complete
 ```
 
-### Fail-Fast Mode
+### Fail-fast mode
 
 ```vague
 mission FailFast {
@@ -193,7 +193,7 @@ mission FailFast {
 }
 ```
 
-### Handling Partial Results
+### Handling partial results
 
 ```vague
 action Merge {
@@ -210,9 +210,9 @@ action Merge {
 }
 ```
 
-## Shared State
+## Shared state
 
-### Isolated Contexts
+### Isolated contexts
 
 Parallel actions have isolated variable contexts:
 
@@ -228,7 +228,7 @@ action ParallelB {
 }
 ```
 
-### Shared Stores
+### Shared stores
 
 All actions can write to shared stores:
 
@@ -244,9 +244,9 @@ action ParallelB {
 }
 ```
 
-## Performance Considerations
+## Performance considerations
 
-### When to Use Parallel
+### When to use parallel
 
 | Scenario | Recommendation |
 |----------|----------------|
@@ -255,7 +255,7 @@ action ParallelB {
 | Data dependencies | Sequential |
 | Mixed workload | Hybrid |
 
-### Memory Usage
+### Memory usage
 
 Parallel execution uses more memory:
 
@@ -267,7 +267,7 @@ run Fetch then Process then Export
 run [FetchA, FetchB, FetchC] then Combine
 ```
 
-### Network Saturation
+### Network saturation
 
 Too much parallelism can saturate network:
 
@@ -280,9 +280,9 @@ maxConcurrency: 3
 run [A, B, C, D, E, F, G, H, I, J]
 ```
 
-## Best Practices
+## Best practices
 
-### Group Related Operations
+### Group related operations
 
 ```vague
 // Good: related fetches together
@@ -292,7 +292,7 @@ run [FetchOrders, FetchOrderItems, FetchOrderPayments] then ProcessOrders
 run [FetchOrders, SendEmails, CleanupLogs]
 ```
 
-### Balance Parallelism
+### Balance parallelism
 
 ```vague
 // Good: measured parallelism
@@ -303,7 +303,7 @@ run [A, B, C, D, E, F, G, H] then Merge
 run [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P]
 ```
 
-### Handle Failures Gracefully
+### Handle failures gracefully
 
 ```vague
 action Merge {
@@ -319,7 +319,7 @@ action Merge {
 
 ## Troubleshooting
 
-### Actions Not Running in Parallel
+### Actions not running in parallel
 
 Check syntax uses brackets:
 
@@ -331,7 +331,7 @@ run [A, B, C]
 run A then B then C
 ```
 
-### Race Conditions
+### Race conditions
 
 Use unique keys when writing to shared stores:
 
@@ -343,7 +343,7 @@ store response -> shared { key: concat(source, "-", .id) }
 store response -> shared { key: .id }
 ```
 
-### Memory Issues
+### Memory issues
 
 Reduce parallelism or process in batches:
 

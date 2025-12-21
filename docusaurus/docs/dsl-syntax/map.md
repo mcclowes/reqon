@@ -2,11 +2,11 @@
 sidebar_position: 3
 ---
 
-# Map Transformations
+# Map transformations
 
 Map steps transform data from one shape to another. They're used to normalize API responses, enrich data, and prepare data for storage.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 map sourceData -> TargetSchema {
@@ -15,7 +15,7 @@ map sourceData -> TargetSchema {
 }
 ```
 
-## Simple Mapping
+## Simple mapping
 
 ```vague
 action TransformUser {
@@ -31,9 +31,9 @@ action TransformUser {
 }
 ```
 
-## Field Access
+## Field access
 
-### Direct Access
+### Direct access
 
 ```vague
 map user -> Output {
@@ -42,7 +42,7 @@ map user -> Output {
 }
 ```
 
-### Nested Access
+### Nested access
 
 ```vague
 map user -> Output {
@@ -53,7 +53,7 @@ map user -> Output {
 }
 ```
 
-### Array Access
+### Array access
 
 ```vague
 map order -> Output {
@@ -66,7 +66,7 @@ map order -> Output {
 
 For detailed expression syntax, see the [Vague documentation](https://github.com/mcclowes/vague).
 
-### String Operations
+### String operations
 
 ```vague
 map user -> Output {
@@ -77,7 +77,7 @@ map user -> Output {
 }
 ```
 
-### Numeric Operations
+### Numeric operations
 
 ```vague
 map order -> Output {
@@ -88,7 +88,7 @@ map order -> Output {
 }
 ```
 
-### Conditional Expressions
+### Conditional expressions
 
 ```vague
 map user -> Output {
@@ -99,7 +99,7 @@ map user -> Output {
 }
 ```
 
-### Pattern Matching in Maps
+### Pattern matching in maps
 
 ```vague
 map order -> Output {
@@ -113,9 +113,9 @@ map order -> Output {
 }
 ```
 
-## Nested Mapping
+## Nested mapping
 
-### Static Nested Objects
+### Static nested objects
 
 ```vague
 map user -> Output {
@@ -132,7 +132,7 @@ map user -> Output {
 }
 ```
 
-### Mapping Arrays
+### Mapping arrays
 
 ```vague
 map order -> Output {
@@ -146,9 +146,9 @@ map order -> Output {
 }
 ```
 
-## Combining Data
+## Combining data
 
-### From Multiple Sources
+### From multiple sources
 
 ```vague
 action EnrichOrders {
@@ -170,7 +170,7 @@ action EnrichOrders {
 }
 ```
 
-### Merging Objects
+### Merging objects
 
 ```vague
 map source -> Output {
@@ -180,7 +180,7 @@ map source -> Output {
 }
 ```
 
-## Date Transformations
+## Date transformations
 
 ```vague
 map event -> Output {
@@ -191,9 +191,9 @@ map event -> Output {
 }
 ```
 
-## Null Handling
+## Null handling
 
-### Default Values
+### Default values
 
 ```vague
 map user -> Output {
@@ -203,7 +203,7 @@ map user -> Output {
 }
 ```
 
-### Null Checks
+### Null checks
 
 ```vague
 map user -> Output {
@@ -212,7 +212,7 @@ map user -> Output {
 }
 ```
 
-## Type Coercion
+## Type coercion
 
 ```vague
 map data -> Output {
@@ -223,7 +223,7 @@ map data -> Output {
 }
 ```
 
-## Computed Fields
+## Computed fields
 
 ```vague
 map invoice -> Output {
@@ -237,7 +237,7 @@ map invoice -> Output {
 }
 ```
 
-## Renaming Fields
+## Renaming fields
 
 ```vague
 // Transform API response to standard format
@@ -252,7 +252,7 @@ map xeroInvoice -> StandardInvoice {
 }
 ```
 
-## Flattening Nested Data
+## Flattening nested data
 
 ```vague
 map order -> FlatOrder {
@@ -266,7 +266,7 @@ map order -> FlatOrder {
 }
 ```
 
-## Grouping and Aggregation
+## Grouping and aggregation
 
 ```vague
 map orders -> Summary {
@@ -280,7 +280,7 @@ map orders -> Summary {
 }
 ```
 
-## Complete Example
+## Complete example
 
 ```vague
 mission TransformXeroData {

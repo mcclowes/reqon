@@ -8,7 +8,7 @@ HTTP Basic Authentication sends username and password with each request, encoded
 
 ## Configuration
 
-### Mission File
+### Mission file
 
 ```vague
 source API {
@@ -17,7 +17,7 @@ source API {
 }
 ```
 
-### Credentials File
+### Credentials file
 
 ```json
 {
@@ -29,7 +29,7 @@ source API {
 }
 ```
 
-## How It Works
+## How it works
 
 Reqon encodes credentials and adds them to every request:
 
@@ -40,7 +40,7 @@ Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=
 
 The value is `base64(username:password)`.
 
-## Credential Options
+## Credential options
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -48,9 +48,9 @@ The value is `base64(username:password)`.
 | `username` | Yes | The username |
 | `password` | Yes | The password |
 
-## Environment Variables
+## Environment variables
 
-### In Credentials File
+### In credentials file
 
 ```json
 {
@@ -68,7 +68,7 @@ export API_PASSWORD="mypass"
 reqon mission.vague --auth credentials.json
 ```
 
-### In Mission File
+### In mission file
 
 ```vague
 source API {
@@ -79,9 +79,9 @@ source API {
 }
 ```
 
-## Common Use Cases
+## Common use cases
 
-### Legacy Systems
+### Legacy systems
 
 ```vague
 source LegacyERP {
@@ -138,7 +138,7 @@ source LegacyERP {
 }
 ```
 
-## Token as Password
+## Token as password
 
 Many APIs use Basic auth with a token as password:
 
@@ -166,7 +166,7 @@ Many APIs use Basic auth with a token as password:
 }
 ```
 
-## Error Handling
+## Error handling
 
 ```vague
 action FetchData {
@@ -180,9 +180,9 @@ action FetchData {
 }
 ```
 
-## Security Considerations
+## Security considerations
 
-### Always Use HTTPS
+### Always use HTTPS
 
 Basic auth credentials are only Base64 encoded (not encrypted):
 
@@ -200,7 +200,7 @@ source API {
 }
 ```
 
-### Prefer Token-Based Auth
+### Prefer token-based auth
 
 When available, use tokens instead:
 
@@ -218,22 +218,22 @@ source LegacyAPI {
 }
 ```
 
-### Use Strong Passwords
+### Use strong passwords
 
 If using actual password (not token):
 - Use a unique password for API access
 - Enable MFA on the account if available
 - Rotate regularly
 
-## Credential Rotation
+## Credential rotation
 
-### Rotate Password
+### Rotate password
 
 1. Update password in API provider
 2. Update credentials file
 3. Verify mission works
 
-### Minimal Disruption
+### Minimal disruption
 
 ```bash
 # Update credentials
@@ -254,7 +254,7 @@ reqon mission.vague --auth credentials.json
 2. Check for typos
 3. Ensure account has API access
 
-### "Encoding Issues"
+### "Encoding issues"
 
 Check for special characters in password. They should be URL-safe or properly escaped:
 
@@ -267,7 +267,7 @@ Check for special characters in password. They should be URL-safe or properly es
 }
 ```
 
-### "Connection Refused"
+### "Connection refused"
 
 Verify HTTPS is working:
 

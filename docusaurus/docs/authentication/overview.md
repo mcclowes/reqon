@@ -8,7 +8,7 @@ keywords: [reqon, authentication, OAuth2, bearer token, API key, credentials]
 
 Reqon supports multiple authentication methods for connecting to APIs. Authentication is configured at the source level and credentials are provided via CLI or configuration files.
 
-## Supported Auth Types
+## Supported auth types
 
 | Type | Description | Use Case |
 |------|-------------|----------|
@@ -18,9 +18,9 @@ Reqon supports multiple authentication methods for connecting to APIs. Authentic
 | `api_key` | API key in header/query | Many SaaS APIs |
 | `oauth2` | OAuth 2.0 with refresh | Enterprise APIs |
 
-## Quick Start
+## Quick start
 
-### In Mission File
+### In mission file
 
 ```vague
 source API {
@@ -29,7 +29,7 @@ source API {
 }
 ```
 
-### Credentials File
+### Credentials file
 
 Create `credentials.json`:
 
@@ -42,21 +42,21 @@ Create `credentials.json`:
 }
 ```
 
-### Run with Credentials
+### Run with credentials
 
 ```bash
 reqon mission.vague --auth ./credentials.json
 ```
 
-## Credential Sources
+## Credential sources
 
-### File-Based
+### File-based
 
 ```bash
 reqon mission.vague --auth ./credentials.json
 ```
 
-### Environment Variables
+### Environment variables
 
 Reference in credentials:
 
@@ -94,7 +94,7 @@ await execute(source, {
 });
 ```
 
-## Multiple Sources
+## Multiple sources
 
 Handle multiple APIs with different auth:
 
@@ -141,9 +141,9 @@ Credentials file:
 }
 ```
 
-## Refreshing Tokens
+## Refreshing tokens
 
-### OAuth 2.0 Automatic Refresh
+### OAuth 2.0 automatic refresh
 
 Reqon automatically refreshes OAuth2 tokens when they expire:
 
@@ -159,7 +159,7 @@ Reqon automatically refreshes OAuth2 tokens when they expire:
 }
 ```
 
-### Manual Refresh with Jump
+### Manual refresh with jump
 
 For non-standard token refresh:
 
@@ -181,13 +181,13 @@ action RefreshToken {
 }
 ```
 
-## Security Best Practices
+## Security best practices
 
 :::danger Never Commit Credentials
 Always add credential files to `.gitignore` before committing. Exposed API tokens can lead to unauthorized access and data breaches.
 :::
 
-### Never Commit Credentials
+### Never commit credentials
 
 Add to `.gitignore`:
 
@@ -198,14 +198,14 @@ credentials.json
 *.key
 ```
 
-### Use Environment Variables
+### Use environment variables
 
 ```bash
 export API_TOKEN="your-token"
 reqon mission.vague
 ```
 
-### Rotate Tokens Regularly
+### Rotate tokens regularly
 
 For OAuth2, ensure refresh tokens are valid.
 
@@ -213,7 +213,7 @@ For OAuth2, ensure refresh tokens are valid.
 Store credentials in environment variables for local development and use secret management services (AWS Secrets Manager, HashiCorp Vault) in production.
 :::
 
-### Use Least Privilege
+### Use least privilege
 
 Request only necessary scopes:
 
@@ -234,14 +234,14 @@ Request only necessary scopes:
 2. Verify token is valid
 3. Check source name matches credentials
 
-### Token Expired
+### Token expired
 
 For OAuth2, ensure:
 - `refreshToken` is present
 - `tokenUrl` is correct
 - Token hasn't been revoked
 
-### Wrong Auth Type
+### Wrong auth type
 
 Match the type in credentials to mission:
 

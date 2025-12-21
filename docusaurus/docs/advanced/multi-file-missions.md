@@ -2,11 +2,11 @@
 sidebar_position: 1
 ---
 
-# Multi-File Missions
+# Multi-file missions
 
 For complex missions, organize your code across multiple files in a folder structure.
 
-## Folder Structure
+## Folder structure
 
 ```
 missions/
@@ -20,7 +20,7 @@ missions/
         └── customer.vague
 ```
 
-## Main Mission File
+## Main mission file
 
 The `mission.vague` file defines the mission structure:
 
@@ -43,7 +43,7 @@ mission CustomerSync {
 }
 ```
 
-## Action Files
+## Action files
 
 ### actions/fetch.vague
 
@@ -98,7 +98,7 @@ action ExportCustomers {
 }
 ```
 
-## Schema Files
+## Schema files
 
 ### schemas/customer.vague
 
@@ -125,21 +125,21 @@ schema ExportError {
 }
 ```
 
-## Running Multi-File Missions
+## Running multi-file missions
 
-### Run the Folder
+### Run the folder
 
 ```bash
 reqon ./missions/customer-sync/
 ```
 
-### Run with Options
+### Run with options
 
 ```bash
 reqon ./missions/customer-sync/ --auth ./credentials.json --verbose
 ```
 
-## File Loading Order
+## File loading order
 
 1. `mission.vague` (required)
 2. `schemas/*.vague` (loaded first)
@@ -174,9 +174,9 @@ missions/
     └── mission.vague (imports shared)
 ```
 
-## Best Practices
+## Best practices
 
-### Naming Conventions
+### Naming conventions
 
 ```
 actions/
@@ -185,7 +185,7 @@ actions/
 └── export-customers.vague
 ```
 
-### One Action Per File
+### One action per file
 
 ```vague
 // actions/fetch-customers.vague
@@ -194,7 +194,7 @@ action FetchCustomers {
 }
 ```
 
-### Group Related Schemas
+### Group related schemas
 
 ```vague
 // schemas/customer.vague
@@ -203,7 +203,7 @@ schema StandardCustomer { ... }
 schema CustomerError { ... }
 ```
 
-### Document with Comments
+### Document with comments
 
 ```vague
 // actions/fetch-customers.vague

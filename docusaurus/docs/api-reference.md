@@ -8,7 +8,7 @@ keywords: [reqon, API, reference, execute, parse, store adapter, observability]
 
 Reqon's programmatic API for advanced usage.
 
-## Core Functions
+## Core functions
 
 ### parse
 
@@ -230,7 +230,7 @@ interface ExecutionError {
 }
 ```
 
-## Store Adapter Interface
+## Store adapter interface
 
 ```typescript
 interface StoreAdapter {
@@ -255,7 +255,7 @@ interface WhereClause {
 }
 ```
 
-## Registration Functions
+## Registration functions
 
 ### registerFunction
 
@@ -305,7 +305,7 @@ registerPaginationStrategy('linkheader', () => {
 });
 ```
 
-## State Management
+## State management
 
 ### getExecutionState
 
@@ -423,7 +423,7 @@ interface WebhookStep {
 }
 ```
 
-## CLI Programmatic Usage
+## CLI programmatic usage
 
 ```typescript
 import { CLI } from 'reqon/cli';
@@ -496,7 +496,7 @@ const exporter = new OTLPExporter({
 const otelListener = createOTelListener(exporter);
 ```
 
-### Event Types
+### Event types
 
 ```typescript
 type EventType =
@@ -514,7 +514,7 @@ type EventType =
 
 ## MCP Server
 
-### Starting the Server
+### Starting the server
 
 ```typescript
 // As a separate process
@@ -533,7 +533,7 @@ spawn('npx', ['reqon-mcp-server', '--verbose']);
 | `reqon.list_stores` | List registered stores |
 | `reqon.register_store` | Register a store |
 
-## Plugin System
+## Plugin system
 
 ### reqonPlugin
 
@@ -548,7 +548,7 @@ console.log(isReqonPluginRegistered()); // true (auto-registered on import)
 unregisterReqonPlugin();
 ```
 
-## Environment Variables
+## Environment variables
 
 | Variable | Description |
 |----------|-------------|
@@ -559,7 +559,7 @@ unregisterReqonPlugin();
 | `REQON_OTEL_ENDPOINT` | OTLP exporter endpoint |
 | `REQON_OTEL_SERVICE` | Service name for traces |
 
-## Error Classes
+## Error classes
 
 ```typescript
 import {

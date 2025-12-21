@@ -25,9 +25,9 @@ patch "/users/123" { body: { email: "jane@example.com" } }
 delete "/users/123"
 ```
 
-## Request Options
+## Request options
 
-### Query Parameters
+### Query parameters
 
 ```vague
 get "/users" {
@@ -39,7 +39,7 @@ get "/users" {
 }
 ```
 
-### Request Body
+### Request body
 
 ```vague
 post "/users" {
@@ -51,7 +51,7 @@ post "/users" {
 }
 ```
 
-### Custom Headers
+### Custom headers
 
 ```vague
 get "/users" {
@@ -64,7 +64,7 @@ get "/users" {
 
 ## Pagination
 
-### Offset-Based
+### Offset-based
 
 ```vague
 get "/users" {
@@ -77,7 +77,7 @@ Parameters:
 - `page` - Query parameter name for offset value
 - `100` - Page size
 
-### Page Number-Based
+### Page number-based
 
 ```vague
 get "/users" {
@@ -90,7 +90,7 @@ Parameters:
 - `pageNum` - Query parameter name for page number
 - `50` - Page size
 
-### Cursor-Based
+### Cursor-based
 
 ```vague
 get "/users" {
@@ -106,7 +106,7 @@ Parameters:
 
 See [Pagination](../http/pagination) for detailed documentation.
 
-## Termination Conditions
+## Termination conditions
 
 The `until` option specifies when to stop paginating:
 
@@ -136,7 +136,7 @@ get "/users" {
 }
 ```
 
-## Retry Configuration
+## Retry configuration
 
 ```vague
 get "/users" {
@@ -157,7 +157,7 @@ Options:
 
 See [Retry Strategies](../http/retry) for details.
 
-## Incremental Sync
+## Incremental sync
 
 Fetch only changes since last run:
 
@@ -171,7 +171,7 @@ This automatically adds a timestamp parameter to the request.
 
 See [Incremental Sync](../http/incremental-sync) for details.
 
-## Response Handling
+## Response handling
 
 The `response` variable is automatically set after each fetch:
 
@@ -186,7 +186,7 @@ action FetchUsers {
 }
 ```
 
-### Response Structure
+### Response structure
 
 ```vague
 action InspectResponse {
@@ -202,7 +202,7 @@ action InspectResponse {
 }
 ```
 
-## Named Source Requests
+## Named source requests
 
 When you have multiple sources, specify which to use:
 
@@ -221,7 +221,7 @@ mission MultiSource {
 }
 ```
 
-## Dynamic Paths
+## Dynamic paths
 
 Use expressions in paths:
 
@@ -254,7 +254,7 @@ action FetchPets {
 
 See [OpenAPI Integration](../category/openapi-integration) for details.
 
-## Complete Example
+## Complete example
 
 ```vague
 mission DataSync {

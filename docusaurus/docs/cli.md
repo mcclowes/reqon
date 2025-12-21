@@ -4,11 +4,11 @@ description: Complete reference for the Reqon CLI including options for dry-run,
 keywords: [reqon, CLI, command line, daemon, webhook, CI/CD]
 ---
 
-# Command Line Interface
+# Command line interface
 
 Reqon provides a powerful CLI for running and managing missions.
 
-## Basic Usage
+## Basic usage
 
 ```bash
 reqon <file-or-folder> [options]
@@ -43,7 +43,7 @@ reqon ./missions/customer-sync/
 
 ## Examples
 
-### Dry Run Mode
+### Dry run mode
 
 Validate your mission syntax without making actual API calls:
 
@@ -51,7 +51,7 @@ Validate your mission syntax without making actual API calls:
 reqon sync-data.vague --dry-run
 ```
 
-### Verbose Output
+### Verbose output
 
 Get detailed execution logs:
 
@@ -92,7 +92,7 @@ The credentials file should match your source names:
 }
 ```
 
-### Exporting Results
+### Exporting results
 
 Save store contents to JSON after execution:
 
@@ -108,7 +108,7 @@ output/
 └── products.json
 ```
 
-### Daemon Mode
+### Daemon mode
 
 Run scheduled missions continuously:
 
@@ -122,7 +122,7 @@ The daemon will:
 - Respect rate limits and backoff strategies
 - Handle graceful shutdown on SIGINT/SIGTERM
 
-### One-Shot Scheduled Execution
+### One-shot scheduled execution
 
 Run all scheduled missions once:
 
@@ -132,7 +132,7 @@ reqon ./missions/ --once
 
 Useful for cron-triggered executions where you want external scheduling.
 
-### Webhook Server
+### Webhook server
 
 Enable the webhook server for missions that use `wait` steps:
 
@@ -146,7 +146,7 @@ With custom port and URL (for production or tunnels):
 reqon payment-flow.vague --webhook --webhook-port 8080 --webhook-url https://my-server.ngrok.io
 ```
 
-### Environment Files
+### Environment files
 
 Load environment variables from a specific file:
 
@@ -158,7 +158,7 @@ The `--env` flag supports:
 - Custom `.env` file paths
 - Environment variable interpolation in auth files
 
-## Exit Codes
+## Exit codes
 
 | Code | Meaning |
 |------|---------|
@@ -167,7 +167,7 @@ The `--env` flag supports:
 | 2 | Parse error (invalid syntax) |
 | 3 | Configuration error (missing credentials, invalid options) |
 
-## Environment Variables
+## Environment variables
 
 | Variable | Description |
 |----------|-------------|
@@ -175,7 +175,7 @@ The `--env` flag supports:
 | `REQON_LOG_LEVEL` | Logging level: `debug`, `info`, `warn`, `error` |
 | `REQON_DRY_RUN` | Enable dry-run mode (same as `--dry-run`) |
 
-### Auto-Discovery from Environment
+### Auto-discovery from environment
 
 Reqon can automatically discover credentials from environment variables:
 
@@ -194,7 +194,7 @@ export REQON_GITHUB_TYPE="bearer"
 reqon sync-repos.vague
 ```
 
-### Credential File Interpolation
+### Credential file interpolation
 
 Auth files support environment variable interpolation:
 
@@ -214,7 +214,7 @@ Supported formats:
 - `${VAR_NAME}` - Braced variable
 - `${VAR_NAME:-default}` - With default value
 
-## Multi-File Missions
+## Multi-file missions
 
 For complex missions, organize them as folders:
 
@@ -291,7 +291,7 @@ The state directory (`.vague-data`) needs write access:
 chmod 755 .vague-data
 ```
 
-### Debugging HTTP Issues
+### Debugging HTTP issues
 
 Use verbose mode to see request/response details:
 

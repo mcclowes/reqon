@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# OpenTelemetry Integration
+# OpenTelemetry integration
 
 Reqon supports OpenTelemetry for distributed tracing, allowing you to export spans to observability platforms like Jaeger, Zipkin, Grafana Tempo, and cloud providers.
 
@@ -15,7 +15,7 @@ The OpenTelemetry integration:
 - Exports via OTLP (OpenTelemetry Protocol)
 - Provides span builders for custom instrumentation
 
-## Quick Start
+## Quick start
 
 ```typescript
 import { execute, OTLPExporter, createOTelListener } from 'reqon';
@@ -35,7 +35,7 @@ const result = await execute(source, {
 });
 ```
 
-## OTLP Exporter
+## OTLP exporter
 
 ### Configuration
 
@@ -53,7 +53,7 @@ const exporter = new OTLPExporter({
 });
 ```
 
-### Cloud Provider Endpoints
+### Cloud provider endpoints
 
 ```typescript
 // Grafana Cloud
@@ -81,7 +81,7 @@ const datadogExporter = new OTLPExporter({
 });
 ```
 
-## Span Builder
+## Span builder
 
 Create custom spans with the SpanBuilder:
 
@@ -103,7 +103,7 @@ missionSpan.endTimeUnixNano = Date.now() * 1_000_000;
 missionSpan.status = { code: 1 }; // OK
 ```
 
-### Span Attributes
+### Span attributes
 
 ```typescript
 const span = new SpanBuilder('fetch.customers')
@@ -114,7 +114,7 @@ const span = new SpanBuilder('fetch.customers')
   .build();
 ```
 
-### Span Events
+### Span events
 
 ```typescript
 const span = new SpanBuilder('process.batch')
@@ -124,7 +124,7 @@ const span = new SpanBuilder('process.batch')
   .build();
 ```
 
-## OTel Event Adapter
+## OTel event adapter
 
 The OTelEventAdapter converts Reqon events to OTel spans:
 
@@ -149,7 +149,7 @@ emitter.on('fetch.complete', (e) => adapter.onFetchComplete(e));
 // ... etc
 ```
 
-## OTel Log Output
+## OTel log output
 
 Send structured logs as OTel spans:
 
@@ -167,9 +167,9 @@ const logger = createStructuredLogger({
 logger.addOutput(new OTelLogOutput(exporter));
 ```
 
-## Trace Context
+## Trace context
 
-### Trace Hierarchy
+### Trace hierarchy
 
 ```
 Mission (root span)
@@ -201,7 +201,7 @@ const headers = {
 };
 ```
 
-## Viewing Traces
+## Viewing traces
 
 ### Jaeger
 
@@ -234,7 +234,7 @@ const exporter = new OTLPExporter({
 });
 ```
 
-## Complete Example
+## Complete example
 
 ```typescript
 import {
@@ -286,7 +286,7 @@ const result = await execute(missionSource, {
 await exporter.flush();
 ```
 
-## Semantic Conventions
+## Semantic conventions
 
 Reqon follows OpenTelemetry semantic conventions:
 
@@ -303,7 +303,7 @@ Reqon follows OpenTelemetry semantic conventions:
 | `reqon.store.name` | Store name |
 | `reqon.store.count` | Items stored |
 
-## Best Practices
+## Best practices
 
 ### Sampling
 
@@ -318,7 +318,7 @@ if (shouldSample()) {
 }
 ```
 
-### Error Recording
+### Error recording
 
 ```typescript
 emitter.on('fetch.error', (event) => {
@@ -336,7 +336,7 @@ emitter.on('fetch.error', (event) => {
 });
 ```
 
-### Resource Attributes
+### Resource attributes
 
 ```typescript
 const exporter = new OTLPExporter({

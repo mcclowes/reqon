@@ -6,7 +6,7 @@ sidebar_position: 2
 
 An **Action** is a named sequence of steps that process data. Actions are the building blocks of your pipeline logic.
 
-## Basic Structure
+## Basic structure
 
 ```vague
 action ActionName {
@@ -23,7 +23,7 @@ action ActionName {
 }
 ```
 
-## Step Types
+## Step types
 
 Actions can contain the following step types:
 
@@ -37,7 +37,7 @@ Actions can contain the following step types:
 | `store...->` | Data persistence |
 | `match` | Pattern matching with flow control |
 
-## HTTP Request Steps
+## HTTP request steps
 
 Fetch data from APIs:
 
@@ -65,7 +65,7 @@ action FetchData {
 }
 ```
 
-## Iteration Steps
+## Iteration steps
 
 Process collections:
 
@@ -85,7 +85,7 @@ action ProcessUsers {
 }
 ```
 
-## Transformation Steps
+## Transformation steps
 
 Transform data shapes:
 
@@ -108,7 +108,7 @@ action TransformData {
 
 See the [Vague documentation](https://github.com/mcclowes/vague) for expression syntax.
 
-## Validation Steps
+## Validation steps
 
 Check data constraints:
 
@@ -129,7 +129,7 @@ action ValidateData {
 }
 ```
 
-## Store Steps
+## Store steps
 
 Persist data:
 
@@ -151,7 +151,7 @@ action SaveData {
 }
 ```
 
-## Pattern Matching Steps
+## Pattern matching steps
 
 Route data based on shape:
 
@@ -169,7 +169,7 @@ action HandleResponse {
 }
 ```
 
-## Nested Actions
+## Nested actions
 
 Actions can reference other actions via `jump`:
 
@@ -189,7 +189,7 @@ action RefreshAuth {
 }
 ```
 
-## Action Composition in Pipelines
+## Action composition in pipelines
 
 Actions are composed in the `run` statement:
 
@@ -207,7 +207,7 @@ mission DataPipeline {
 }
 ```
 
-## Variable Scope
+## Variable scope
 
 Variables are scoped to their action and nested contexts:
 
@@ -230,9 +230,9 @@ action ProcessData {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Single Responsibility
+### Single responsibility
 
 Each action should do one thing well:
 
@@ -259,7 +259,7 @@ action DoEverything {
 }
 ```
 
-### Handle Errors at Action Boundaries
+### Handle errors at action boundaries
 
 ```vague
 action FetchWithErrorHandling {
@@ -272,7 +272,7 @@ action FetchWithErrorHandling {
 }
 ```
 
-### Use Descriptive Names
+### Use descriptive names
 
 ```vague
 // Good

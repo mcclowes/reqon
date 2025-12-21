@@ -6,7 +6,7 @@ sidebar_position: 4
 
 Incremental sync allows you to fetch only changes since the last run, reducing API calls and improving performance.
 
-## Basic Usage
+## Basic usage
 
 ```vague
 get "/items" {
@@ -19,9 +19,9 @@ This automatically:
 2. Adds a timestamp parameter to the request
 3. Updates the checkpoint after successful completion
 
-## How It Works
+## How it works
 
-### First Run
+### First run
 
 On the first run, no `since` parameter is added:
 
@@ -29,7 +29,7 @@ On the first run, no `since` parameter is added:
 GET /items
 ```
 
-### Subsequent Runs
+### Subsequent runs
 
 On subsequent runs, the last sync timestamp is used:
 
@@ -37,7 +37,7 @@ On subsequent runs, the last sync timestamp is used:
 GET /items?modified_since=2024-01-20T10:30:00Z
 ```
 
-### Checkpoint Storage
+### Checkpoint storage
 
 Checkpoints are stored in `.vague-data/` by default:
 
@@ -49,7 +49,7 @@ Checkpoints are stored in `.vague-data/` by default:
 
 ## Configuration
 
-### Custom Parameter Name
+### Custom parameter name
 
 Specify the API's expected parameter:
 
@@ -62,7 +62,7 @@ get "/items" {
 
 Generates: `?updatedAfter=2024-01-20T10:30:00Z`
 
-### Date Format
+### Date format
 
 Customize the date format:
 
@@ -79,7 +79,7 @@ Common formats:
 - `"timestamp"` - Unix timestamp: `1705748400`
 - `"epoch"` - Unix epoch milliseconds: `1705748400000`
 
-### Custom Checkpoint Key
+### Custom checkpoint key
 
 Override the automatic checkpoint key:
 
@@ -90,7 +90,7 @@ get "/items" {
 }
 ```
 
-## Combining with Pagination
+## Combining with pagination
 
 ```vague
 get "/items" {
@@ -102,7 +102,7 @@ get "/items" {
 
 The `since` parameter is added to each paginated request.
 
-## Combining with Filters
+## Combining with filters
 
 ```vague
 get "/items" {
@@ -116,7 +116,7 @@ get "/items" {
 
 Generates: `?status=active&type=order&modified_since=2024-01-20T10:30:00Z`
 
-## Handling Updates
+## Handling updates
 
 Use upsert mode for incremental updates:
 
@@ -134,7 +134,7 @@ action IncrementalSync {
 }
 ```
 
-## Per-Source Checkpoints
+## Per-source checkpoints
 
 Different sources maintain separate checkpoints:
 
@@ -155,7 +155,7 @@ mission MultiSourceSync {
 }
 ```
 
-## Per-Endpoint Checkpoints
+## Per-endpoint checkpoints
 
 Each endpoint maintains its own checkpoint:
 
@@ -172,7 +172,7 @@ action SyncAll {
 }
 ```
 
-## Resetting Checkpoints
+## Resetting checkpoints
 
 ### Via CLI
 
@@ -196,9 +196,9 @@ await clearSyncCheckpoints();
 await clearSyncCheckpoint('source-/items');
 ```
 
-## Full Sync vs Incremental
+## Full sync vs incremental
 
-### Force Full Sync
+### Force full sync
 
 Sometimes you need a full resync:
 
@@ -218,7 +218,7 @@ run IncrementalSync  // Default: incremental
 // Or: run FullSync when needed
 ```
 
-### Conditional Sync
+### Conditional sync
 
 ```vague
 action SmartSync {
@@ -237,11 +237,11 @@ action SmartSync {
 }
 ```
 
-## Handling Deletions
+## Handling deletions
 
 Incremental sync doesn't automatically handle deleted items. Handle this based on your API:
 
-### Soft Deletes
+### Soft deletes
 
 ```vague
 get "/items" {
@@ -260,7 +260,7 @@ for item in response.items {
 }
 ```
 
-### Deletion Endpoint
+### Deletion endpoint
 
 ```vague
 action SyncItems {
@@ -279,9 +279,9 @@ action SyncDeletions {
 run [SyncItems, SyncDeletions]
 ```
 
-## Best Practices
+## Best practices
 
-### Always Use Upsert
+### Always use upsert
 
 ```vague
 // Good: handles both new and updated items
@@ -291,7 +291,7 @@ store item -> items { key: .id, upsert: true }
 store item -> items { key: .id }
 ```
 
-### Handle Empty Responses
+### Handle empty responses
 
 ```vague
 get "/items" { since: lastSync }
@@ -309,7 +309,7 @@ match response {
 }
 ```
 
-### Log Sync Progress
+### Log sync progress
 
 ```vague
 action IncrementalSync {
@@ -327,7 +327,7 @@ action IncrementalSync {
 }
 ```
 
-### Schedule Regular Syncs
+### Schedule regular syncs
 
 ```vague
 mission RegularSync {
@@ -344,7 +344,7 @@ mission RegularSync {
 
 ## Troubleshooting
 
-### Checkpoint Not Updating
+### Checkpoint not updating
 
 Checkpoints only update on successful completion. Check for errors:
 
@@ -366,7 +366,7 @@ action DebugSync {
 }
 ```
 
-### Wrong Date Format
+### Wrong date format
 
 Match your API's expected format:
 
@@ -381,7 +381,7 @@ get "/items" { since: lastSync, sinceFormat: "timestamp" }
 get "/items" { since: lastSync, sinceFormat: "YYYY-MM-DD" }
 ```
 
-### Missing Updates
+### Missing updates
 
 Ensure your API uses the same field for filtering:
 

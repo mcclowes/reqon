@@ -6,7 +6,7 @@ sidebar_position: 3
 
 Reqon provides built-in retry handling for transient failures with configurable backoff strategies.
 
-## Basic Retry Configuration
+## Basic retry configuration
 
 ```vague
 get "/data" {
@@ -19,7 +19,7 @@ get "/data" {
 }
 ```
 
-## Retry Options
+## Retry options
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -28,9 +28,9 @@ get "/data" {
 | `initialDelay` | First retry delay (ms) | 1000 |
 | `maxDelay` | Maximum delay between retries (ms) | 30000 |
 
-## Backoff Strategies
+## Backoff strategies
 
-### Exponential Backoff
+### Exponential backoff
 
 Doubles the delay after each attempt:
 
@@ -51,7 +51,7 @@ Timing:
 - Attempt 4: wait 4000ms
 - Attempt 5: wait 8000ms
 
-### Linear Backoff
+### Linear backoff
 
 Adds a fixed delay each time:
 
@@ -72,7 +72,7 @@ Timing:
 - Attempt 4: wait 6000ms
 - Attempt 5: wait 8000ms
 
-### Constant Backoff
+### Constant backoff
 
 Same delay every time:
 
@@ -93,7 +93,7 @@ Timing:
 - Attempt 4: wait 5000ms
 - Attempt 5: wait 5000ms
 
-## Maximum Delay
+## Maximum delay
 
 Cap the maximum delay:
 
@@ -115,7 +115,7 @@ Without maxDelay, exponential backoff would reach:
 
 With `maxDelay: 30000`, all delays are capped at 30 seconds.
 
-## Conditional Retry
+## Conditional retry
 
 Use `match` for conditional retry logic:
 
@@ -156,7 +156,7 @@ action FetchWithConditionalRetry {
 }
 ```
 
-## Retry After Header
+## Retry after header
 
 Reqon respects the `Retry-After` header when present:
 
@@ -178,9 +178,9 @@ Retry-After: 60
 
 Reqon will wait 60 seconds before retrying, regardless of backoff settings.
 
-## Combining with Other Features
+## Combining with other features
 
-### With Pagination
+### With pagination
 
 ```vague
 get "/items" {
@@ -195,7 +195,7 @@ get "/items" {
 
 Each page request uses retry logic independently.
 
-### With Rate Limiting
+### With rate limiting
 
 ```vague
 source API {
@@ -219,7 +219,7 @@ action Fetch {
 
 Rate limiting runs before retry; retry handles unexpected failures.
 
-## Jump and Retry
+## Jump and retry
 
 For complex retry scenarios like token refresh:
 
@@ -246,7 +246,7 @@ The `jump RefreshToken then retry` directive:
 1. Executes the `RefreshToken` action
 2. Retries the original request with the new token
 
-## Per-Source Retry Configuration
+## Per-source retry configuration
 
 Configure default retry at the source level:
 
@@ -280,9 +280,9 @@ action FetchWithOverride {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Use Exponential Backoff for APIs
+### Use exponential backoff for APIs
 
 ```vague
 get "/api/data" {
@@ -295,7 +295,7 @@ get "/api/data" {
 }
 ```
 
-### Handle Specific Error Codes
+### Handle specific error codes
 
 ```vague
 match response {
@@ -314,7 +314,7 @@ match response {
 }
 ```
 
-### Set Reasonable Limits
+### Set reasonable limits
 
 ```vague
 // Good: reasonable limits
@@ -336,7 +336,7 @@ retry: {
 }
 ```
 
-### Log Retry Attempts
+### Log retry attempts
 
 Combine with match for observability:
 
@@ -365,7 +365,7 @@ action FetchWithLogging {
 
 ## Troubleshooting
 
-### Retry Not Working
+### Retry not working
 
 Ensure the response matches retry conditions:
 
@@ -377,7 +377,7 @@ match response {
 }
 ```
 
-### Too Many Retries
+### Too many retries
 
 Add a maximum delay:
 
@@ -390,7 +390,7 @@ retry: {
 }
 ```
 
-### Retry After Token Refresh
+### Retry after token refresh
 
 Use `jump then retry`:
 

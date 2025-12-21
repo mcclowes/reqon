@@ -6,7 +6,7 @@ sidebar_position: 4
 
 Reqon can validate API responses against OpenAPI schema definitions.
 
-## Enabling Validation
+## Enabling validation
 
 ```vague
 source API from "./spec.yaml" {
@@ -15,9 +15,9 @@ source API from "./spec.yaml" {
 }
 ```
 
-## How It Works
+## How it works
 
-### Schema Matching
+### Schema matching
 
 OpenAPI spec:
 ```yaml
@@ -54,9 +54,9 @@ call API.getPetById { params: { petId: "123" } }
 // Validates response against Pet schema
 ```
 
-## Validation Modes
+## Validation modes
 
-### Strict Mode
+### Strict mode
 
 Fails on schema mismatch:
 
@@ -67,7 +67,7 @@ source API from "./spec.yaml" {
 }
 ```
 
-### Warning Mode
+### Warning mode
 
 Logs warning but continues:
 
@@ -88,9 +88,9 @@ source API from "./spec.yaml" {
 }
 ```
 
-## Validation Rules
+## Validation rules
 
-### Required Fields
+### Required fields
 
 ```yaml
 Pet:
@@ -104,7 +104,7 @@ Response missing `name` triggers error:
 { "id": "123" }  // Error: missing required field 'name'
 ```
 
-### Type Checking
+### Type checking
 
 ```yaml
 Pet:
@@ -120,7 +120,7 @@ Pet:
 // Errors: id should be string, age should be integer
 ```
 
-### Enum Validation
+### Enum validation
 
 ```yaml
 Pet:
@@ -134,7 +134,7 @@ Pet:
 { "status": "active" }  // Error: status not in enum
 ```
 
-### Array Validation
+### Array validation
 
 ```yaml
 Pets:
@@ -145,9 +145,9 @@ Pets:
 
 Each item in array is validated.
 
-## Error Handling
+## Error handling
 
-### With Validation Errors
+### With validation errors
 
 ```vague
 call API.getPet { params: { id: "123" } }
@@ -164,7 +164,7 @@ match response {
 }
 ```
 
-### Catching Specific Errors
+### Catching specific errors
 
 ```vague
 match response {
@@ -181,9 +181,9 @@ match response {
 }
 ```
 
-## Custom Validation
+## Custom validation
 
-### Additional Constraints
+### Additional constraints
 
 Beyond schema validation:
 
@@ -203,7 +203,7 @@ validate response {
 store response -> orders { key: .id }
 ```
 
-### Combining Validations
+### Combining validations
 
 ```vague
 action ValidatedFetch {
@@ -229,9 +229,9 @@ action ValidatedFetch {
 }
 ```
 
-## Schema References
+## Schema references
 
-### Component Schemas
+### Component schemas
 
 ```yaml
 components:
@@ -270,9 +270,9 @@ Response:
 
 Validates against matching schema.
 
-## Best Practices
+## Best practices
 
-### Use Validation in Development
+### Use validation in development
 
 ```vague
 source API from "./spec.yaml" {
@@ -280,7 +280,7 @@ source API from "./spec.yaml" {
 }
 ```
 
-### Log Validation Failures
+### Log validation failures
 
 ```vague
 match response {
@@ -296,14 +296,14 @@ match response {
 }
 ```
 
-### Keep Specs Updated
+### Keep specs updated
 
 Ensure spec matches actual API:
 - Run validation in CI/CD
 - Update spec when API changes
 - Use spec versioning
 
-### Handle Gracefully
+### Handle gracefully
 
 ```vague
 // Don't fail hard on validation
@@ -331,7 +331,7 @@ Check component name matches:
 $ref: '#/components/schemas/Pet'  # Case sensitive
 ```
 
-### False Positives
+### False positives
 
 Schema may be outdated:
 - Update spec from API provider

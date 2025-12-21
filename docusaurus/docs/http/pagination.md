@@ -6,9 +6,9 @@ sidebar_position: 2
 
 Reqon provides built-in support for the three most common pagination strategies: offset-based, page number-based, and cursor-based.
 
-## Pagination Strategies
+## Pagination strategies
 
-### Offset-Based Pagination
+### Offset-based pagination
 
 Uses an offset value that increments by page size:
 
@@ -29,7 +29,7 @@ Parameters:
 - `offset` - Query parameter name for the offset value
 - `100` - Page size (items per request)
 
-### Page Number-Based Pagination
+### Page number-based pagination
 
 Uses a page number starting from 1:
 
@@ -50,7 +50,7 @@ Parameters:
 - `page` - Query parameter name
 - `50` - Page size
 
-### Cursor-Based Pagination
+### Cursor-based pagination
 
 Uses a cursor token from the previous response:
 
@@ -72,11 +72,11 @@ Parameters:
 - `100` - Page size
 - `"meta.nextCursor"` - Path to next cursor in response
 
-## Termination Conditions
+## Termination conditions
 
 The `until` option specifies when to stop paginating:
 
-### Empty Response
+### Empty response
 
 ```vague
 get "/items" {
@@ -85,7 +85,7 @@ get "/items" {
 }
 ```
 
-### Empty Data Array
+### Empty data array
 
 ```vague
 get "/items" {
@@ -94,7 +94,7 @@ get "/items" {
 }
 ```
 
-### Boolean Flag
+### Boolean flag
 
 ```vague
 get "/items" {
@@ -109,7 +109,7 @@ get "/items" {
 }
 ```
 
-### Null Cursor
+### Null cursor
 
 ```vague
 get "/items" {
@@ -118,7 +118,7 @@ get "/items" {
 }
 ```
 
-### Maximum Pages
+### Maximum pages
 
 ```vague
 get "/items" {
@@ -127,7 +127,7 @@ get "/items" {
 }
 ```
 
-### Item Count Threshold
+### Item count threshold
 
 ```vague
 get "/items" {
@@ -136,9 +136,9 @@ get "/items" {
 }
 ```
 
-## Combining with Other Options
+## Combining with other options
 
-### With Query Parameters
+### With query parameters
 
 ```vague
 get "/users" {
@@ -151,7 +151,7 @@ get "/users" {
 }
 ```
 
-### With Retry
+### With retry
 
 ```vague
 get "/users" {
@@ -164,7 +164,7 @@ get "/users" {
 }
 ```
 
-### With Incremental Sync
+### With incremental sync
 
 ```vague
 get "/users" {
@@ -174,9 +174,9 @@ get "/users" {
 }
 ```
 
-## Processing Paginated Results
+## Processing paginated results
 
-### Accumulative Processing
+### Accumulative processing
 
 All pages are accumulated in `response`:
 
@@ -194,7 +194,7 @@ action FetchAll {
 }
 ```
 
-### Per-Page Processing
+### Per-page processing
 
 Process each page as it arrives:
 
@@ -214,7 +214,7 @@ action ProcessPages {
 }
 ```
 
-## Common API Patterns
+## Common API patterns
 
 ### Standard REST API
 
@@ -227,7 +227,7 @@ get "/api/users" {
 }
 ```
 
-### GraphQL-Style Cursor
+### GraphQL-style cursor
 
 ```vague
 // API uses cursor-based pagination
@@ -237,7 +237,7 @@ get "/api/items" {
 }
 ```
 
-### Link Header Pagination
+### Link header pagination
 
 For APIs using Link headers, use cursor pagination:
 
@@ -248,9 +248,9 @@ get "/api/items" {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Choose the Right Strategy
+### Choose the right strategy
 
 | API Type | Recommended Strategy |
 |----------|---------------------|
@@ -259,7 +259,7 @@ get "/api/items" {
 | Large datasets | Cursor |
 | Simple APIs | Page |
 
-### Handle Partial Pages
+### Handle partial pages
 
 ```vague
 get "/items" {
@@ -268,7 +268,7 @@ get "/items" {
 }
 ```
 
-### Set Reasonable Page Sizes
+### Set reasonable page sizes
 
 ```vague
 // Good: reasonable page size
@@ -290,7 +290,7 @@ get "/items" {
 }
 ```
 
-### Add Safety Limits
+### Add safety limits
 
 ```vague
 get "/items" {
@@ -299,7 +299,7 @@ get "/items" {
 }
 ```
 
-### Combine with Rate Limiting
+### Combine with rate limiting
 
 ```vague
 source API {
@@ -321,7 +321,7 @@ action FetchAll {
 
 ## Troubleshooting
 
-### Infinite Pagination Loop
+### Infinite pagination loop
 
 If pagination never stops:
 
@@ -333,7 +333,7 @@ get "/items" {
 }
 ```
 
-### Duplicate Items
+### Duplicate items
 
 Some APIs return overlapping results. Use upsert:
 
@@ -348,7 +348,7 @@ for item in response {
 }
 ```
 
-### Missing Items
+### Missing items
 
 If items are being missed, check your termination condition:
 

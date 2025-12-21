@@ -6,7 +6,7 @@ sidebar_position: 1
 
 Reqon provides powerful HTTP request handling with built-in support for pagination, retries, rate limiting, and more.
 
-## Request Methods
+## Request methods
 
 ```vague
 // GET - Retrieve data
@@ -25,9 +25,9 @@ patch "/users/123" { body: { email: "jane@example.com" } }
 delete "/users/123"
 ```
 
-## Request Options
+## Request options
 
-### Query Parameters
+### Query parameters
 
 Add query parameters to requests:
 
@@ -45,7 +45,7 @@ get "/users" {
 
 Generates: `GET /users?limit=100&offset=0&status=active&sort=created_at&order=desc`
 
-### Dynamic Parameters
+### Dynamic parameters
 
 Use expressions in parameters:
 
@@ -58,7 +58,7 @@ get "/users" {
 }
 ```
 
-### Request Body
+### Request body
 
 Send JSON body with POST/PUT/PATCH:
 
@@ -75,7 +75,7 @@ post "/users" {
 }
 ```
 
-### Dynamic Body
+### Dynamic body
 
 Build body from variables:
 
@@ -91,7 +91,7 @@ for user in usersToCreate {
 }
 ```
 
-### Custom Headers
+### Custom headers
 
 Override or add headers:
 
@@ -105,9 +105,9 @@ get "/data" {
 }
 ```
 
-## Response Handling
+## Response handling
 
-### Accessing Response Data
+### Accessing response data
 
 The `response` variable contains the parsed JSON:
 
@@ -127,7 +127,7 @@ action FetchUsers {
 }
 ```
 
-### Response Structure
+### Response structure
 
 ```vague
 // Common API response pattern
@@ -145,9 +145,9 @@ for item in response.data { }
 validate { assume response.meta.total > 0 }
 ```
 
-## Working with Multiple Sources
+## Working with multiple sources
 
-### Default Source
+### Default source
 
 The first defined source is the default:
 
@@ -161,7 +161,7 @@ mission Example {
 }
 ```
 
-### Named Source
+### Named source
 
 Specify source explicitly:
 
@@ -199,7 +199,7 @@ action FetchDetails {
 }
 ```
 
-## Request Timeouts
+## Request timeouts
 
 Configure at source level:
 
@@ -219,7 +219,7 @@ get "/slow-endpoint" {
 }
 ```
 
-## Error Handling
+## Error handling
 
 Handle HTTP errors with match:
 
@@ -237,7 +237,7 @@ action SafeFetch {
 }
 ```
 
-## Request Chaining
+## Request chaining
 
 Chain requests with data from previous responses:
 
@@ -260,7 +260,7 @@ action FetchWithDetails {
 }
 ```
 
-## Batching Requests
+## Batching requests
 
 For APIs that support batch operations:
 
@@ -280,9 +280,9 @@ action BatchFetch {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Use Descriptive Error Handling
+### Use descriptive error handling
 
 ```vague
 match response {
@@ -297,7 +297,7 @@ match response {
 }
 ```
 
-### Validate Before Processing
+### Validate before processing
 
 ```vague
 get "/data"
@@ -310,7 +310,7 @@ validate response {
 for item in response.data { }
 ```
 
-### Log Important Requests
+### Log important requests
 
 ```vague
 get "/important-operation"

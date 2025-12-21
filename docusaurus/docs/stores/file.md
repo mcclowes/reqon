@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# File Store
+# File store
 
 The file store persists data as JSON files in the `.vague-data` directory.
 
@@ -20,7 +20,7 @@ Creates:
 └── orders.json
 ```
 
-## File Structure
+## File structure
 
 Each store is a single JSON file containing an array of records:
 
@@ -39,9 +39,9 @@ When using keys:
 }
 ```
 
-## Use Cases
+## Use cases
 
-### Local Development
+### Local development
 
 ```vague
 mission DevSync {
@@ -54,7 +54,7 @@ mission DevSync {
 }
 ```
 
-### Persistent Cache
+### Persistent cache
 
 ```vague
 mission CachedSync {
@@ -67,7 +67,7 @@ mission CachedSync {
 }
 ```
 
-### Data Export
+### Data export
 
 ```vague
 mission ExportData {
@@ -84,7 +84,7 @@ mission ExportData {
 }
 ```
 
-## Custom Directory
+## Custom directory
 
 ```vague
 // Default: .vague-data/
@@ -135,7 +135,7 @@ delete data[item.id]
 clear data
 ```
 
-## File Locking
+## File locking
 
 File stores use atomic writes to prevent corruption:
 
@@ -145,9 +145,9 @@ File stores use atomic writes to prevent corruption:
 
 This ensures data integrity even during crashes.
 
-## Best Practices
+## Best practices
 
-### Use Meaningful Names
+### Use meaningful names
 
 ```vague
 // Good
@@ -165,7 +165,7 @@ store d: file("d")
 .vague-data/
 ```
 
-### Use for Development Only
+### Use for development only
 
 ```vague
 mission ConfigurableSync {
@@ -176,7 +176,7 @@ mission ConfigurableSync {
 }
 ```
 
-### Regular Backups
+### Regular backups
 
 For important development data:
 
@@ -185,7 +185,7 @@ For important development data:
 cp -r .vague-data .vague-data.backup
 ```
 
-## Size Considerations
+## Size considerations
 
 File stores work well for:
 - Up to ~100MB per file
@@ -193,7 +193,7 @@ File stores work well for:
 
 For larger datasets, consider SQL stores.
 
-### Performance Tips
+### Performance tips
 
 ```vague
 // For large datasets, batch operations
@@ -206,7 +206,7 @@ for batch in chunks(items, 1000) {
 
 ## Debugging
 
-### Inspect Files
+### Inspect files
 
 ```bash
 # View raw data
@@ -216,7 +216,7 @@ cat .vague-data/customers.json | jq
 cat .vague-data/customers.json | jq 'length'
 ```
 
-### Reset Data
+### Reset data
 
 ```bash
 # Clear specific store

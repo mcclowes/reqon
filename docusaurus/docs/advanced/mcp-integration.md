@@ -16,9 +16,9 @@ The MCP server provides:
 - **Resources** for accessing stored data
 - Integration with Claude Desktop and other MCP clients
 
-## Starting the Server
+## Starting the server
 
-### Command Line
+### Command line
 
 ```bash
 npx reqon-mcp-server
@@ -27,7 +27,7 @@ npx reqon-mcp-server
 npx reqon-mcp-server --verbose --cwd /path/to/project
 ```
 
-### Claude Desktop Configuration
+### Claude desktop configuration
 
 Add to your Claude Desktop config (`claude_desktop_config.json`):
 
@@ -43,7 +43,7 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
-## Available Tools
+## Available tools
 
 ### reqon.execute
 
@@ -172,7 +172,7 @@ Parameters:
   path: string      - File path for file-based stores (optional)
 ```
 
-## Available Resources
+## Available resources
 
 ### reqon://stores
 
@@ -192,9 +192,9 @@ Resource: reqon://stores/customers
 Returns: JSON with store data (limit 100 records)
 ```
 
-## Use Cases
+## Use cases
 
-### AI-Driven Data Sync
+### AI-driven data sync
 
 Claude can execute data sync pipelines based on user requests:
 
@@ -205,7 +205,7 @@ Claude: I'll execute a Reqon mission to sync invoices...
 [Uses reqon.execute with appropriate mission source]
 ```
 
-### Interactive Data Exploration
+### Interactive data exploration
 
 Query and explore synced data:
 
@@ -216,7 +216,7 @@ Claude: Let me query the customers store...
 [Uses reqon.query_store with filter]
 ```
 
-### Pipeline Validation
+### Pipeline validation
 
 Validate mission syntax before execution:
 
@@ -227,7 +227,7 @@ Claude: I'll parse this mission to validate...
 [Uses reqon.parse to check for errors]
 ```
 
-## Server Architecture
+## Server architecture
 
 ```
 ┌─────────────────────────────────────────┐
@@ -251,7 +251,7 @@ Claude: I'll parse this mission to validate...
 
 ## Configuration
 
-### Working Directory
+### Working directory
 
 Set the working directory for file operations:
 
@@ -259,7 +259,7 @@ Set the working directory for file operations:
 reqon-mcp-server --cwd /path/to/missions
 ```
 
-### Verbose Mode
+### Verbose mode
 
 Enable detailed logging:
 
@@ -267,14 +267,14 @@ Enable detailed logging:
 reqon-mcp-server --verbose
 ```
 
-## Security Considerations
+## Security considerations
 
 - The MCP server executes missions with full network access
 - Store data is held in memory during the server session
 - File stores persist to the filesystem
 - Consider access controls when exposing to AI assistants
 
-## Error Handling
+## Error handling
 
 Tool errors return structured responses:
 
@@ -288,7 +288,7 @@ Tool errors return structured responses:
 }
 ```
 
-## Integration Example
+## Integration example
 
 Complete workflow with Claude:
 

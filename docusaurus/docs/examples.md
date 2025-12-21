@@ -8,7 +8,7 @@ keywords: [reqon, examples, Xero, Shopify, Stripe, GitHub, OAuth2, pagination]
 
 Real-world examples demonstrating Reqon's capabilities.
 
-## Basic API Sync
+## Basic API sync
 
 Fetch and store data from a public API:
 
@@ -48,7 +48,7 @@ mission JSONPlaceholderSync {
 }
 ```
 
-## Xero Integration
+## Xero integration
 
 Sync invoices from Xero with OAuth2 authentication:
 
@@ -121,7 +121,7 @@ mission XeroInvoiceSync {
 }
 ```
 
-## Multi-Source Reconciliation
+## Multi-source reconciliation
 
 Sync and reconcile data from multiple sources:
 
@@ -204,7 +204,7 @@ mission OrderReconciliation {
 }
 ```
 
-## OpenAPI Integration
+## OpenAPI integration
 
 Use OpenAPI spec for type-safe API calls:
 
@@ -256,7 +256,7 @@ mission PetstoreSync {
 }
 ```
 
-## Error Handling with Dead Letter Queue
+## Error handling with dead letter queue
 
 Robust error handling with retry and DLQ:
 
@@ -335,7 +335,7 @@ mission RobustSync {
 }
 ```
 
-## Scheduled Incremental Sync
+## Scheduled incremental sync
 
 Regular incremental sync with scheduling:
 
@@ -397,7 +397,7 @@ mission ScheduledSync {
 }
 ```
 
-## GitHub Repository Sync
+## GitHub repository sync
 
 Sync repository data from GitHub:
 
@@ -485,6 +485,6 @@ mission GitHubSync {
 }
 ```
 
-## More Examples
+## More examples
 
 For more examples, see the [examples directory](https://github.com/mcclowes/reqon/tree/main/examples) in the Reqon repository.

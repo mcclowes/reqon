@@ -8,7 +8,7 @@ Bearer token authentication is the most common auth method for REST APIs. The to
 
 ## Configuration
 
-### Mission File
+### Mission file
 
 ```vague
 source API {
@@ -17,7 +17,7 @@ source API {
 }
 ```
 
-### Credentials File
+### Credentials file
 
 ```json
 {
@@ -28,7 +28,7 @@ source API {
 }
 ```
 
-## How It Works
+## How it works
 
 Reqon adds the token to every request:
 
@@ -38,16 +38,16 @@ Host: api.example.com
 Authorization: Bearer your-api-token
 ```
 
-## Credential Options
+## Credential options
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `type` | Yes | Must be `"bearer"` |
 | `token` | Yes | The bearer token |
 
-## Environment Variables
+## Environment variables
 
-### In Credentials File
+### In credentials file
 
 ```json
 {
@@ -65,7 +65,7 @@ export API_TOKEN="your-token"
 reqon mission.vague --auth credentials.json
 ```
 
-### In Mission File
+### In mission file
 
 ```vague
 source API {
@@ -75,7 +75,7 @@ source API {
 }
 ```
 
-## Common Use Cases
+## Common use cases
 
 ### GitHub API
 
@@ -131,15 +131,15 @@ source CustomAPI {
 }
 ```
 
-## Token Rotation
+## Token rotation
 
-### Manual Rotation
+### Manual rotation
 
 1. Generate new token in API provider
 2. Update credentials file
 3. Run mission
 
-### Programmatic Rotation
+### Programmatic rotation
 
 ```typescript
 import { execute } from 'reqon';
@@ -156,7 +156,7 @@ await execute(source, {
 });
 ```
 
-## Handling Expiration
+## Handling expiration
 
 Bearer tokens may expire. Handle with match:
 
@@ -191,7 +191,7 @@ action RefreshToken {
 }
 ```
 
-## Multiple Tokens
+## Multiple tokens
 
 For APIs requiring different tokens per endpoint:
 
@@ -220,26 +220,26 @@ source WriteAPI {
 }
 ```
 
-## Security Best Practices
+## Security best practices
 
-### Store Tokens Securely
+### Store tokens securely
 
 ```bash
 # Never commit tokens
 echo "credentials.json" >> .gitignore
 ```
 
-### Use Environment Variables
+### Use environment variables
 
 ```bash
 export API_TOKEN=$(cat ~/.secrets/api-token)
 ```
 
-### Rotate Regularly
+### Rotate regularly
 
 Set up periodic token rotation in your CI/CD pipeline.
 
-### Use Minimal Scopes
+### Use minimal scopes
 
 If the API supports scoped tokens, use the minimum required permissions.
 
@@ -264,7 +264,7 @@ Ensure token doesn't have extra whitespace:
 }
 ```
 
-### Token Not Being Sent
+### Token not being sent
 
 Verify source name matches:
 

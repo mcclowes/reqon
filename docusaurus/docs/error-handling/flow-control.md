@@ -6,7 +6,7 @@ sidebar_position: 1
 
 Flow control directives determine what happens after pattern matching. They provide fine-grained control over error handling and execution flow.
 
-## Available Directives
+## Available directives
 
 | Directive | Description |
 |-----------|-------------|
@@ -102,7 +102,7 @@ match response {
 }
 ```
 
-### Retry Options
+### Retry options
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -112,7 +112,7 @@ match response {
 | `maxDelay` | Maximum delay (ms) | 30000 |
 | `delay` | Fixed delay (overrides backoff) | - |
 
-### Simple Retry
+### Simple retry
 
 ```vague
 match response {
@@ -121,7 +121,7 @@ match response {
 }
 ```
 
-### Fixed Delay
+### Fixed delay
 
 ```vague
 match response {
@@ -149,7 +149,7 @@ match response {
 }
 ```
 
-### Queue Options
+### Queue options
 
 ```vague
 queue queueName {
@@ -175,7 +175,7 @@ mission ErrorHandling {
 }
 ```
 
-## Jump Then
+## Jump then
 
 Execute another action, then continue or retry:
 
@@ -192,7 +192,7 @@ action RefreshToken {
 }
 ```
 
-### Jump Then Retry
+### Jump then retry
 
 Common pattern for token refresh:
 
@@ -217,7 +217,7 @@ action RefreshToken {
 }
 ```
 
-### Jump Then Continue
+### Jump then continue
 
 ```vague
 match response {
@@ -226,9 +226,9 @@ match response {
 }
 ```
 
-## Combining Directives
+## Combining directives
 
-### Layered Error Handling
+### Layered error handling
 
 ```vague
 match response {
@@ -254,7 +254,7 @@ match response {
 }
 ```
 
-### Per-Item Error Handling
+### Per-item error handling
 
 ```vague
 for item in items {
@@ -278,9 +278,9 @@ for item in items {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Be Specific
+### Be specific
 
 ```vague
 // Good: specific error handling
@@ -300,7 +300,7 @@ match response {
 }
 ```
 
-### Always Have a Default
+### Always have a default
 
 ```vague
 match response {
@@ -310,7 +310,7 @@ match response {
 }
 ```
 
-### Log Before Abort
+### Log before abort
 
 ```vague
 match response {
@@ -322,7 +322,7 @@ match response {
 }
 ```
 
-### Use Queue for Later Processing
+### Use queue for later processing
 
 ```vague
 match response {

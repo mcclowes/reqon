@@ -8,7 +8,7 @@ OAuth 2.0 is the industry standard for API authentication, used by most enterpri
 
 ## Configuration
 
-### Mission File
+### Mission file
 
 ```vague
 source Xero {
@@ -17,7 +17,7 @@ source Xero {
 }
 ```
 
-### Credentials File
+### Credentials file
 
 ```json
 {
@@ -34,7 +34,7 @@ source Xero {
 }
 ```
 
-## Credential Options
+## Credential options
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -47,9 +47,9 @@ source Xero {
 | `scopes` | No | Requested scopes |
 | `expiresAt` | No | When current token expires |
 
-## Token Refresh
+## Token refresh
 
-### Automatic Refresh
+### Automatic refresh
 
 When `expiresAt` is set and token expires, Reqon automatically:
 
@@ -71,7 +71,7 @@ When `expiresAt` is set and token expires, Reqon automatically:
 }
 ```
 
-### On 401 Response
+### On 401 response
 
 Even without `expiresAt`, Reqon refreshes on 401:
 
@@ -82,7 +82,7 @@ action FetchData {
 }
 ```
 
-### Manual Refresh Pattern
+### Manual refresh pattern
 
 For non-standard APIs:
 
@@ -117,7 +117,7 @@ action RefreshToken {
 }
 ```
 
-## Common OAuth2 Providers
+## Common OAuth2 providers
 
 ### Xero
 
@@ -194,13 +194,13 @@ action RefreshToken {
 }
 ```
 
-## Token Storage
+## Token storage
 
-### File-Based (Development)
+### File-based (development)
 
 Tokens are stored in the credentials file. Reqon updates them after refresh.
 
-### Secure Storage (Production)
+### Secure storage (production)
 
 For production, use secure storage:
 
@@ -240,7 +240,7 @@ Request specific scopes:
 }
 ```
 
-## Additional Headers
+## Additional headers
 
 Some APIs require extra headers:
 
@@ -254,7 +254,7 @@ source API {
 }
 ```
 
-## Handling Multi-Tenant
+## Handling multi-tenant
 
 For APIs like Xero with multiple organizations:
 
@@ -295,7 +295,7 @@ Refresh token is invalid or expired. Re-authenticate:
 2. Get new access and refresh tokens
 3. Update credentials file
 
-### "Token expired" but No Refresh
+### "Token expired" but no refresh
 
 Ensure `refreshToken` and `tokenUrl` are set:
 
@@ -308,10 +308,10 @@ Ensure `refreshToken` and `tokenUrl` are set:
 }
 ```
 
-### "Invalid client" Error
+### "Invalid client" error
 
 Check `clientId` and `clientSecret` are correct.
 
-### Scope Issues
+### Scope issues
 
 Ensure requested scopes are authorized for your app.

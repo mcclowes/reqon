@@ -6,7 +6,7 @@ sidebar_position: 6
 
 Pipelines define the execution order of actions in a mission. They support sequential execution, parallel execution, and conditional flows.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 run ActionName
@@ -14,7 +14,7 @@ run ActionA then ActionB
 run [ActionA, ActionB] then ActionC
 ```
 
-## Sequential Execution
+## Sequential execution
 
 Execute actions one after another:
 
@@ -34,7 +34,7 @@ Each action completes before the next starts:
 Fetch → Transform → Export
 ```
 
-## Parallel Execution
+## Parallel execution
 
 Execute multiple actions concurrently:
 
@@ -56,7 +56,7 @@ Execution diagram:
 └─ FetchProducts┘
 ```
 
-## Parallel Then Sequential
+## Parallel then sequential
 
 Combine parallel and sequential:
 
@@ -79,7 +79,7 @@ Execution:
 └─ FetchProducts ──┘
 ```
 
-## Multiple Parallel Groups
+## Multiple parallel groups
 
 ```vague
 mission MultiPhase {
@@ -101,7 +101,7 @@ mission MultiPhase {
 }
 ```
 
-## Single Action
+## Single action
 
 Run a single action:
 
@@ -116,7 +116,7 @@ mission SimpleSync {
 }
 ```
 
-## Action Dependencies
+## Action dependencies
 
 Actions run in order share context:
 
@@ -142,7 +142,7 @@ mission DependentActions {
 }
 ```
 
-## Parallel Action Isolation
+## Parallel action isolation
 
 Parallel actions have isolated contexts:
 
@@ -165,9 +165,9 @@ mission ParallelIsolation {
 }
 ```
 
-## Error Handling in Pipelines
+## Error handling in pipelines
 
-### Sequential Error Handling
+### Sequential error handling
 
 Errors in sequential pipelines stop execution:
 
@@ -176,7 +176,7 @@ run Fetch then Transform then Export
 // If Transform fails, Export never runs
 ```
 
-### Parallel Error Handling
+### Parallel error handling
 
 In parallel groups, all actions run even if one fails:
 
@@ -206,9 +206,9 @@ action Merge {
 }
 ```
 
-## Common Pipeline Patterns
+## Common pipeline patterns
 
-### ETL Pipeline
+### ETL pipeline
 
 ```vague
 mission ETL {
@@ -234,7 +234,7 @@ mission ETL {
 }
 ```
 
-### Fan-Out Fan-In
+### Fan-out fan-in
 
 ```vague
 mission FanOutFanIn {
@@ -272,7 +272,7 @@ mission FanOutFanIn {
 }
 ```
 
-### Conditional Pipeline
+### Conditional pipeline
 
 ```vague
 mission ConditionalPipeline {
@@ -303,7 +303,7 @@ mission ConditionalPipeline {
 }
 ```
 
-### Retry Pipeline
+### Retry pipeline
 
 ```vague
 mission RetryPipeline {
@@ -324,9 +324,9 @@ mission RetryPipeline {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Group Related Fetches
+### Group related fetches
 
 ```vague
 // Good: related fetches in parallel
@@ -336,7 +336,7 @@ run [FetchOrders, FetchOrderItems, FetchOrderPayments] then ProcessOrders
 run [FetchOrders, FetchUsers, FetchProducts] then ???
 ```
 
-### Keep Actions Focused
+### Keep actions focused
 
 ```vague
 // Good: single responsibility
@@ -351,7 +351,7 @@ action DoEverything { }
 run DoEverything
 ```
 
-### Handle Dependencies Explicitly
+### Handle dependencies explicitly
 
 ```vague
 mission ExplicitDependencies {
@@ -373,7 +373,7 @@ mission ExplicitDependencies {
 }
 ```
 
-### Document Complex Pipelines
+### Document complex pipelines
 
 ```vague
 mission DocumentedPipeline {

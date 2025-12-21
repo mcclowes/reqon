@@ -6,7 +6,7 @@ sidebar_position: 5
 
 **Schemas** define data shapes for validation and pattern matching. They're used to validate responses, route data based on structure, and document expected data formats.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 schema SchemaName {
@@ -18,7 +18,7 @@ schema SchemaName {
 }
 ```
 
-## Field Types
+## Field types
 
 | Type | Description | Example |
 |------|-------------|---------|
@@ -31,7 +31,7 @@ schema SchemaName {
 | `any` | Any type | anything |
 | `null` | Null value | `null` |
 
-## Optional Fields
+## Optional fields
 
 Use `?` suffix for optional fields:
 
@@ -44,7 +44,7 @@ schema User {
 }
 ```
 
-## Typed Arrays
+## Typed arrays
 
 Specify array element types:
 
@@ -64,7 +64,7 @@ schema Order {
 }
 ```
 
-## Nested Schemas
+## Nested schemas
 
 Define complex nested structures:
 
@@ -88,7 +88,7 @@ schema Invoice {
 }
 ```
 
-## Schema References
+## Schema references
 
 Reference other schemas:
 
@@ -108,7 +108,7 @@ schema Customer {
 }
 ```
 
-## Using Schemas for Validation
+## Using schemas for validation
 
 Validate data against schemas:
 
@@ -127,7 +127,7 @@ action ValidateResponse {
 }
 ```
 
-## Using Schemas for Pattern Matching
+## Using schemas for pattern matching
 
 Route data based on schema matches:
 
@@ -159,7 +159,7 @@ action HandleResponse {
 }
 ```
 
-## Schema Matching Rules
+## Schema matching rules
 
 Schemas match when:
 1. All required fields are present
@@ -179,7 +179,7 @@ schema StrictUser {
 // Does NOT match: { id: "1" }  // missing name
 ```
 
-## Type Checking with `is`
+## Type checking with `is`
 
 Use `is` for inline type checking:
 
@@ -191,7 +191,7 @@ validate response {
 }
 ```
 
-## Combining Schemas
+## Combining schemas
 
 Use schemas in complex match patterns:
 
@@ -224,7 +224,7 @@ action FetchPaginated {
 }
 ```
 
-## Schema Inheritance (via Vague)
+## Schema inheritance (via Vague)
 
 Extend schemas using Vague's composition:
 
@@ -250,9 +250,9 @@ schema Order {
 
 For advanced schema features, see the [Vague documentation](https://github.com/mcclowes/vague).
 
-## Best Practices
+## Best practices
 
-### Define Schemas for API Responses
+### Define schemas for API responses
 
 ```vague
 mission APISync {
@@ -272,7 +272,7 @@ mission APISync {
 }
 ```
 
-### Use Schemas for Error Handling
+### Use schemas for error handling
 
 ```vague
 schema APIError {
@@ -301,7 +301,7 @@ action Fetch {
 }
 ```
 
-### Document Expected Formats
+### Document expected formats
 
 Schemas serve as documentation:
 
@@ -326,7 +326,7 @@ schema XeroInvoice {
 }
 ```
 
-### Keep Schemas Close to Usage
+### Keep schemas close to usage
 
 Define schemas in the same mission where they're used:
 

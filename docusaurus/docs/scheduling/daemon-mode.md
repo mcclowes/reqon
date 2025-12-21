@@ -2,24 +2,24 @@
 sidebar_position: 4
 ---
 
-# Daemon Mode
+# Daemon mode
 
 Daemon mode runs Reqon as a long-running service, executing scheduled missions automatically.
 
-## Starting the Daemon
+## Starting the daemon
 
 ```bash
 reqon ./missions/ --daemon
 ```
 
-## How It Works
+## How it works
 
 1. Daemon loads all missions from the specified path
 2. Parses schedule configurations
 3. Runs missions according to their schedules
 4. Continues until stopped
 
-## Command Options
+## Command options
 
 ```bash
 reqon ./missions/ --daemon [options]
@@ -30,9 +30,9 @@ Options:
   --check-interval     How often to check schedules (default: 1000ms)
 ```
 
-## Example Setup
+## Example setup
 
-### Mission Files
+### Mission files
 
 ```
 missions/
@@ -65,7 +65,7 @@ mission SyncCustomers {
 reqon ./missions/ --daemon --auth ./credentials.json --verbose
 ```
 
-## Process Management
+## Process management
 
 ### Foreground
 
@@ -81,7 +81,7 @@ Press Ctrl+C to stop.
 nohup reqon ./missions/ --daemon > reqon.log 2>&1 &
 ```
 
-### Systemd Service
+### Systemd service
 
 Create `/etc/systemd/system/reqon.service`:
 
@@ -144,7 +144,7 @@ volumes:
   reqon-data:
 ```
 
-## Graceful Shutdown
+## Graceful shutdown
 
 Reqon handles SIGINT and SIGTERM:
 
@@ -161,9 +161,9 @@ kill -TERM $(pgrep -f "reqon.*daemon")
 systemctl stop reqon
 ```
 
-## Health Checks
+## Health checks
 
-### Status Endpoint
+### Status endpoint
 
 Enable HTTP health endpoint:
 
@@ -178,7 +178,7 @@ curl http://localhost:8080/health
 # {"status":"ok","uptime":3600,"missionsLoaded":3}
 ```
 
-### File-Based Health
+### File-based health
 
 ```vague
 mission HealthCheck {
@@ -194,7 +194,7 @@ Monitor the health store file.
 
 ## Logging
 
-### Log Levels
+### Log levels
 
 ```bash
 # Default logging
@@ -207,7 +207,7 @@ reqon ./missions/ --daemon --verbose
 REQON_LOG_LEVEL=debug reqon ./missions/ --daemon
 ```
 
-### Log Output
+### Log output
 
 ```
 [2024-01-20 09:00:00] [INFO] Starting Reqon daemon
@@ -219,7 +219,7 @@ REQON_LOG_LEVEL=debug reqon ./missions/ --daemon
 [2024-01-20 09:05:02] [INFO] SyncOrders: Completed (2.1s)
 ```
 
-### Structured Logging
+### Structured logging
 
 ```bash
 REQON_LOG_FORMAT=json reqon ./missions/ --daemon
@@ -267,16 +267,16 @@ groups:
           summary: "Mission {{ $labels.mission }} is failing"
 ```
 
-## Best Practices
+## Best practices
 
-### Use Separate Credentials
+### Use separate credentials
 
 ```bash
 # Production credentials
 reqon ./missions/ --daemon --auth ./prod-credentials.json
 ```
 
-### Run as Non-Root
+### Run as non-root
 
 ```bash
 # Create dedicated user
@@ -286,7 +286,7 @@ useradd -r -s /bin/false reqon
 sudo -u reqon reqon ./missions/ --daemon
 ```
 
-### Persistent Storage
+### Persistent storage
 
 Ensure `.vague-data` is on persistent storage:
 
@@ -295,7 +295,7 @@ volumes:
   - /var/lib/reqon:/app/.vague-data
 ```
 
-### Health Monitoring
+### Health monitoring
 
 Always enable health checks:
 
@@ -303,7 +303,7 @@ Always enable health checks:
 reqon ./missions/ --daemon --health-port 8080
 ```
 
-### Log Rotation
+### Log rotation
 
 ```bash
 # Use logrotate
