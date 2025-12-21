@@ -22,9 +22,9 @@ export class ReqonExpressionParser extends ReqonParserBase {
     const condition = this.parseOr();
 
     if (this.match(TokenType.QUESTION)) {
-      const consequent = this.parseTernary();
+      const consequent = this.parseTernaryBranch();
       this.consume(TokenType.COLON, "Expected ':' in ternary expression");
-      const alternate = this.parseTernary();
+      const alternate = this.parseTernaryBranch();
       return {
         type: 'TernaryExpression',
         condition,
@@ -34,6 +34,57 @@ export class ReqonExpressionParser extends ReqonParserBase {
     }
 
     return condition;
+  }
+
+  // Parse a ternary branch - allows nested ternaries but skips superposition
+  private parseTernaryBranch(): Expression {
+    const expr = this.parseTernaryBranchOr();
+
+    if (this.match(TokenType.QUESTION)) {
+      const consequent = this.parseTernaryBranch();
+      this.consume(TokenType.COLON, "Expected ':' in ternary expression");
+      const alternate = this.parseTernaryBranch();
+      return {
+        type: 'TernaryExpression',
+        condition: expr,
+        consequent,
+        alternate,
+      };
+    }
+
+    return expr;
+  }
+
+  private parseTernaryBranchOr(): Expression {
+    let left = this.parseTernaryBranchAnd();
+
+    while (this.match(TokenType.OR)) {
+      const right = this.parseTernaryBranchAnd();
+      left = { type: 'LogicalExpression', operator: 'or', left, right };
+    }
+
+    return left;
+  }
+
+  private parseTernaryBranchAnd(): Expression {
+    let left = this.parseTernaryBranchNot();
+
+    while (this.match(TokenType.AND)) {
+      const right = this.parseTernaryBranchNot();
+      left = { type: 'LogicalExpression', operator: 'and', left, right };
+    }
+
+    return left;
+  }
+
+  private parseTernaryBranchNot(): Expression {
+    if (this.match(TokenType.NOT)) {
+      const operand = this.parseTernaryBranchNot();
+      return { type: 'NotExpression', operand };
+    }
+
+    // Skip superposition, go directly to comparison
+    return this.parseComparison();
   }
 
   private parseOr(): Expression {

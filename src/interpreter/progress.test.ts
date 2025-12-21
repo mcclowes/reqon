@@ -27,6 +27,7 @@ function createTestProgram(stages: string[]): ReqonProgram {
     sources: [],
     stores: [],
     schemas: [],
+    transforms: [],
     actions,
     pipeline,
   };

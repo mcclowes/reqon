@@ -189,6 +189,12 @@ export function evaluate(expr: Expression, ctx: ExecutionContext, current?: unkn
       return checkType(value, isExpr.typeCheck);
     }
 
+    case 'OrderedSequenceType': {
+      // Inline array literal: [1, 2, 3]
+      const seqExpr = expr as unknown as { elements: Expression[] };
+      return seqExpr.elements.map((el) => evaluate(el, ctx, current));
+    }
+
     default:
       throw new Error(`Cannot evaluate expression type: ${(expr as Expression).type}`);
   }

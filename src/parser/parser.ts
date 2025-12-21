@@ -124,9 +124,9 @@ export class ReqonParser extends ReqonExpressionParser {
     const definedSources = new Set(sources.map((s) => s.name));
     const definedTransforms = new Set(transforms.map((t) => t.name));
 
-    // Validate all references
+    // Validate all references within actions (stores, sources)
+    // Note: Pipeline references are validated by the loader after action merging
     this.validateActionReferences(actions, definedStores, definedSources, definedActions, definedTransforms);
-    this.validatePipelineReferences(pipeline, definedActions);
 
     return {
       type: 'MissionDefinition',
@@ -1080,11 +1080,11 @@ export class ReqonParser extends ReqonExpressionParser {
     if (this.match(TokenType.COLON)) {
       // Simple syntax with explicit source schema
       const sourceSchema = this.consume(TokenType.IDENTIFIER, 'Expected source schema').value;
-      this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
+      this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
       const targetSchema = this.consume(TokenType.IDENTIFIER, 'Expected target schema').value;
       const mappings = this.parseFieldMappings();
       variants.push({ sourceSchema, targetSchema, mappings });
-    } else if (this.match(ReqonTokenType.RIGHT_ARROW)) {
+    } else if (this.match(TokenType.RIGHT_ARROW)) {
       // Simple syntax without explicit source (inferred at runtime)
       const targetSchema = this.consume(TokenType.IDENTIFIER, 'Expected target schema').value;
       const mappings = this.parseFieldMappings();
@@ -1143,7 +1143,7 @@ export class ReqonParser extends ReqonExpressionParser {
       guard = this.parseExpression();
     }
 
-    this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
+    this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
     const targetSchema = this.consume(TokenType.IDENTIFIER, 'Expected target schema').value;
     const mappings = this.parseFieldMappings();
 
