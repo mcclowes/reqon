@@ -152,6 +152,94 @@ When reporting bugs, please include:
 - Expected vs actual behavior
 - Error messages and stack traces
 
+## Release Process (Maintainers)
+
+This section documents how to release a new version of Reqon.
+
+### Prerequisites
+
+- Push access to the repository
+- `NPM_TOKEN` configured in GitHub Secrets (for automated publishing)
+
+### Version Numbering
+
+We follow [Semantic Versioning](https://semver.org/):
+- **Patch** (0.2.0 → 0.2.1): Bug fixes, minor documentation updates
+- **Minor** (0.2.0 → 0.3.0): New features, backward-compatible changes
+- **Major** (0.2.0 → 1.0.0): Breaking changes
+
+### Release Steps
+
+1. **Update the version:**
+   ```bash
+   npm run version:patch  # or version:minor, version:major
+   ```
+
+2. **Update CHANGELOG.md:**
+   - Move items from `[Unreleased]` to a new version section
+   - Add the release date
+   - Update the comparison links at the bottom
+
+3. **Commit the version bump:**
+   ```bash
+   git add package.json CHANGELOG.md
+   git commit -m "chore: release v0.3.0"
+   git push origin main
+   ```
+
+4. **Run the release script:**
+   ```bash
+   npm run release
+   ```
+
+   This will:
+   - Validate the changelog has the new version entry
+   - Run tests and build
+   - Create and push the git tag
+
+5. **Monitor the release:**
+   - Check [GitHub Actions](https://github.com/mcclowes/reqon/actions) for the release workflow
+   - Verify the package appears on [npm](https://www.npmjs.com/package/reqon-dsl)
+
+### Pre-release Versions
+
+For alpha/beta/rc releases:
+
+```bash
+# Manually set version
+npm version 0.3.0-alpha.1 --no-git-tag-version
+# Update CHANGELOG.md
+# Commit and run release
+npm run release
+```
+
+Pre-releases are published with the `next` npm tag:
+```bash
+npm install reqon-dsl@next
+```
+
+### Dry Run
+
+To preview a release without making changes:
+```bash
+npm run release -- --dry-run
+npm run release:dry-run  # Preview npm publish
+```
+
+### Troubleshooting
+
+**Tag already exists:**
+```bash
+# Delete local tag
+git tag -d v0.3.0
+# Delete remote tag (if pushed by mistake)
+git push origin :refs/tags/v0.3.0
+```
+
+**Release workflow failed:**
+- Check the [Actions tab](https://github.com/mcclowes/reqon/actions) for error details
+- Common issues: missing `NPM_TOKEN`, test failures, version mismatch
+
 ## Questions?
 
 Open an issue for questions about contributing or the codebase architecture.

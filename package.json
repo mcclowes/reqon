@@ -21,11 +21,39 @@
     "bench:evaluator": "npx tsx src/benchmark/index.ts --suite evaluator",
     "bench:store": "npx tsx src/benchmark/index.ts --suite store",
     "bench:resilience": "npx tsx src/benchmark/index.ts --suite resilience",
-    "bench:e2e": "npx tsx src/benchmark/index.ts --suite e2e"
+    "bench:e2e": "npx tsx src/benchmark/index.ts --suite e2e",
+    "prerelease": "npm run test:run && npm run build",
+    "release": "node scripts/release.js",
+    "release:dry-run": "npm publish --dry-run",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version"
   },
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "README.md"
+  ],
   "engines": {
     "node": ">=18"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mcclowes/reqon.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mcclowes/reqon/issues"
+  },
+  "homepage": "https://github.com/mcclowes/reqon#readme",
+  "keywords": [
+    "dsl",
+    "data-pipeline",
+    "fetch",
+    "api",
+    "declarative",
+    "etl",
+    "vague"
+  ],
   "author": "Max Clayton Clowes <max@mcclowes.com>",
   "license": "ISC",
   "dependencies": {
