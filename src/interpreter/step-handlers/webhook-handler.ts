@@ -10,6 +10,7 @@ import { evaluate } from '../evaluator.js';
 import type { WebhookServer, WebhookRegistration, WebhookEvent } from '../../webhook/index.js';
 import { RetrySignal } from '../signals.js';
 import type { EventType } from '../../observability/index.js';
+import { RuntimeError } from '../../errors/index.js';
 
 /**
  * Dependencies for the webhook handler
@@ -91,7 +92,12 @@ export class WebhookHandler {
 
       // If not retrying, still return partial results
       if (result.events.length === 0) {
-        throw new Error(`Webhook timeout: no events received within ${timeout}ms`);
+        throw new RuntimeError(
+          `Webhook timeout: no events received within ${timeout}ms`,
+          { line: 1, column: 1 },
+          undefined,
+          { stepType: 'wait' }
+        );
       }
     }
 
