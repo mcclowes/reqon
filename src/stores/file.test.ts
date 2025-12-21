@@ -194,6 +194,58 @@ describe('FileStore', () => {
     });
   });
 
+  describe('count', () => {
+    it('should return total count when no filter', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+
+      await store.set('1', { id: '1', name: 'Alice', status: 'active' });
+      await store.set('2', { id: '2', name: 'Bob', status: 'inactive' });
+      await store.set('3', { id: '3', name: 'Charlie', status: 'active' });
+
+      const count = await store.count();
+      expect(count).toBe(3);
+    });
+
+    it('should return count matching where clause', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+
+      await store.set('1', { id: '1', name: 'Alice', status: 'active' });
+      await store.set('2', { id: '2', name: 'Bob', status: 'inactive' });
+      await store.set('3', { id: '3', name: 'Charlie', status: 'active' });
+
+      const count = await store.count({ where: { status: 'active' } });
+      expect(count).toBe(2);
+    });
+
+    it('should return 0 when no records match', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+
+      await store.set('1', { id: '1', status: 'active' });
+
+      const count = await store.count({ where: { status: 'unknown' } });
+      expect(count).toBe(0);
+    });
+
+    it('should ignore limit and offset for counting', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+
+      await store.set('1', { id: '1', status: 'active' });
+      await store.set('2', { id: '2', status: 'active' });
+      await store.set('3', { id: '3', status: 'active' });
+
+      // limit/offset should not affect count - count returns total matching records
+      const count = await store.count({ where: { status: 'active' }, limit: 1, offset: 1 });
+      expect(count).toBe(3);
+    });
+
+    it('should return 0 for empty store', async () => {
+      const store = new FileStore('test-store', { baseDir: TEST_DIR });
+
+      const count = await store.count();
+      expect(count).toBe(0);
+    });
+  });
+
   describe('utilities', () => {
     it('should report size correctly', async () => {
       const store = new FileStore('test-store', { baseDir: TEST_DIR });

@@ -34,6 +34,14 @@ export class MemoryStore implements StoreAdapter {
     return applyStoreFilter(Array.from(this.data.values()), filter);
   }
 
+  async count(filter?: StoreFilter): Promise<number> {
+    // Apply only the where clause for counting (ignore limit/offset)
+    const filtered = applyStoreFilter(Array.from(this.data.values()), {
+      where: filter?.where,
+    });
+    return filtered.length;
+  }
+
   async clear(): Promise<void> {
     this.data.clear();
   }
