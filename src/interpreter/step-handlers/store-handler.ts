@@ -2,17 +2,53 @@ import type { StoreStep } from '../../ast/nodes.js';
 import type { StepHandler, StepHandlerDeps } from './types.js';
 import type { StoreAdapter } from '../../stores/types.js';
 import { evaluate } from '../evaluator.js';
+import { RuntimeError } from '../../errors/index.js';
 
 /**
- * Handles store steps for persisting data
+ * Handles store steps for persisting data to configured store adapters.
+ * Supports bulk operations, upserts, and partial record updates.
  */
 export class StoreHandler implements StepHandler<StoreStep> {
   constructor(private deps: StepHandlerDeps) {}
 
+  /**
+   * Compute the storage key for a record based on step options.
+   * Uses the key expression if provided, otherwise falls back to record.id or a random key.
+   */
+  private getRecordKey(step: StoreStep, record: Record<string, unknown>): string {
+    if (step.options.key) {
+      return String(evaluate(step.options.key, this.deps.ctx, record));
+    }
+    return String(record.id ?? Math.random());
+  }
+
+  /**
+   * Emit a data.store event with operation metadata.
+   */
+  private emitStoreEvent(
+    step: StoreStep,
+    operation: 'set' | 'upsert',
+    itemCount: number,
+    key?: string
+  ): void {
+    this.deps.emit?.('data.store', {
+      storeName: step.target,
+      storeType: this.deps.ctx.storeTypes.get(step.target) ?? 'unknown',
+      operation,
+      itemCount,
+      ...(key !== undefined && { key }),
+    });
+  }
+
   async execute(step: StoreStep): Promise<void> {
     const store = this.deps.ctx.stores.get(step.target);
     if (!store) {
-      throw new Error(`Store not found: ${step.target}`);
+      throw new RuntimeError(
+        `Store not found: ${step.target}`,
+        { line: 1, column: 1 },
+        undefined,
+        { stepType: 'store' }
+      );
     }
 
     const source = evaluate(step.source, this.deps.ctx);
@@ -32,9 +68,7 @@ export class StoreHandler implements StepHandler<StoreStep> {
       const records: Array<{ key: string; value: Record<string, unknown> }> = [];
       for (const item of items) {
         const record = item as Record<string, unknown>;
-        const key = step.options.key
-          ? String(evaluate(step.options.key, this.deps.ctx, record))
-          : String(record.id ?? Math.random());
+        const key = this.getRecordKey(step, record);
 
         if (step.options.partial !== undefined) {
           record._partial = step.options.partial;
@@ -51,32 +85,16 @@ export class StoreHandler implements StepHandler<StoreStep> {
     }
 
     this.deps.log(`Stored ${items.length} items to ${step.target}`);
-
-    // Emit data.store event
-    this.deps.emit?.('data.store', {
-      storeName: step.target,
-      storeType: this.deps.ctx.storeTypes.get(step.target) ?? 'unknown',
-      operation,
-      itemCount: items.length,
-    });
+    this.emitStoreEvent(step, operation, items.length);
   }
 
   private async storeOne(step: StoreStep, store: StoreAdapter, record: Record<string, unknown>): Promise<void> {
-    const key = step.options.key
-      ? String(evaluate(step.options.key, this.deps.ctx, record))
-      : String(record.id ?? Math.random());
+    const key = this.getRecordKey(step, record);
+    const operation = step.options.upsert ? 'upsert' : 'set';
 
     await this.storeRecord(step, store, record);
     this.deps.log(`Stored item to ${step.target}`);
-
-    // Emit data.store event
-    this.deps.emit?.('data.store', {
-      storeName: step.target,
-      storeType: this.deps.ctx.storeTypes.get(step.target) ?? 'unknown',
-      operation: step.options.upsert ? 'upsert' : 'set',
-      itemCount: 1,
-      key,
-    });
+    this.emitStoreEvent(step, operation, 1, key);
   }
 
   private async storeRecord(
@@ -84,9 +102,7 @@ export class StoreHandler implements StepHandler<StoreStep> {
     store: StoreAdapter,
     record: Record<string, unknown>
   ): Promise<void> {
-    const key = step.options.key
-      ? String(evaluate(step.options.key, this.deps.ctx, record))
-      : String(record.id ?? Math.random());
+    const key = this.getRecordKey(step, record);
 
     if (step.options.partial !== undefined) {
       record._partial = step.options.partial;

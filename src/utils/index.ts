@@ -12,3 +12,17 @@ export {
   restoreDates,
   restoreDatesInArray,
 } from './file.js';
+export {
+  isRecord,
+  isObject,
+  isArrayOf,
+  isString,
+  isNumber,
+  isBoolean,
+  isDefined,
+  isPresent,
+  getProperty,
+  getNestedProperty,
+  hasProperty,
+  hasTypedProperty,
+} from './type-guards.js';

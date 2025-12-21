@@ -2,7 +2,27 @@ import type { Expression } from 'vague-lang';
 import type { ExecutionContext } from './context.js';
 import { getVariable } from './context.js';
 import type { IsExpression, ObjectLiteralExpression } from '../parser/expressions.js';
+import { isRecord } from '../utils/type-guards.js';
 
+/**
+ * Evaluate a Reqon/Vague expression within an execution context.
+ *
+ * Supports all expression types from the Vague DSL including literals, identifiers,
+ * binary/logical/ternary expressions, function calls, and pattern matching.
+ *
+ * @param expr - The expression AST node to evaluate
+ * @param ctx - The execution context containing variables, response data, and stores
+ * @param current - Optional current record for iteration contexts (e.g., inside for/map)
+ * @returns The evaluated result, which can be any JSON-compatible value
+ *
+ * @example
+ * // Evaluate a simple identifier
+ * const result = evaluate({ type: 'Identifier', name: 'foo' }, ctx);
+ *
+ * @example
+ * // Evaluate with current record context
+ * const result = evaluate(expr, ctx, { id: 1, name: 'test' });
+ */
 export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpression, ctx: ExecutionContext, current?: unknown): unknown {
   // Handle IsExpression before the switch (custom Reqon type, not in vague-lang Expression union)
   if (expr.type === 'IsExpression') {
@@ -27,11 +47,8 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
 
     case 'Identifier': {
       // Check if it's a field on current object
-      if (current && typeof current === 'object' && current !== null) {
-        const obj = current as Record<string, unknown>;
-        if (expr.name in obj) {
-          return obj[expr.name];
-        }
+      if (isRecord(current) && expr.name in current) {
+        return current[expr.name];
       }
       // Check variables
       const value = getVariable(ctx, expr.name);
@@ -41,9 +58,8 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
         return ctx.response;
       }
       // Check if the identifier is a field on response
-      if (ctx.response && typeof ctx.response === 'object') {
-        const resp = ctx.response as Record<string, unknown>;
-        if (expr.name in resp) return resp[expr.name];
+      if (isRecord(ctx.response) && expr.name in ctx.response) {
+        return ctx.response[expr.name];
       }
       return undefined;
     }
@@ -51,11 +67,11 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
     case 'QualifiedName': {
       // Try from current/response first (common case)
       let value: unknown = current ?? ctx.response;
-      if (value && typeof value === 'object' && value !== null) {
+      if (isRecord(value)) {
         let found = true;
         for (const part of expr.parts) {
-          if (value && typeof value === 'object' && value !== null) {
-            value = (value as Record<string, unknown>)[part];
+          if (isRecord(value)) {
+            value = value[part];
           } else {
             found = false;
             break;
@@ -71,8 +87,8 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
         value = getVariable(ctx, expr.parts[0]);
         if (value !== undefined) {
           for (let i = 1; i < expr.parts.length; i++) {
-            if (value && typeof value === 'object') {
-              value = (value as Record<string, unknown>)[expr.parts[i]];
+            if (isRecord(value)) {
+              value = value[expr.parts[i]];
             } else {
               return undefined;
             }
@@ -214,11 +230,38 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
   }
 }
 
+/**
+ * Evaluate an expression and convert the result to a string.
+ *
+ * @param expr - The expression to evaluate
+ * @param ctx - The execution context
+ * @param current - Optional current record for iteration contexts
+ * @returns The string representation of the evaluated value
+ */
 export function evaluateToString(expr: Expression, ctx: ExecutionContext, current?: unknown): string {
   const value = evaluate(expr, ctx, current);
   return String(value ?? '');
 }
 
+/**
+ * Interpolate variables in a path string using {variable.path} syntax.
+ *
+ * Replaces placeholders like {id} or {user.name} with values from the
+ * current record or execution context variables.
+ *
+ * @param path - The path string with {placeholder} syntax
+ * @param ctx - The execution context
+ * @param current - Optional current record for iteration contexts
+ * @returns The interpolated path string
+ *
+ * @example
+ * // Interpolate a simple variable
+ * interpolatePath('/users/{id}', ctx, { id: 123 }); // '/users/123'
+ *
+ * @example
+ * // Interpolate a nested path
+ * interpolatePath('/orgs/{org.id}/users', ctx, { org: { id: 'acme' } }); // '/orgs/acme/users'
+ */
 export function interpolatePath(path: string, ctx: ExecutionContext, current?: unknown): string {
   return path.replace(/\{([^}]+)\}/g, (_, expr) => {
     // Simple variable interpolation
@@ -226,8 +269,8 @@ export function interpolatePath(path: string, ctx: ExecutionContext, current?: u
     let value: unknown = current;
 
     for (const part of parts) {
-      if (value && typeof value === 'object') {
-        value = (value as Record<string, unknown>)[part];
+      if (isRecord(value)) {
+        value = value[part];
       } else {
         value = getVariable(ctx, part);
       }

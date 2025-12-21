@@ -1,9 +1,11 @@
 import type { ValidateStep } from '../../ast/nodes.js';
 import type { StepHandler, StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
+import { ValidationError } from '../../errors/index.js';
 
 /**
- * Handles validate steps with assume constraints
+ * Handles validate steps with assume constraints.
+ * Evaluates constraint conditions and throws ValidationError on failure.
  */
 export class ValidateHandler implements StepHandler<ValidateStep> {
   constructor(private deps: StepHandlerDeps) {}
@@ -18,7 +20,12 @@ export class ValidateHandler implements StepHandler<ValidateStep> {
         const message = constraint.message ?? `Validation failed: ${JSON.stringify(constraint.condition)}`;
 
         if (constraint.severity === 'error') {
-          throw new Error(message);
+          throw new ValidationError(
+            message,
+            { line: 1, column: 1 },
+            undefined,
+            { constraint: JSON.stringify(constraint.condition), severity: 'error' }
+          );
         } else {
           this.deps.log(`Warning: ${message}`);
         }
