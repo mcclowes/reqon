@@ -1,0 +1,302 @@
+// Circuit Breaker Example
+// Demonstrates: circuit breaker configuration, fallback sources, resilient patterns
+// Automatically fails fast when a service is unhealthy and recovers gracefully
+
+mission ResilientDataFetch {
+
+  // ============================================================
+  // SOURCES WITH CIRCUIT BREAKER
+  // ============================================================
+
+  // Primary API with circuit breaker protection
+  source PrimaryAPI {
+    auth: bearer,
+    base: "https://api.primary-service.com/v1",
+
+    // Circuit breaker configuration
+    circuitBreaker: {
+      // Open circuit after 3 consecutive failures
+      failureThreshold: 3,
+
+      // Time to wait before attempting recovery (30 seconds)
+      resetTimeout: 30000,
+
+      // Successful requests needed to close circuit
+      successThreshold: 2,
+
+      // Window for counting failures (1 minute)
+      failureWindow: 60000
+    },
+
+    rateLimit: {
+      strategy: "pause",
+      maxWait: 30,
+      fallbackRpm: 100
+    }
+  }
+
+  // Fallback API for when primary is unavailable
+  source FallbackAPI {
+    auth: bearer,
+    base: "https://api.fallback-service.com/v1",
+
+    circuitBreaker: {
+      failureThreshold: 5,
+      resetTimeout: 60000,
+      successThreshold: 3
+    }
+  }
+
+  // Cache layer as last resort
+  source CacheAPI {
+    auth: api_key,
+    base: "https://cache.internal.com"
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  store products: sql("products")
+  store circuit_events: sql("circuit_breaker_events")
+  store fallback_usage: sql("fallback_metrics")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema Product {
+    id: string,
+    name: string,
+    price: decimal,
+    inventory: int,
+    source: string,
+    fetched_at: date
+  }
+
+  schema CircuitOpen {
+    circuitOpen: boolean,
+    service: string,
+    openedAt: date
+  }
+
+  schema ServiceError {
+    error: string,
+    status: int
+  }
+
+  // ============================================================
+  // ACTION: Fetch Products with Fallback Chain
+  // ============================================================
+
+  action FetchProducts {
+    // Attempt primary source first
+    get "/products" {
+      source: PrimaryAPI,
+      retry: {
+        maxAttempts: 2,
+        backoff: "exponential",
+        initialDelay: 500
+      }
+    }
+
+    match response {
+      // Success from primary
+      _ where .products != null -> {
+        for product in response.products {
+          map product -> Product {
+            id: .id,
+            name: .name,
+            price: .price,
+            inventory: .stock_count,
+            source: "primary",
+            fetched_at: now()
+          }
+
+          store response -> products { key: .id, upsert: true }
+        }
+      },
+
+      // Circuit is open - primary is unhealthy
+      CircuitOpen where .circuitOpen == true -> {
+        // Log circuit breaker event
+        store {
+          event: "circuit_open",
+          service: "PrimaryAPI",
+          timestamp: now(),
+          action: "falling_back"
+        } -> circuit_events { key: now() }
+
+        // Fall back to secondary source
+        get "/products" {
+          source: FallbackAPI
+        }
+
+        match response {
+          // Fallback succeeded
+          _ where .products != null -> {
+            // Track fallback usage
+            store {
+              timestamp: now(),
+              primary_status: "circuit_open",
+              fallback_used: "FallbackAPI",
+              success: true
+            } -> fallback_usage { key: now() }
+
+            for product in response.products {
+              map product -> Product {
+                id: .id,
+                name: .name,
+                price: .price,
+                inventory: .available,
+                source: "fallback",
+                fetched_at: now()
+              }
+
+              store response -> products { key: .id, upsert: true }
+            }
+          },
+
+          // Fallback also has circuit open
+          CircuitOpen where .circuitOpen == true -> {
+            // Use cache as last resort
+            get "/products/cached" {
+              source: CacheAPI
+            }
+
+            match response {
+              _ where .data != null -> {
+                store {
+                  timestamp: now(),
+                  primary_status: "circuit_open",
+                  fallback_used: "CacheAPI",
+                  success: true,
+                  data_freshness: "stale"
+                } -> fallback_usage { key: now() }
+
+                for product in response.data {
+                  map product -> Product {
+                    id: .id,
+                    name: .name,
+                    price: .price,
+                    inventory: .inventory,
+                    source: "cache",
+                    fetched_at: now()
+                  }
+
+                  store response -> products { key: .id, upsert: true }
+                }
+              },
+
+              _ -> abort "All sources unavailable"
+            }
+          },
+
+          // Fallback error (not circuit open)
+          _ -> {
+            store {
+              timestamp: now(),
+              primary_status: "circuit_open",
+              fallback_used: "FallbackAPI",
+              success: false
+            } -> fallback_usage { key: now() }
+
+            abort "Fallback service failed"
+          }
+        }
+      },
+
+      // Transient error from primary (circuit still closed)
+      ServiceError -> retry {
+        maxAttempts: 3,
+        backoff: exponential,
+        initialDelay: 1000,
+        maxDelay: 10000
+      },
+
+      _ -> abort "Unexpected response from primary API"
+    }
+  }
+
+  // ============================================================
+  // ACTION: Monitor Circuit State
+  // ============================================================
+
+  action MonitorCircuits {
+    // Check circuit state for each source
+    for source_name in ["PrimaryAPI", "FallbackAPI"] {
+      get "/health" {
+        source: match source_name {
+          "PrimaryAPI" => PrimaryAPI,
+          "FallbackAPI" => FallbackAPI
+        }
+      }
+
+      match response {
+        // Service healthy and circuit closed/closing
+        _ where .status == "healthy" -> {
+          store {
+            event: "health_check_passed",
+            service: source_name,
+            timestamp: now(),
+            circuit_state: "closed"
+          } -> circuit_events { key: source_name + "_" + now() }
+        },
+
+        // Circuit opened due to failures
+        CircuitOpen -> {
+          store {
+            event: "circuit_open_detected",
+            service: source_name,
+            timestamp: now(),
+            opened_at: response.openedAt
+          } -> circuit_events { key: source_name + "_" + now() }
+        },
+
+        // Health check failed
+        _ -> {
+          store {
+            event: "health_check_failed",
+            service: source_name,
+            timestamp: now()
+          } -> circuit_events { key: source_name + "_" + now() }
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Generate Resilience Report
+  // ============================================================
+
+  action GenerateResilienceReport {
+    let last_24h = now() - hours(24)
+
+    let circuit_opens = circuit_events where .event == "circuit_open" and .timestamp > last_24h
+    let fallback_requests = fallback_usage where .timestamp > last_24h
+    let successful_fallbacks = fallback_usage where .success == true and .timestamp > last_24h
+
+    map {
+      report_date: now(),
+      circuit_open_count: length(circuit_opens),
+      fallback_requests: length(fallback_requests),
+      fallback_success_rate: length(successful_fallbacks) / max(length(fallback_requests), 1) * 100,
+      cache_usage: length(fallback_usage where .fallback_used == "CacheAPI" and .timestamp > last_24h)
+    } -> report
+
+    validate report {
+      assume .fallback_success_rate >= 0
+      assume .fallback_success_rate <= 100
+    }
+
+    store response -> circuit_events { key: "report_" + now() }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  run FetchProducts
+    then MonitorCircuits
+    then GenerateResilienceReport
+}

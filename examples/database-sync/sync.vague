@@ -1,0 +1,310 @@
+// Database Sync Example
+// Demonstrates: SQL and NoSQL store operations, upsert, partial records
+// Syncs product catalog with structured and unstructured data
+
+mission ProductCatalogSync {
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source ProductAPI {
+    auth: bearer,
+    base: "https://api.products.com/v2"
+  }
+
+  source ReviewsAPI {
+    auth: api_key,
+    base: "https://reviews.service.com/api"
+  }
+
+  source InventoryAPI {
+    auth: basic,
+    base: "https://inventory.internal.com"
+  }
+
+  // ============================================================
+  // STORES - Multiple database types
+  // ============================================================
+
+  // SQL stores for structured, relational data
+  store products: sql("products")
+  store categories: sql("categories")
+  store inventory: sql("product_inventory")
+  store price_history: sql("price_history")
+
+  // NoSQL stores for flexible, document-based data
+  store product_details: nosql("product_details")
+  store reviews: nosql("product_reviews")
+  store analytics: nosql("product_analytics")
+
+  // Memory stores for temporary processing
+  store processing_queue: memory("queue")
+  store sync_errors: memory("errors")
+
+  // File store for exports
+  store catalog_export: file("catalog")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema Product {
+    id: string,
+    sku: string,
+    name: string,
+    category_id: string,
+    price: decimal,
+    status: string,
+    created_at: date,
+    updated_at: date
+  }
+
+  schema ProductDetail {
+    product_id: string,
+    description: string,
+    specifications: object,
+    images: array,
+    tags: array,
+    metadata: object
+  }
+
+  schema InventoryRecord {
+    product_id: string,
+    warehouse_id: string,
+    quantity: int,
+    reserved: int,
+    available: int,
+    last_updated: date
+  }
+
+  schema Review {
+    id: string,
+    product_id: string,
+    rating: int,
+    title: string,
+    body: string,
+    author: string,
+    verified_purchase: boolean,
+    created_at: date
+  }
+
+  // ============================================================
+  // ACTION: Sync Product Core Data (SQL)
+  // ============================================================
+
+  action SyncProducts {
+    get "/products" {
+      source: ProductAPI,
+      paginate: cursor(cursor, 100, "pagination.next"),
+      until: response.data.length == 0
+    }
+
+    for product in response.data {
+      // Store core product data in SQL
+      map product -> Product {
+        id: .id,
+        sku: .sku,
+        name: .name,
+        category_id: .category.id,
+        price: .pricing.current,
+        status: .status,
+        created_at: .created_at,
+        updated_at: .updated_at
+      }
+
+      store response -> products {
+        key: .id,
+        upsert: true  // Update if exists, insert if not
+      }
+
+      // Track price changes
+      let existing = products[product.id]
+
+      validate product {
+        assume existing == null or existing.price == .pricing.current
+      } or {
+        // Price changed - record in history
+        store {
+          product_id: product.id,
+          old_price: existing.price,
+          new_price: product.pricing.current,
+          changed_at: now()
+        } -> price_history { key: product.id + "_" + now() }
+      }
+
+      // Store extended details in NoSQL (flexible schema)
+      store {
+        product_id: product.id,
+        description: product.description,
+        specifications: product.specs,
+        images: product.media.images,
+        tags: product.tags,
+        metadata: {
+          brand: product.brand,
+          manufacturer: product.manufacturer,
+          warranty: product.warranty_info,
+          dimensions: product.dimensions,
+          weight: product.weight,
+          custom_attributes: product.attributes
+        }
+      } -> product_details {
+        key: product.id,
+        upsert: true
+      }
+
+      // Sync category if not exists
+      validate product {
+        assume exists(categories[product.category.id])
+      } or {
+        store {
+          id: product.category.id,
+          name: product.category.name,
+          parent_id: product.category.parent_id,
+          path: product.category.path
+        } -> categories { key: .id }
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Sync Inventory (SQL with partial updates)
+  // ============================================================
+
+  action SyncInventory {
+    // Get inventory for all products
+    for product in products {
+      get "/inventory/{product.id}" {
+        source: InventoryAPI
+      }
+
+      match response {
+        _ where .warehouses != null -> {
+          for warehouse in response.warehouses {
+            map warehouse -> InventoryRecord {
+              product_id: product.id,
+              warehouse_id: .id,
+              quantity: .on_hand,
+              reserved: .reserved,
+              available: .on_hand - .reserved,
+              last_updated: now()
+            }
+
+            store response -> inventory {
+              key: product.id + "_" + .warehouse_id,
+              upsert: true,
+              partial: true  // Only update provided fields
+            }
+          }
+        },
+
+        _ -> {
+          store {
+            product_id: product.id,
+            error: "Failed to fetch inventory",
+            timestamp: now()
+          } -> sync_errors { key: product.id }
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Sync Reviews (NoSQL)
+  // ============================================================
+
+  action SyncReviews {
+    for product in products where .status == "active" {
+      get "/products/{product.id}/reviews" {
+        source: ReviewsAPI,
+        paginate: page(page, 50),
+        until: response.reviews.length == 0
+      }
+
+      match response {
+        _ where .reviews != null -> {
+          for review in response.reviews {
+            map review -> Review {
+              id: .id,
+              product_id: product.id,
+              rating: .rating,
+              title: .title,
+              body: .content,
+              author: .author.display_name,
+              verified_purchase: .verified,
+              created_at: .created_at
+            }
+
+            // NoSQL store for flexible review data
+            store response -> reviews {
+              key: .id,
+              upsert: true
+            }
+          }
+
+          // Store aggregated analytics
+          let product_reviews = reviews where .product_id == product.id
+          let avg_rating = sum(product_reviews.rating) / max(length(product_reviews), 1)
+
+          store {
+            product_id: product.id,
+            total_reviews: length(product_reviews),
+            average_rating: avg_rating,
+            rating_distribution: {
+              five_star: length(product_reviews where .rating == 5),
+              four_star: length(product_reviews where .rating == 4),
+              three_star: length(product_reviews where .rating == 3),
+              two_star: length(product_reviews where .rating == 2),
+              one_star: length(product_reviews where .rating == 1)
+            },
+            last_updated: now()
+          } -> analytics {
+            key: product.id,
+            upsert: true
+          }
+        },
+
+        _ -> skip
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Export Catalog (File Store)
+  // ============================================================
+
+  action ExportCatalog {
+    let active_products = products where .status == "active"
+
+    for product in active_products {
+      let details = product_details[product.id]
+      let inv = inventory where .product_id == product.id
+      let stats = analytics[product.id]
+
+      store {
+        product: product,
+        details: details,
+        inventory: {
+          total_available: sum(inv.available),
+          warehouse_count: length(inv)
+        },
+        reviews: {
+          count: stats.total_reviews,
+          average: stats.average_rating
+        },
+        exported_at: now()
+      } -> catalog_export {
+        key: product.sku
+      }
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  // Core data first, then dependent data
+  run SyncProducts
+    then [SyncInventory, SyncReviews]  // Parallel after products synced
+    then ExportCatalog
+}

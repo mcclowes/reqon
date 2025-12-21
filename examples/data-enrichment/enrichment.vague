@@ -1,0 +1,348 @@
+// Data Enrichment Example
+// Demonstrates: let bindings, spread operator, complex transformations
+// Enriches customer data from multiple sources with computed fields
+
+mission CustomerDataEnrichment {
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source CRM {
+    auth: oauth2,
+    base: "https://api.crm.example.com/v1"
+  }
+
+  source Analytics {
+    auth: bearer,
+    base: "https://analytics.example.com/api"
+  }
+
+  source GeoService {
+    auth: api_key,
+    base: "https://geo.service.com/v1"
+  }
+
+  source RiskScoring {
+    auth: bearer,
+    base: "https://risk.internal.com/api"
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  store raw_customers: memory("raw")
+  store enriched_customers: sql("customers_enriched")
+  store customer_segments: sql("segments")
+  store enrichment_errors: memory("errors")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema EnrichedCustomer {
+    id: string,
+    email: string,
+    full_name: string,
+    phone: string,
+    address: object,
+    geo_data: object,
+    analytics: object,
+    risk_profile: object,
+    segment: string,
+    lifetime_value: decimal,
+    enriched_at: date
+  }
+
+  // ============================================================
+  // ACTION: Fetch Raw Customer Data
+  // ============================================================
+
+  action FetchCustomers {
+    get "/customers" {
+      source: CRM,
+      paginate: cursor(cursor, 100, "meta.next_cursor"),
+      until: response.customers.length == 0
+    }
+
+    for customer in response.customers {
+      store customer -> raw_customers { key: .id }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Enrich with Analytics
+  // ============================================================
+
+  action EnrichWithAnalytics {
+    for customer in raw_customers {
+      get "/users/{customer.id}/metrics" {
+        source: Analytics
+      }
+
+      match response {
+        _ where .metrics != null -> {
+          // Use let to compute derived values
+          let total_orders = response.metrics.order_count
+          let total_revenue = response.metrics.total_spent
+          let avg_order_value = total_revenue / max(total_orders, 1)
+          let days_since_first = (now() - response.metrics.first_purchase) / days(1)
+          let purchase_frequency = total_orders / max(days_since_first / 30, 1)
+
+          // Calculate customer lifetime value (simple model)
+          let monthly_value = avg_order_value * purchase_frequency
+          let churn_rate = match response.metrics.days_since_last_purchase {
+            d where d > 180 => 0.8,
+            d where d > 90 => 0.5,
+            d where d > 30 => 0.2,
+            _ => 0.1
+          }
+          let customer_lifespan = 1 / max(churn_rate, 0.01)
+          let ltv = monthly_value * customer_lifespan
+
+          // Use spread to merge original data with enrichments
+          store {
+            ...customer,
+            analytics: {
+              total_orders: total_orders,
+              total_revenue: total_revenue,
+              avg_order_value: avg_order_value,
+              purchase_frequency: purchase_frequency,
+              days_since_last_purchase: response.metrics.days_since_last_purchase,
+              preferred_category: response.metrics.top_category,
+              preferred_channel: response.metrics.acquisition_channel
+            },
+            lifetime_value: ltv
+          } -> raw_customers { key: customer.id, upsert: true }
+        },
+
+        _ -> continue
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Enrich with Geo Data
+  // ============================================================
+
+  action EnrichWithGeoData {
+    for customer in raw_customers where .address != null {
+      // Build address string for geocoding
+      let address_str = concat(
+        customer.address.street, ", ",
+        customer.address.city, ", ",
+        customer.address.state, " ",
+        customer.address.postal_code, ", ",
+        customer.address.country
+      )
+
+      get "/geocode" {
+        source: GeoService,
+        body: {
+          "address": address_str
+        }
+      }
+
+      match response {
+        _ where .location != null -> {
+          // Spread to preserve existing data while adding geo
+          store {
+            ...customer,
+            geo_data: {
+              latitude: response.location.lat,
+              longitude: response.location.lng,
+              timezone: response.timezone,
+              metro_area: response.metro_area,
+              region: response.region,
+              country_code: response.country_code,
+              accuracy: response.accuracy
+            }
+          } -> raw_customers { key: customer.id, upsert: true }
+        },
+
+        _ -> continue
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Enrich with Risk Scoring
+  // ============================================================
+
+  action EnrichWithRiskScore {
+    for customer in raw_customers {
+      post "/score" {
+        source: RiskScoring,
+        body: {
+          "customer_id": customer.id,
+          "email": customer.email,
+          "phone": customer.phone,
+          "address": customer.address,
+          "analytics": customer.analytics
+        }
+      }
+
+      match response {
+        _ where .risk_score != null -> {
+          // Compute risk tier using let
+          let score = response.risk_score
+          let tier = match score {
+            s where s >= 800 => "excellent",
+            s where s >= 700 => "good",
+            s where s >= 600 => "fair",
+            s where s >= 500 => "poor",
+            _ => "high_risk"
+          }
+
+          let credit_limit = match tier {
+            "excellent" => 50000,
+            "good" => 25000,
+            "fair" => 10000,
+            "poor" => 2500,
+            _ => 0
+          }
+
+          store {
+            ...customer,
+            risk_profile: {
+              score: score,
+              tier: tier,
+              credit_limit: credit_limit,
+              fraud_flags: response.fraud_indicators,
+              last_assessed: now()
+            }
+          } -> raw_customers { key: customer.id, upsert: true }
+        },
+
+        _ -> {
+          store {
+            customer_id: customer.id,
+            step: "risk_scoring",
+            error: "Failed to get risk score",
+            timestamp: now()
+          } -> enrichment_errors { key: customer.id + "_risk" }
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Compute Segments
+  // ============================================================
+
+  action ComputeSegments {
+    for customer in raw_customers {
+      // Complex segmentation logic using let bindings
+      let ltv = customer.lifetime_value
+      let risk_tier = customer.risk_profile.tier
+      let purchase_freq = customer.analytics.purchase_frequency
+      let days_inactive = customer.analytics.days_since_last_purchase
+
+      // Determine primary segment
+      let segment = match {
+        // VIP: High value, low risk, active
+        ltv > 10000 and risk_tier in ["excellent", "good"] and days_inactive < 30
+          => "vip",
+
+        // At-risk VIP: High value but becoming inactive
+        ltv > 10000 and days_inactive > 60
+          => "vip_at_risk",
+
+        // Growth: Medium value, increasing frequency
+        ltv > 2000 and ltv <= 10000 and purchase_freq > 1
+          => "growth",
+
+        // New promising: Recent signup with good first purchase
+        days_inactive < 30 and customer.analytics.total_orders == 1 and customer.analytics.avg_order_value > 100
+          => "new_promising",
+
+        // Dormant: Haven't purchased in a while
+        days_inactive > 90
+          => "dormant",
+
+        // Standard: Everyone else
+        _ => "standard"
+      }
+
+      // Determine engagement score
+      let recency_score = match days_inactive {
+        d where d < 7 => 100,
+        d where d < 30 => 80,
+        d where d < 60 => 60,
+        d where d < 90 => 40,
+        d where d < 180 => 20,
+        _ => 0
+      }
+
+      let frequency_score = min(purchase_freq * 20, 100)
+      let monetary_score = min(ltv / 100, 100)
+      let rfm_score = (recency_score + frequency_score + monetary_score) / 3
+
+      // Create final enriched customer record
+      map customer -> EnrichedCustomer {
+        id: .id,
+        email: .email,
+        full_name: concat(.first_name, " ", .last_name),
+        phone: .phone,
+        address: .address,
+        geo_data: .geo_data,
+        analytics: {
+          ...customer.analytics,
+          rfm_score: rfm_score
+        },
+        risk_profile: .risk_profile,
+        segment: segment,
+        lifetime_value: ltv,
+        enriched_at: now()
+      }
+
+      store response -> enriched_customers {
+        key: .id,
+        upsert: true
+      }
+
+      // Track segment counts
+      store {
+        segment: segment,
+        customer_id: customer.id,
+        rfm_score: rfm_score,
+        updated_at: now()
+      } -> customer_segments {
+        key: customer.id
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Generate Segment Summary
+  // ============================================================
+
+  action GenerateSegmentSummary {
+    for segment_name in ["vip", "vip_at_risk", "growth", "new_promising", "dormant", "standard"] {
+      let segment_customers = customer_segments where .segment == segment_name
+      let segment_enriched = enriched_customers where .segment == segment_name
+
+      store {
+        segment: segment_name,
+        count: length(segment_customers),
+        avg_rfm: sum(segment_customers.rfm_score) / max(length(segment_customers), 1),
+        avg_ltv: sum(segment_enriched.lifetime_value) / max(length(segment_enriched), 1),
+        total_ltv: sum(segment_enriched.lifetime_value),
+        generated_at: now()
+      } -> customer_segments {
+        key: "summary_" + segment_name,
+        upsert: true
+      }
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  run FetchCustomers
+    then [EnrichWithAnalytics, EnrichWithGeoData, EnrichWithRiskScore]
+    then ComputeSegments
+    then GenerateSegmentSummary
+}

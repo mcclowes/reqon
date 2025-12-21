@@ -12,6 +12,12 @@ This directory contains examples demonstrating Reqon's features for declarative 
 | [github-sync](./github-sync/) | Multi-file mission | **Folder structure**, **parallel execution**, schema matching |
 | [error-handling](./error-handling/) | Comprehensive error handling | **All flow control directives**, dead letter queues |
 | [temporal-comparison](./temporal-comparison/) | E-commerce reconciliation | Multi-source, **parallel execution**, rate limiting |
+| [incremental-sync](./incremental-sync/) | Efficient delta syncing | **`since: lastSync`**, checkpoint management, soft deletes |
+| [webhook-payment](./webhook-payment/) | Async payment flows | **`wait` steps**, webhook filtering, event handling |
+| [scheduled-reports](./scheduled-reports/) | Automated reporting | **`schedule: cron`**, scheduling options, alerting |
+| [circuit-breaker](./circuit-breaker/) | Resilient API calls | **Circuit breaker**, fallback sources, health monitoring |
+| [database-sync](./database-sync/) | Multi-store operations | **SQL/NoSQL stores**, upsert, partial updates |
+| [data-enrichment](./data-enrichment/) | Data transformation | **`let` bindings**, **spread operator**, computed fields |
 
 ## Feature Index
 
@@ -100,6 +106,77 @@ paginate: offset(page, 100)                    # Offset pagination
 paginate: page(page, 100)                      # Page number pagination
 paginate: cursor(cursor, 100, "nextCursor")   # Cursor pagination
 ```
+
+### Incremental Sync
+Fetch only records modified since the last run:
+```vague
+get "/customers" {
+  since: lastSync,
+  sinceParam: "modified_after",
+  sinceFormat: "iso"
+}
+```
+See: [incremental-sync](./incremental-sync/)
+
+### Webhook Handling
+Wait for async events with filtering:
+```vague
+wait {
+  timeout: 300000,
+  path: "/webhooks/payment",
+  expectedEvents: ["payment.success", "payment.failed"],
+  eventFilter: .payment_id == local_id
+}
+```
+See: [webhook-payment](./webhook-payment/)
+
+### Scheduling
+Run missions on a schedule:
+```vague
+mission DailyReport {
+  schedule: cron "0 6 * * *"
+  skipIfRunning: true
+  retryOnFailure: 3
+}
+```
+See: [scheduled-reports](./scheduled-reports/)
+
+### Circuit Breaker
+Automatic failover with circuit breaker:
+```vague
+source API {
+  circuitBreaker: {
+    failureThreshold: 3,
+    resetTimeout: 30000,
+    successThreshold: 2
+  }
+}
+```
+See: [circuit-breaker](./circuit-breaker/)
+
+### Let Bindings & Spread Operator
+Complex data transformations:
+```vague
+let avg = total / count
+let tier = match score { s where s > 800 => "gold", _ => "standard" }
+
+store {
+  ...original,
+  computed_field: avg,
+  tier: tier
+} -> enriched { key: .id }
+```
+See: [data-enrichment](./data-enrichment/)
+
+### Store Types
+Multiple storage backends:
+```vague
+store structured: sql("table")      # SQL database
+store flexible: nosql("collection") # NoSQL database
+store temp: memory("cache")         # In-memory
+store export: file("output")        # File system
+```
+See: [database-sync](./database-sync/)
 
 ## Running Examples
 

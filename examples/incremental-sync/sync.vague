@@ -1,0 +1,189 @@
+// Incremental Sync Example
+// Demonstrates: since: lastSync, sinceParam, sinceFormat, checkpoint management
+// Only fetches records modified since the last successful sync
+
+mission IncrementalCustomerSync {
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source CRM {
+    auth: bearer,
+    base: "https://api.example-crm.com/v2",
+    rateLimit: {
+      strategy: "pause",
+      maxWait: 60,
+      fallbackRpm: 100
+    }
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  store customers: sql("customers")
+  store contacts: sql("contacts")
+  store sync_errors: memory("sync_errors")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema Customer {
+    id: string,
+    email: string,
+    name: string,
+    company: string,
+    status: string,
+    created_at: date,
+    updated_at: date
+  }
+
+  schema Contact {
+    id: string,
+    customer_id: string,
+    type: string,
+    value: string,
+    is_primary: boolean
+  }
+
+  schema SyncError {
+    error: string,
+    status: int
+  }
+
+  // ============================================================
+  // ACTION: Sync Customers (Incremental)
+  // ============================================================
+
+  action SyncCustomers {
+    // The `since: lastSync` directive automatically:
+    // 1. Retrieves the last checkpoint timestamp for this action
+    // 2. Adds it as a query parameter (configurable via sinceParam)
+    // 3. Updates the checkpoint on successful completion
+    get "/customers" {
+      since: lastSync,
+      sinceParam: "modified_after",    // API parameter name
+      sinceFormat: "iso",              // ISO 8601 format
+      paginate: cursor(cursor, 100, "meta.next_cursor"),
+      until: response.data.length == 0,
+      retry: {
+        maxAttempts: 3,
+        backoff: "exponential",
+        initialDelay: 1000
+      }
+    }
+
+    match response {
+      _ where .data != null -> {
+        for customer in response.data {
+          map customer -> Customer {
+            id: .id,
+            email: .email,
+            name: concat(.first_name, " ", .last_name),
+            company: .company_name,
+            status: .status,
+            created_at: .created_at,
+            updated_at: .updated_at
+          }
+
+          validate response {
+            assume .email contains "@"
+            assume length(.name) > 0
+          }
+
+          store response -> customers {
+            key: .id,
+            upsert: true
+          }
+        }
+      },
+
+      SyncError -> {
+        store {
+          action: "SyncCustomers",
+          error: response.error,
+          timestamp: now()
+        } -> sync_errors { key: now() }
+        abort "Failed to sync customers"
+      },
+
+      _ -> skip
+    }
+  }
+
+  // ============================================================
+  // ACTION: Sync Contacts (Incremental with Unix timestamp)
+  // ============================================================
+
+  action SyncContacts {
+    get "/contacts" {
+      since: lastSync,
+      sinceParam: "updated_since",
+      sinceFormat: "unix",             // Unix epoch seconds
+      paginate: offset(offset, 200),
+      until: response.contacts.length == 0
+    }
+
+    match response {
+      _ where .contacts != null -> {
+        for contact in response.contacts {
+          map contact -> Contact {
+            id: .id,
+            customer_id: .customer_id,
+            type: .contact_type,
+            value: .contact_value,
+            is_primary: .is_primary
+          }
+
+          store response -> contacts {
+            key: .id,
+            upsert: true
+          }
+        }
+      },
+
+      _ -> skip
+    }
+  }
+
+  // ============================================================
+  // ACTION: Sync Deleted Records (Soft Deletes)
+  // ============================================================
+
+  action SyncDeleted {
+    // Many APIs provide a separate endpoint for deleted records
+    get "/customers/deleted" {
+      since: lastSync,
+      sinceParam: "deleted_after",
+      sinceFormat: "iso"
+    }
+
+    match response {
+      _ where .deleted_ids != null -> {
+        for id in response.deleted_ids {
+          // Mark as deleted rather than removing
+          store {
+            id: id,
+            status: "deleted",
+            deleted_at: now()
+          } -> customers {
+            key: .id,
+            upsert: true
+          }
+        }
+      },
+
+      _ -> continue
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  // Run customer and contact syncs in parallel, then handle deletes
+  run [SyncCustomers, SyncContacts]
+    then SyncDeleted
+}
