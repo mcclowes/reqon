@@ -9,6 +9,7 @@ import type { ExecutionContext } from '../context.js';
 import { evaluate } from '../evaluator.js';
 import type { WebhookServer, WebhookRegistration, WebhookEvent } from '../../webhook/index.js';
 import { RetrySignal } from '../signals.js';
+import type { EventType } from '../../observability/index.js';
 
 /**
  * Dependencies for the webhook handler
@@ -18,6 +19,8 @@ export interface WebhookHandlerDeps {
   webhookServer: WebhookServer;
   executionId: string;
   log: (message: string) => void;
+  /** Optional event emitter for observability */
+  emit?: <T>(type: EventType, payload: T) => void;
 }
 
 /**
@@ -43,7 +46,7 @@ export class WebhookHandler {
    * Execute the wait step
    */
   async execute(step: WebhookStep): Promise<WebhookHandlerResult> {
-    const { ctx, webhookServer, executionId, log } = this.deps;
+    const { ctx, webhookServer, executionId, log, emit } = this.deps;
 
     // Register webhook endpoint
     const timeout = step.timeout ?? 300000; // 5 minutes default
@@ -58,6 +61,15 @@ export class WebhookHandler {
 
     const webhookUrl = webhookServer.getWebhookUrl(registration);
     log(`Waiting for webhook: ${webhookUrl} (timeout: ${timeout}ms, expected: ${expectedEvents})`);
+
+    // Emit webhook.register event
+    emit?.('webhook.register', {
+      registrationId: registration.id,
+      path: registration.path,
+      webhookUrl,
+      timeout,
+      expectedEvents,
+    });
 
     // Set the webhook URL in context for use in subsequent steps
     ctx.response = {
@@ -129,6 +141,14 @@ export class WebhookHandler {
         log(`Warning: Store '${step.storage.target}' not found for webhook storage`);
       }
     }
+
+    // Emit webhook.complete event
+    emit?.('webhook.complete', {
+      registrationId: registration.id,
+      eventsReceived: events.length,
+      timedOut: result.timedOut ?? false,
+      storedTo: step.storage?.target,
+    });
 
     // Clean up registration
     await webhookServer.unregister(registration.id);

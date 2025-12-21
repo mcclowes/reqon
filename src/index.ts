@@ -105,6 +105,48 @@ export {
   type WaitResult,
 } from './webhook/index.js';
 
+// Observability
+export {
+  // Event system
+  ObservabilityEmitter,
+  createEmitter,
+  type ObservabilityEvent,
+  type EventType,
+  type EventHandler,
+  type EventEmitter,
+  // Payload types
+  type MissionStartPayload,
+  type MissionCompletePayload,
+  type StageStartPayload,
+  type StageCompletePayload,
+  type StepStartPayload,
+  type StepCompletePayload,
+  type FetchStartPayload,
+  type FetchCompletePayload,
+  type DataStorePayload,
+  type LoopStartPayload,
+  type LoopCompletePayload,
+  type WebhookRegisterPayload,
+  type WebhookCompletePayload,
+  // Logger
+  createStructuredLogger,
+  ConsoleOutput,
+  JsonLinesOutput,
+  BufferOutput,
+  type StructuredLogger,
+  type LogEntry,
+  type LogOutput,
+  type Span,
+  type CreateLoggerOptions,
+  // OpenTelemetry
+  SpanBuilder,
+  OTelEventAdapter,
+  OTLPExporter,
+  createOTelListener,
+  type OTelSpan,
+  type OTLPExporterConfig,
+} from './observability/index.js';
+
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { ReqonLexer } from './lexer/index.js';

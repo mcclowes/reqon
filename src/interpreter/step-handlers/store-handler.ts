@@ -25,6 +25,8 @@ export class StoreHandler implements StepHandler<StoreStep> {
   }
 
   private async storeMany(step: StoreStep, store: StoreAdapter, items: unknown[]): Promise<void> {
+    const operation = step.options.upsert ? 'upsert' : 'set';
+
     // Use bulk operation if available and not doing upserts (which need individual handling)
     if (store.bulkSet && !step.options.upsert) {
       const records: Array<{ key: string; value: Record<string, unknown> }> = [];
@@ -49,11 +51,32 @@ export class StoreHandler implements StepHandler<StoreStep> {
     }
 
     this.deps.log(`Stored ${items.length} items to ${step.target}`);
+
+    // Emit data.store event
+    this.deps.emit?.('data.store', {
+      storeName: step.target,
+      storeType: 'unknown', // Would need store type info
+      operation,
+      itemCount: items.length,
+    });
   }
 
   private async storeOne(step: StoreStep, store: StoreAdapter, record: Record<string, unknown>): Promise<void> {
+    const key = step.options.key
+      ? String(evaluate(step.options.key, this.deps.ctx, record))
+      : String(record.id ?? Math.random());
+
     await this.storeRecord(step, store, record);
     this.deps.log(`Stored item to ${step.target}`);
+
+    // Emit data.store event
+    this.deps.emit?.('data.store', {
+      storeName: step.target,
+      storeType: 'unknown',
+      operation: step.options.upsert ? 'upsert' : 'set',
+      itemCount: 1,
+      key,
+    });
   }
 
   private async storeRecord(
