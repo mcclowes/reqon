@@ -220,9 +220,7 @@ describe('WebhookStep Parser', () => {
         store orders: memory("orders")
 
         action ProcessOrder {
-          post "/orders" {
-            body: { item: "test" }
-          }
+          post "/orders"
 
           wait {
             timeout: 60000,

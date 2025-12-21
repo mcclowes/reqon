@@ -138,7 +138,7 @@ mission SyncXeroInvoices {
 
     // Token refresh is critical - abort on failure
     match response {
-      _ where .access_token != null -> continue,
+      _ where not (.access_token == null) -> continue,
       _ -> abort "Failed to refresh Xero OAuth token"
     }
   }

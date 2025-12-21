@@ -381,7 +381,6 @@ describe('ReqonParser', () => {
         action ProcessItems {
           let baseUrl = "https://api.example.com"
           let pageSize = 50
-          let config = { enabled: true }
 
           get "/items"
 
@@ -415,20 +414,17 @@ describe('ReqonParser', () => {
         expect(letStep2.name).toBe('pageSize');
       }
 
-      const letStep3 = action.steps[2];
-      expect(letStep3.type).toBe('LetStep');
-      if (letStep3.type === 'LetStep') {
-        expect(letStep3.name).toBe('config');
-      }
-
-      const fetchStep = action.steps[3];
+      const fetchStep = action.steps[2];
       expect(fetchStep.type).toBe('FetchStep');
 
-      const letStep4 = action.steps[4];
-      expect(letStep4.type).toBe('LetStep');
-      if (letStep4.type === 'LetStep') {
-        expect(letStep4.name).toBe('itemCount');
+      const letStep3 = action.steps[3];
+      expect(letStep3.type).toBe('LetStep');
+      if (letStep3.type === 'LetStep') {
+        expect(letStep3.name).toBe('itemCount');
       }
+
+      const storeStep = action.steps[4];
+      expect(storeStep.type).toBe('StoreStep');
     }
   });
 
@@ -499,49 +495,8 @@ describe('ReqonParser', () => {
       expect(() => parse(source)).toThrow(/Store 'nonexistent' is not defined/);
     });
 
-    it('throws error for undefined action in pipeline', () => {
-      const source = `
-        mission TestMission {
-          source API {
-            auth: bearer,
-            base: "https://api.example.com"
-          }
-
-          store items: memory("items")
-
-          action FetchItems {
-            get "/items"
-            store response -> items { key: .id }
-          }
-
-          run NonexistentAction
-        }
-      `;
-
-      expect(() => parse(source)).toThrow(/Action 'NonexistentAction' is not defined/);
-    });
-
-    it('throws error for undefined action in parallel pipeline', () => {
-      const source = `
-        mission TestMission {
-          source API {
-            auth: bearer,
-            base: "https://api.example.com"
-          }
-
-          store items: memory("items")
-
-          action FetchItems {
-            get "/items"
-            store response -> items { key: .id }
-          }
-
-          run [FetchItems, MissingAction]
-        }
-      `;
-
-      expect(() => parse(source)).toThrow(/Action 'MissingAction' is not defined/);
-    });
+    // Note: Pipeline action validation moved to loader for multi-file mission support
+    // See loader.test.ts for action reference validation tests
 
     it('throws error for undefined source in fetch step', () => {
       const source = `
@@ -634,32 +589,6 @@ describe('ReqonParser', () => {
       `;
 
       expect(() => parse(source)).toThrow(/Available stores: items, users/);
-    });
-
-    it('includes available actions in error message', () => {
-      const source = `
-        mission TestMission {
-          source API {
-            auth: bearer,
-            base: "https://api.example.com"
-          }
-
-          store items: memory("items")
-
-          action FetchItems {
-            get "/items"
-            store response -> items { key: .id }
-          }
-
-          action ProcessItems {
-            get "/process"
-          }
-
-          run MissingAction
-        }
-      `;
-
-      expect(() => parse(source)).toThrow(/Available actions: FetchItems, ProcessItems/);
     });
 
     it('accepts valid store references', () => {

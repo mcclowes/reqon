@@ -60,7 +60,7 @@ describe('Mission Loader', () => {
           store data: memory("items")
 
           action Fetch {
-            fetch GET "/items" { source: Api }
+            get "/items" { source: Api }
             store response -> data
           }
 
@@ -314,7 +314,7 @@ describe('Mission Loader', () => {
         mission FromVague {
           source Api { auth: none, base: "https://api.example.com" }
           store data: memory("data")
-          action Fetch { fetch GET "/vague" { source: Api } }
+          action Fetch { get "/vague" { source: Api } }
           run Fetch
         }
       `);
@@ -322,7 +322,7 @@ describe('Mission Loader', () => {
         mission FromReqon {
           source Api { auth: none, base: "https://api.example.com" }
           store data: memory("data")
-          action Fetch { fetch GET "/reqon" { source: Api } }
+          action Fetch { get "/reqon" { source: Api } }
           run Fetch
         }
       `);
@@ -347,7 +347,7 @@ describe('Mission Loader', () => {
       `);
       await writeFile(join(missionDir, 'fetch.vague'), `
         action Fetch {
-          fetch GET "/items" { source: Api }
+          get "/items" { source: Api }
         }
       `);
 

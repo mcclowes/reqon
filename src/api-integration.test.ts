@@ -115,7 +115,7 @@ describe('API Integration Tests', { timeout: NETWORK_TIMEOUT }, () => {
                 id: .id,
                 title: .title,
                 authorId: .userId,
-                source: "jsonplaceholder"
+                origin: "jsonplaceholder"
               }
 
               store response -> transformed {
@@ -140,7 +140,7 @@ describe('API Integration Tests', { timeout: NETWORK_TIMEOUT }, () => {
       expect(items[0]).toHaveProperty('id');
       expect(items[0]).toHaveProperty('title');
       expect(items[0]).toHaveProperty('authorId');
-      expect(items[0]).toHaveProperty('source', 'jsonplaceholder');
+      expect(items[0]).toHaveProperty('origin', 'jsonplaceholder');
       // Original properties should not exist in transformed version
       expect(items[0]).not.toHaveProperty('body');
       expect(items[0]).not.toHaveProperty('userId');
