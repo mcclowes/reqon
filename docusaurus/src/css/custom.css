@@ -55,6 +55,15 @@ code {
   font-weight: 700;
 }
 
+/* Fix mobile hamburger menu - ensure sidebar appears above content */
+.navbar-sidebar {
+  z-index: 200;
+}
+
+.navbar-sidebar__backdrop {
+  z-index: 199;
+}
+
 /* Hero section on homepage */
 .hero {
   background: linear-gradient(135deg, var(--ifm-color-primary-lightest) 0%, var(--ifm-background-color) 100%);
