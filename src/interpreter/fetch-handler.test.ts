@@ -166,7 +166,7 @@ describe('FetchHandler', () => {
       const result = await handler.execute(step);
 
       expect(mockClient.request).not.toHaveBeenCalled();
-      expect(result.data).toEqual({ dryRun: true });
+      expect(result.data).toEqual({ _dryRun: true, _message: 'No OAS schema available for mock generation' });
       expect(deps.log).toHaveBeenCalledWith('(dry run - skipping actual request)');
     });
   });
