@@ -1,0 +1,336 @@
+// CRUD Operations Example
+// Demonstrates: PUT, PATCH, DELETE HTTP methods
+// Use case: Full lifecycle management of resources via REST API
+
+mission TaskManager {
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source TaskAPI {
+    auth: bearer,
+    base: "https://api.tasks.example.com/v1"
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  store tasks: sql("tasks")
+  store archived_tasks: sql("archived_tasks")
+  store deleted_tasks: memory("deleted")
+  store operation_log: memory("operations")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema Task {
+    id: string,
+    title: string,
+    description: string,
+    status: string,
+    priority: int,
+    assignee_id: string,
+    due_date: date,
+    created_at: date,
+    updated_at: date
+  }
+
+  schema TaskUpdate {
+    id: string,
+    status: string,
+    priority: int,
+    updated_at: date
+  }
+
+  // ============================================================
+  // ACTION: Create Tasks (POST)
+  // ============================================================
+
+  action CreateTasks {
+    // Get pending task requests from queue
+    for request in tasks where .status == "pending_creation" {
+      post "/tasks" {
+        source: TaskAPI,
+        body: {
+          "title": request.title,
+          "description": request.description,
+          "priority": request.priority,
+          "assignee_id": request.assignee_id,
+          "due_date": request.due_date
+        }
+      }
+
+      match response {
+        _ where .id != null -> {
+          // Update local store with created task
+          map response -> Task {
+            id: .id,
+            title: .title,
+            description: .description,
+            status: "active",
+            priority: .priority,
+            assignee_id: .assignee_id,
+            due_date: .due_date,
+            created_at: .created_at,
+            updated_at: .updated_at
+          }
+
+          store response -> tasks {
+            key: .id,
+            upsert: true
+          }
+
+          store {
+            operation: "create",
+            task_id: response.id,
+            timestamp: now()
+          } -> operation_log { key: response.id + "_create" }
+        },
+
+        _ -> {
+          store {
+            operation: "create_failed",
+            request: request,
+            error: response,
+            timestamp: now()
+          } -> operation_log { key: request.id + "_create_failed" }
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Full Update Tasks (PUT)
+  // Replaces the entire resource
+  // ============================================================
+
+  action ReplaceTask {
+    for task in tasks where .status == "pending_replace" {
+      put "/tasks/{task.id}" {
+        source: TaskAPI,
+        body: {
+          "title": task.title,
+          "description": task.description,
+          "status": task.new_status,
+          "priority": task.priority,
+          "assignee_id": task.assignee_id,
+          "due_date": task.due_date
+        }
+      }
+
+      match response {
+        _ where .id != null -> {
+          // Full replacement - store complete updated task
+          map response -> Task {
+            id: .id,
+            title: .title,
+            description: .description,
+            status: .status,
+            priority: .priority,
+            assignee_id: .assignee_id,
+            due_date: .due_date,
+            created_at: .created_at,
+            updated_at: .updated_at
+          }
+
+          store response -> tasks {
+            key: .id,
+            upsert: true,
+            partial: false  // Replace entire record
+          }
+
+          store {
+            operation: "replace",
+            task_id: task.id,
+            timestamp: now()
+          } -> operation_log { key: task.id + "_replace" }
+        },
+
+        _ where .error == "not_found" -> {
+          // Task no longer exists on server
+          delete "/tasks/{task.id}" {
+            source: TaskAPI
+          }
+
+          skip
+        },
+
+        _ -> abort "Failed to replace task: " + task.id
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Partial Update Tasks (PATCH)
+  // Updates only specified fields
+  // ============================================================
+
+  action UpdateTaskStatus {
+    for task in tasks where .status == "pending_update" {
+      // PATCH only updates specific fields
+      patch "/tasks/{task.id}" {
+        source: TaskAPI,
+        body: {
+          "status": task.new_status,
+          "priority": task.new_priority
+        }
+      }
+
+      match response {
+        _ where .id != null -> {
+          // Partial update in local store
+          store {
+            id: task.id,
+            status: response.status,
+            priority: response.priority,
+            updated_at: response.updated_at
+          } -> tasks {
+            key: .id,
+            partial: true  // Only update these fields
+          }
+
+          store {
+            operation: "patch",
+            task_id: task.id,
+            fields_updated: ["status", "priority"],
+            timestamp: now()
+          } -> operation_log { key: task.id + "_patch" }
+        },
+
+        _ where .error == "conflict" -> {
+          // Concurrent modification - refresh and retry
+          get "/tasks/{task.id}" {
+            source: TaskAPI
+          }
+
+          store response -> tasks {
+            key: .id,
+            upsert: true
+          }
+
+          retry {
+            maxAttempts: 2,
+            backoff: constant,
+            initialDelay: 1000
+          }
+        },
+
+        _ -> skip
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Delete Tasks (DELETE)
+  // ============================================================
+
+  action DeleteCompletedTasks {
+    for task in tasks where .status == "completed" {
+      // Archive before deletion
+      store task -> archived_tasks {
+        key: .id
+      }
+
+      // Delete from remote API
+      delete "/tasks/{task.id}" {
+        source: TaskAPI
+      }
+
+      match response {
+        _ where .success == true -> {
+          // Track deletion
+          store {
+            id: task.id,
+            deleted_at: now(),
+            archived: true
+          } -> deleted_tasks { key: task.id }
+
+          store {
+            operation: "delete",
+            task_id: task.id,
+            timestamp: now()
+          } -> operation_log { key: task.id + "_delete" }
+
+          continue
+        },
+
+        _ where .error == "not_found" -> {
+          // Already deleted - just remove locally
+          store {
+            id: task.id,
+            deleted_at: now(),
+            archived: true,
+            note: "Already deleted on server"
+          } -> deleted_tasks { key: task.id }
+
+          continue
+        },
+
+        _ where .error == "forbidden" -> {
+          // Cannot delete - mark for review
+          store {
+            id: task.id,
+            status: "deletion_blocked",
+            updated_at: now()
+          } -> tasks {
+            key: .id,
+            partial: true
+          }
+
+          skip
+        },
+
+        _ -> queue deleted_tasks
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Bulk Delete (DELETE with body)
+  // ============================================================
+
+  action BulkDeleteOldTasks {
+    // Find tasks older than 90 days that are archived
+    let old_tasks = archived_tasks where .created_at < now() - days(90)
+
+    // Bulk delete via API
+    delete "/tasks/bulk" {
+      source: TaskAPI,
+      body: {
+        "task_ids": old_tasks.id
+      }
+    }
+
+    match response {
+      _ where .deleted_count > 0 -> {
+        for task_id in response.deleted_ids {
+          store {
+            id: task_id,
+            deleted_at: now(),
+            bulk_delete: true
+          } -> deleted_tasks { key: task_id }
+        }
+
+        store {
+          operation: "bulk_delete",
+          count: response.deleted_count,
+          timestamp: now()
+        } -> operation_log { key: "bulk_" + now() }
+      },
+
+      _ -> skip
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  run CreateTasks
+    then [UpdateTaskStatus, ReplaceTask]  // Parallel updates
+    then DeleteCompletedTasks
+    then BulkDeleteOldTasks
+}

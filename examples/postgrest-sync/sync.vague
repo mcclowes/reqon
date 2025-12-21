@@ -1,0 +1,201 @@
+// PostgREST Sync Example
+// Demonstrates: postgrest() store type with REST API to PostgreSQL via PostgREST
+// Use case: Syncing external API data to a PostgreSQL database via PostgREST
+
+mission PostgRESTSync {
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source UsersAPI {
+    auth: bearer,
+    base: "https://api.example.com/v1"
+  }
+
+  // PostgREST server connection
+  source PostgREST {
+    auth: bearer,
+    base: "http://localhost:3000"  // PostgREST server
+  }
+
+  // ============================================================
+  // STORES - PostgREST backed by PostgreSQL
+  // ============================================================
+
+  // PostgREST stores map to database tables
+  store users: postgrest("users")
+  store profiles: postgrest("user_profiles")
+  store audit_log: postgrest("audit_log")
+
+  // Memory store for processing
+  store sync_errors: memory("errors")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema User {
+    id: string,
+    email: string,
+    name: string,
+    role: string,
+    created_at: date,
+    updated_at: date
+  }
+
+  schema UserProfile {
+    user_id: string,
+    avatar_url: string,
+    bio: string,
+    preferences: object,
+    last_login: date
+  }
+
+  schema AuditEntry {
+    id: string,
+    user_id: string,
+    action: string,
+    details: object,
+    timestamp: date
+  }
+
+  // ============================================================
+  // ACTION: Fetch and Sync Users
+  // ============================================================
+
+  action SyncUsers {
+    get "/users" {
+      source: UsersAPI,
+      paginate: cursor(cursor, 100, "meta.next_cursor"),
+      until: response.data.length == 0
+    }
+
+    for user in response.data {
+      // Map to User schema
+      map user -> User {
+        id: .id,
+        email: .email,
+        name: .full_name,
+        role: .role,
+        created_at: .created_at,
+        updated_at: .updated_at
+      }
+
+      // Store to PostgREST (upserts to PostgreSQL)
+      store response -> users {
+        key: .id,
+        upsert: true
+      }
+
+      // Store profile data
+      map user -> UserProfile {
+        user_id: .id,
+        avatar_url: .avatar,
+        bio: .profile.bio,
+        preferences: .profile.settings,
+        last_login: .last_seen
+      }
+
+      store response -> profiles {
+        key: .user_id,
+        upsert: true
+      }
+
+      // Log sync action
+      store {
+        id: generateId(),
+        user_id: user.id,
+        action: "sync",
+        details: {
+          source: "UsersAPI",
+          synced_fields: ["email", "name", "role", "profile"]
+        },
+        timestamp: now()
+      } -> audit_log { key: .id }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Query and Filter from PostgREST
+  // ============================================================
+
+  action ProcessActiveUsers {
+    // Query users from PostgREST store
+    for user in users where .role != "inactive" {
+      let profile = profiles[user.id]
+
+      // Validate user has required profile data
+      validate user {
+        assume profile != null
+        assume profile.last_login != null
+      } or {
+        store {
+          user_id: user.id,
+          error: "Missing profile or last_login",
+          timestamp: now()
+        } -> sync_errors { key: user.id }
+
+        skip
+      }
+
+      // Log active user processing
+      store {
+        id: generateId(),
+        user_id: user.id,
+        action: "process_active",
+        details: {
+          role: user.role,
+          last_login: profile.last_login
+        },
+        timestamp: now()
+      } -> audit_log { key: .id }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Partial Updates via PostgREST
+  // ============================================================
+
+  action UpdateUserStatus {
+    // Get status updates from external API
+    get "/users/status-updates" {
+      source: UsersAPI,
+      since: lastSync
+    }
+
+    for update in response.updates {
+      // Partial update - only update specific fields
+      store {
+        id: update.user_id,
+        role: update.new_role,
+        updated_at: now()
+      } -> users {
+        key: .id,
+        partial: true,  // Only update provided fields
+        upsert: false   // Must exist
+      }
+
+      // Log the status change
+      store {
+        id: generateId(),
+        user_id: update.user_id,
+        action: "status_update",
+        details: {
+          old_role: update.old_role,
+          new_role: update.new_role,
+          reason: update.reason
+        },
+        timestamp: now()
+      } -> audit_log { key: .id }
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  run SyncUsers
+    then ProcessActiveUsers
+    then UpdateUserStatus
+}
