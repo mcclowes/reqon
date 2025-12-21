@@ -1,5 +1,7 @@
 ---
 sidebar_position: 21
+description: Complete API reference for Reqon including parse, execute, store adapters, state management, observability, and MCP server integration.
+keywords: [reqon, API, reference, execute, parse, store adapter, observability]
 ---
 
 # API Reference

@@ -49,6 +49,11 @@ const config: Config = {
 
   themeConfig: {
     image: 'img/docusaurus-social-card.jpg',
+    metadata: [
+      { name: 'keywords', content: 'reqon, data pipeline, ETL, API sync, declarative DSL, fetch, map, validate' },
+      { name: 'twitter:card', content: 'summary_large_image' },
+      { property: 'og:type', content: 'website' },
+    ],
     colorMode: {
       defaultMode: 'light',
       respectPrefersColorScheme: true,

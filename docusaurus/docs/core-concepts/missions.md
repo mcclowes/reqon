@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+description: Learn about Reqon missions - the top-level container defining complete data pipelines with sources, stores, actions, and execution flow.
+keywords: [reqon, mission, data pipeline, actions, sources, stores]
 ---
 
 # Missions
