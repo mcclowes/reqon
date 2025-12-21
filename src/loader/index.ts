@@ -12,9 +12,13 @@ export interface LoadResult {
   sourceFiles: string[];
 }
 
+/** Supported file extensions, in order of preference */
+export const SUPPORTED_EXTENSIONS = ['.vague', '.reqon'] as const;
+export type SupportedExtension = (typeof SUPPORTED_EXTENSIONS)[number];
+
 export interface LoadOptions {
-  /** File extension to look for (default: '.reqon') */
-  extension?: string;
+  /** File extension to look for (default: tries '.vague' then '.reqon') */
+  extension?: SupportedExtension;
 }
 
 /**
@@ -80,17 +84,31 @@ async function loadMissionFolder(
   folderPath: string,
   options: LoadOptions
 ): Promise<LoadResult> {
-  const ext = options.extension ?? '.reqon';
-  const rootFileName = `mission${ext}`;
-  const rootFilePath = join(folderPath, rootFileName);
+  // Find root file - try extensions in order of preference
+  const extensionsToTry = options.extension
+    ? [options.extension]
+    : SUPPORTED_EXTENSIONS;
 
-  // Check root file exists
-  try {
-    await stat(rootFilePath);
-  } catch {
+  let rootFilePath: string | null = null;
+  let ext: SupportedExtension | null = null;
+
+  for (const extension of extensionsToTry) {
+    const candidatePath = join(folderPath, `mission${extension}`);
+    try {
+      await stat(candidatePath);
+      rootFilePath = candidatePath;
+      ext = extension;
+      break;
+    } catch {
+      // Try next extension
+    }
+  }
+
+  if (!rootFilePath || !ext) {
+    const tried = extensionsToTry.map(e => `mission${e}`).join(' or ');
     throw new Error(
-      `Mission folder must contain a '${rootFileName}' file. ` +
-      `Not found: ${rootFilePath}`
+      `Mission folder must contain a root file (${tried}). ` +
+      `Not found in: ${folderPath}`
     );
   }
 
@@ -98,7 +116,8 @@ async function loadMissionFolder(
   const rootSource = await readFile(rootFilePath, 'utf-8');
   const rootProgram = parseSource(rootSource, rootFilePath);
 
-  // Find all other .reqon files in the folder
+  // Find all other action files in the folder (same extension as root)
+  const rootFileName = basename(rootFilePath);
   const files = await readdir(folderPath);
   const actionFiles = files.filter(
     f => f.endsWith(ext) && f !== rootFileName
@@ -229,7 +248,7 @@ function validatePipelineActions(program: ReqonProgram): void {
 }
 
 /**
- * Check if a path is a mission folder (contains mission.reqon)
+ * Check if a path is a mission folder (contains mission.vague or mission.reqon)
  */
 export async function isMissionFolder(path: string): Promise<boolean> {
   try {
@@ -238,9 +257,16 @@ export async function isMissionFolder(path: string): Promise<boolean> {
 
     if (!stats.isDirectory()) return false;
 
-    const rootFile = join(absolutePath, 'mission.reqon');
-    await stat(rootFile);
-    return true;
+    // Check for any supported root file
+    for (const ext of SUPPORTED_EXTENSIONS) {
+      try {
+        await stat(join(absolutePath, `mission${ext}`));
+        return true;
+      } catch {
+        // Try next extension
+      }
+    }
+    return false;
   } catch {
     return false;
   }
@@ -253,8 +279,10 @@ export function getMissionName(path: string): string {
   const absolutePath = resolve(path);
   const name = basename(absolutePath);
 
-  if (name.endsWith('.reqon')) {
-    return name.slice(0, -6);
+  for (const ext of SUPPORTED_EXTENSIONS) {
+    if (name.endsWith(ext)) {
+      return name.slice(0, -ext.length);
+    }
   }
   return name;
 }

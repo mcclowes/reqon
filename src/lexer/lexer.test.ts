@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ReqonLexer } from './lexer.js';
-import { ReqonTokenType, VagueTokenType as TokenType } from './tokens.js';
+import { Lexer as ReqonLexer, TokenType, type Token } from './index.js';
+import { ReqonTokenType } from './tokens.js';
 
 describe('ReqonLexer', () => {
   describe('string tokenization', () => {
@@ -140,7 +140,7 @@ describe('ReqonLexer', () => {
 
       expect(tokens[0].type).toBe(ReqonTokenType.MAP);
       expect(tokens[1].type).toBe(TokenType.IDENTIFIER);
-      expect(tokens[2].type).toBe(ReqonTokenType.RIGHT_ARROW);
+      expect(tokens[2].type).toBe(TokenType.RIGHT_ARROW);
       expect(tokens[3].type).toBe(TokenType.IDENTIFIER);
     });
 
@@ -190,7 +190,7 @@ describe('ReqonLexer', () => {
       const tokens = lexer.tokenize();
 
       // Should have: MISSION, NEWLINE, IDENTIFIER, EOF
-      expect(tokens.filter((t) => t.type !== TokenType.NEWLINE && t.type !== TokenType.EOF))
+      expect(tokens.filter((t: Token) => t.type !== TokenType.NEWLINE && t.type !== TokenType.EOF))
         .toHaveLength(2);
       expect(tokens[0].type).toBe(ReqonTokenType.MISSION);
       expect(tokens[2].type).toBe(TokenType.IDENTIFIER);
@@ -264,7 +264,7 @@ describe('ReqonLexer', () => {
       expect(tokens[tokens.length - 1].type).toBe(TokenType.EOF);
 
       // Check key tokens are present
-      const tokenTypes = tokens.map((t) => t.type);
+      const tokenTypes = tokens.map((t: Token) => t.type);
       expect(tokenTypes).toContain(ReqonTokenType.MISSION);
       expect(tokenTypes).toContain(ReqonTokenType.SOURCE);
       expect(tokenTypes).toContain(ReqonTokenType.STORE);
@@ -300,7 +300,7 @@ describe('ReqonLexer', () => {
       const lexer = new ReqonLexer('   mission   \t  action   ');
       const tokens = lexer.tokenize();
 
-      const nonEofTokens = tokens.filter((t) => t.type !== TokenType.EOF);
+      const nonEofTokens = tokens.filter((t: Token) => t.type !== TokenType.EOF);
       expect(nonEofTokens).toHaveLength(2);
       expect(nonEofTokens[0].type).toBe(ReqonTokenType.MISSION);
       expect(nonEofTokens[1].type).toBe(ReqonTokenType.ACTION);
@@ -310,7 +310,7 @@ describe('ReqonLexer', () => {
       const lexer = new ReqonLexer('a\nb\nc');
       const tokens = lexer.tokenize();
 
-      expect(tokens.filter((t) => t.type === TokenType.NEWLINE)).toHaveLength(2);
+      expect(tokens.filter((t: Token) => t.type === TokenType.NEWLINE)).toHaveLength(2);
     });
   });
 });

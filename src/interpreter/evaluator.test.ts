@@ -409,7 +409,16 @@ describe('evaluate', () => {
       const expr: Expression = {
         type: 'CallExpression',
         callee: 'length',
-        arguments: [{ type: 'Literal', value: [1, 2, 3, 4, 5], dataType: 'array' }],
+        arguments: [{
+          type: 'OrderedSequenceType',
+          elements: [
+            { type: 'Literal', value: 1, dataType: 'number' },
+            { type: 'Literal', value: 2, dataType: 'number' },
+            { type: 'Literal', value: 3, dataType: 'number' },
+            { type: 'Literal', value: 4, dataType: 'number' },
+            { type: 'Literal', value: 5, dataType: 'number' },
+          ],
+        }],
       };
 
       expect(evaluate(expr, ctx)).toBe(5);
@@ -420,7 +429,14 @@ describe('evaluate', () => {
       const expr: Expression = {
         type: 'CallExpression',
         callee: 'sum',
-        arguments: [{ type: 'Literal', value: [10, 20, 30], dataType: 'array' }],
+        arguments: [{
+          type: 'OrderedSequenceType',
+          elements: [
+            { type: 'Literal', value: 10, dataType: 'number' },
+            { type: 'Literal', value: 20, dataType: 'number' },
+            { type: 'Literal', value: 30, dataType: 'number' },
+          ],
+        }],
       };
 
       expect(evaluate(expr, ctx)).toBe(60);
@@ -431,7 +447,14 @@ describe('evaluate', () => {
       const expr: Expression = {
         type: 'CallExpression',
         callee: 'first',
-        arguments: [{ type: 'Literal', value: ['a', 'b', 'c'], dataType: 'array' }],
+        arguments: [{
+          type: 'OrderedSequenceType',
+          elements: [
+            { type: 'Literal', value: 'a', dataType: 'string' },
+            { type: 'Literal', value: 'b', dataType: 'string' },
+            { type: 'Literal', value: 'c', dataType: 'string' },
+          ],
+        }],
       };
 
       expect(evaluate(expr, ctx)).toBe('a');
@@ -442,7 +465,14 @@ describe('evaluate', () => {
       const expr: Expression = {
         type: 'CallExpression',
         callee: 'last',
-        arguments: [{ type: 'Literal', value: ['a', 'b', 'c'], dataType: 'array' }],
+        arguments: [{
+          type: 'OrderedSequenceType',
+          elements: [
+            { type: 'Literal', value: 'a', dataType: 'string' },
+            { type: 'Literal', value: 'b', dataType: 'string' },
+            { type: 'Literal', value: 'c', dataType: 'string' },
+          ],
+        }],
       };
 
       expect(evaluate(expr, ctx)).toBe('c');

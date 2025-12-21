@@ -45,11 +45,9 @@ export enum ReqonTokenType {
   CURSOR = 'CURSOR',
   PAGE = 'PAGE',
 
-  // Additional operators
-  RIGHT_ARROW = 'RIGHT_ARROW', // ->
+  // Additional operators (RIGHT_ARROW is now in Vague)
   NOT_EQUALS = 'NOT_EQUALS', // !=
   BANG = 'BANG', // !
-
   // OAS integration
   FROM = 'FROM',
 
@@ -171,8 +169,10 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   storage: ReqonTokenType.STORAGE,
 };
 
+// ReqonToken is now an alias for Vague's Token
+// Token type can be a string (for plugin-registered keywords)
 export interface ReqonToken {
-  type: TokenType;
+  type: TokenType | string;
   value: string;
   line: number;
   column: number;

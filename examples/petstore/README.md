@@ -12,7 +12,7 @@ Demonstrates OpenAPI spec integration with Reqon.
 ## Run
 
 ```bash
-node dist/cli.js examples/petstore/sync.reqon --auth credentials.json --verbose
+node dist/cli.js examples/petstore/sync.vague --auth credentials.json --verbose
 ```
 
 Requires a `credentials.json`:

@@ -1,6 +1,5 @@
-import { TokenType, type Expression, type SchemaDefinition, type FieldDefinition } from 'vague-lang';
+import { TokenType, type Expression, type SchemaDefinition, type FieldDefinition, type Token } from 'vague-lang';
 import { ReqonTokenType } from '../lexer/tokens.js';
-import type { ReqonToken } from '../lexer/tokens.js';
 import { ReqonExpressionParser } from './expressions.js';
 import type {
   ReqonProgram,
@@ -40,7 +39,7 @@ import type {
 } from '../ast/nodes.js';
 
 export class ReqonParser extends ReqonExpressionParser {
-  constructor(tokens: ReqonToken[], source?: string, filePath?: string) {
+  constructor(tokens: Token[], source?: string, filePath?: string) {
     super(tokens, source, filePath);
   }
 
@@ -1007,7 +1006,7 @@ export class ReqonParser extends ReqonExpressionParser {
   private parseMapStep(): MapStep {
     this.consume(ReqonTokenType.MAP, "Expected 'map'");
     const source = this.parseExpression();
-    this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
+    this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
     const targetSchema = this.consume(TokenType.IDENTIFIER, 'Expected target schema').value;
 
     this.consume(TokenType.LBRACE, "Expected '{'");
@@ -1069,7 +1068,7 @@ export class ReqonParser extends ReqonExpressionParser {
     }
 
     const source = this.parseExpression();
-    this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
+    this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
     const target = this.consumeIdentifier('Expected store name').value;
 
     const options: StoreOptions = {};
@@ -1142,7 +1141,7 @@ export class ReqonParser extends ReqonExpressionParser {
   private parseMatchArm(): MatchArm {
     // Schema name or '_' for wildcard
     const schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name or _').value;
-    this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
+    this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
 
     // After -> we have either:
     // 1. A flow directive (continue, skip, abort, retry, queue, jump)

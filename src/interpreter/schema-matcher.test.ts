@@ -74,7 +74,7 @@ describe('Schema Matcher', () => {
         {
           type: 'FieldDefinition',
           name: 'data',
-          fieldType: { type: 'ReferenceType', name: 'object' },
+          fieldType: { type: 'ReferenceType', path: { type: 'QualifiedName', parts: ['object'] } },
         },
         {
           type: 'FieldDefinition',

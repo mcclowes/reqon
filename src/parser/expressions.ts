@@ -1,5 +1,4 @@
-import { TokenType, type Expression, type QualifiedName, type MatchArm } from 'vague-lang';
-import type { ReqonToken } from '../lexer/tokens.js';
+import { TokenType, type Expression, type QualifiedName, type MatchArm, type Token } from 'vague-lang';
 import { ReqonTokenType } from '../lexer/tokens.js';
 import { ReqonParserBase } from './base.js';
 

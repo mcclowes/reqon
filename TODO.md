@@ -8,7 +8,7 @@
 - [x] **Schema overloading** - `match response { Schema1 -> ..., Schema2 -> ... }` - auto-fork based on response shape matching
 - [x] **Error handling via match** - Flow control directives (continue, skip, abort, retry, queue, jump) in match arms
 - [x] **Multi-file missions** - Split actions into separate files within a folder (mission.reqon + action files)
-- [ ] Consider what of reqon actually belongs in Vague - let's extend vague? And make reqon files .vague files.
+- [x] **Vague plugin system** - Extended Vague with runtime-extensible keywords and statement parsers; Reqon exports a plugin for Vague integration
 
 ## Store Adapters
 

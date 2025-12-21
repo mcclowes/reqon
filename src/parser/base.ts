@@ -1,37 +1,39 @@
-import { TokenType } from 'vague-lang';
-import type { ReqonToken, TokenType as CombinedTokenType } from '../lexer/tokens.js';
+import { TokenType, type Token } from 'vague-lang';
 import { ReqonTokenType } from '../lexer/tokens.js';
 import { ParseError, type ErrorContext } from '../errors/index.js';
 
+// Token type can be Vague's TokenType, Reqon's ReqonTokenType, or a plugin string
+type AnyTokenType = TokenType | ReqonTokenType | string;
+
 export class ReqonParserBase {
-  protected tokens: ReqonToken[];
+  protected tokens: Token[];
   protected pos = 0;
   protected source?: string;
   protected filePath?: string;
 
-  constructor(tokens: ReqonToken[], source?: string, filePath?: string) {
+  constructor(tokens: Token[], source?: string, filePath?: string) {
     this.tokens = tokens.filter((t) => t.type !== TokenType.NEWLINE);
     this.source = source;
     this.filePath = filePath;
   }
 
-  protected peek(): ReqonToken {
+  protected peek(): Token {
     return this.tokens[this.pos];
   }
 
-  protected peekNext(): ReqonToken | undefined {
+  protected peekNext(): Token | undefined {
     return this.tokens[this.pos + 1];
   }
 
-  protected check(type: CombinedTokenType): boolean {
+  protected check(type: AnyTokenType): boolean {
     return !this.isAtEnd() && this.peek().type === type;
   }
 
-  protected checkAny(...types: CombinedTokenType[]): boolean {
+  protected checkAny(...types: AnyTokenType[]): boolean {
     return types.some((t) => this.check(t));
   }
 
-  protected match(type: CombinedTokenType): boolean {
+  protected match(type: AnyTokenType): boolean {
     if (this.check(type)) {
       this.advance();
       return true;
@@ -39,7 +41,7 @@ export class ReqonParserBase {
     return false;
   }
 
-  protected matchAny(...types: CombinedTokenType[]): CombinedTokenType | null {
+  protected matchAny(...types: AnyTokenType[]): AnyTokenType | null {
     for (const type of types) {
       if (this.check(type)) {
         this.advance();
@@ -49,12 +51,12 @@ export class ReqonParserBase {
     return null;
   }
 
-  protected advance(): ReqonToken {
+  protected advance(): Token {
     if (!this.isAtEnd()) this.pos++;
     return this.tokens[this.pos - 1];
   }
 
-  protected consume(type: CombinedTokenType, message: string): ReqonToken {
+  protected consume(type: AnyTokenType, message: string): Token {
     if (this.check(type)) return this.advance();
     throw this.error(message);
   }

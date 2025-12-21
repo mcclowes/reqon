@@ -1,4 +1,5 @@
 export { ReqonLexer, ReqonTokenType, type ReqonToken } from './lexer/index.js';
+export { reqonPlugin, registerReqonPlugin } from './plugin.js';
 export { ReqonParser } from './parser/index.js';
 export * from './ast/index.js';
 export {

@@ -11,12 +11,12 @@ Demonstrates basic Reqon usage with a public API (no authentication).
 ## Run
 
 ```bash
-node dist/cli.js examples/jsonplaceholder/posts.reqon --verbose
+node dist/cli.js examples/jsonplaceholder/posts.vague --verbose
 ```
 
 Export to JSON:
 ```bash
-node dist/cli.js examples/jsonplaceholder/posts.reqon --output output.json
+node dist/cli.js examples/jsonplaceholder/posts.vague --output output.json
 ```
 
 ## Features demonstrated

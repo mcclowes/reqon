@@ -47,6 +47,38 @@ describe('Mission Loader', () => {
       expect((mission as any).name).toBe('Simple');
       expect((mission as any).actions).toHaveLength(1);
     });
+
+    it('loads a single .vague file', async () => {
+      const filePath = join(TEST_DIR, 'simple.vague');
+      await writeFile(filePath, `
+        mission Simple {
+          source Api {
+            auth: none,
+            base: "https://api.example.com"
+          }
+
+          store data: memory("items")
+
+          action Fetch {
+            fetch GET "/items" { source: Api }
+            store response -> data
+          }
+
+          run Fetch
+        }
+      `);
+
+      const result = await loadMission(filePath);
+
+      expect(result.sourceFiles).toHaveLength(1);
+      expect(result.sourceFiles[0]).toContain('simple.vague');
+
+      const mission = result.program.statements.find(
+        s => s.type === 'MissionDefinition'
+      );
+      expect(mission).toBeDefined();
+      expect((mission as any).name).toBe('Simple');
+    });
   });
 
   describe('folder loading', () => {
@@ -114,7 +146,7 @@ describe('Mission Loader', () => {
       `);
 
       await expect(loadMission(missionDir)).rejects.toThrow(
-        /must contain a 'mission.reqon' file/
+        /must contain a root file/
       );
     });
 
@@ -235,6 +267,14 @@ describe('Mission Loader', () => {
       expect(await isMissionFolder(missionDir)).toBe(true);
     });
 
+    it('returns true for folder with mission.vague', async () => {
+      const missionDir = join(TEST_DIR, 'vague-folder');
+      await mkdir(missionDir, { recursive: true });
+      await writeFile(join(missionDir, 'mission.vague'), 'mission X { run A }');
+
+      expect(await isMissionFolder(missionDir)).toBe(true);
+    });
+
     it('returns false for folder without mission.reqon', async () => {
       const missionDir = join(TEST_DIR, 'invalid-folder');
       await mkdir(missionDir, { recursive: true });
@@ -255,8 +295,66 @@ describe('Mission Loader', () => {
       expect(getMissionName('/path/to/sync-invoices')).toBe('sync-invoices');
     });
 
-    it('extracts name from file path', () => {
+    it('extracts name from .reqon file path', () => {
       expect(getMissionName('/path/to/sync-invoices.reqon')).toBe('sync-invoices');
+    });
+
+    it('extracts name from .vague file path', () => {
+      expect(getMissionName('/path/to/sync-invoices.vague')).toBe('sync-invoices');
+    });
+  });
+
+  describe('.vague file priority', () => {
+    it('prefers .vague over .reqon in folder mode', async () => {
+      const missionDir = join(TEST_DIR, 'both-extensions');
+      await mkdir(missionDir, { recursive: true });
+
+      // Create both files - .vague should be preferred
+      await writeFile(join(missionDir, 'mission.vague'), `
+        mission FromVague {
+          source Api { auth: none, base: "https://api.example.com" }
+          store data: memory("data")
+          action Fetch { fetch GET "/vague" { source: Api } }
+          run Fetch
+        }
+      `);
+      await writeFile(join(missionDir, 'mission.reqon'), `
+        mission FromReqon {
+          source Api { auth: none, base: "https://api.example.com" }
+          store data: memory("data")
+          action Fetch { fetch GET "/reqon" { source: Api } }
+          run Fetch
+        }
+      `);
+
+      const result = await loadMission(missionDir);
+      const mission = result.program.statements.find(
+        s => s.type === 'MissionDefinition'
+      );
+      expect((mission as any).name).toBe('FromVague');
+    });
+
+    it('loads folder with mission.vague and .vague action files', async () => {
+      const missionDir = join(TEST_DIR, 'vague-folder-mode');
+      await mkdir(missionDir, { recursive: true });
+
+      await writeFile(join(missionDir, 'mission.vague'), `
+        mission VagueMode {
+          source Api { auth: none, base: "https://api.example.com" }
+          store data: memory("data")
+          run Fetch
+        }
+      `);
+      await writeFile(join(missionDir, 'fetch.vague'), `
+        action Fetch {
+          fetch GET "/items" { source: Api }
+        }
+      `);
+
+      const result = await loadMission(missionDir);
+      expect(result.sourceFiles).toHaveLength(2);
+      expect(result.sourceFiles[0]).toContain('mission.vague');
+      expect(result.sourceFiles[1]).toContain('fetch.vague');
     });
   });
 });
