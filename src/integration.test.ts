@@ -86,9 +86,7 @@ describe('Reqon Integration', () => {
     expect(items[0]).toMatchObject({ id: '1', name: 'Item 1', value: 100 });
   });
 
-  // TODO: Xero example uses object literals in `body: {...}` which require
-  // Vague to support object literal parsing. Skipping until that feature is added.
-  it.skip('parses the Xero example file', async () => {
+  it('parses the Xero example file', async () => {
     const fs = await import('node:fs/promises');
     const source = await fs.readFile('./examples/xero/invoices.vague', 'utf-8');
 
@@ -101,8 +99,8 @@ describe('Reqon Integration', () => {
     if (mission.type === 'MissionDefinition') {
       expect(mission.name).toBe('SyncXeroInvoices');
       expect(mission.sources).toHaveLength(1);
-      expect(mission.stores).toHaveLength(2);
-      expect(mission.actions).toHaveLength(3);
+      expect(mission.stores).toHaveLength(3);
+      expect(mission.actions).toHaveLength(4);
       expect(mission.pipeline.stages).toHaveLength(3);
     }
   });

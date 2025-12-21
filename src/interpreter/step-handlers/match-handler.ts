@@ -38,38 +38,50 @@ export class MatchHandler {
   async execute(step: MatchStep): Promise<void> {
     const value = evaluate(step.target, this.deps.ctx);
 
-    // Get schema names from arms in order
-    const schemaNames = step.arms.map(arm => arm.schema);
+    // Find matching arm, checking guards
+    let matchedArm = null;
 
-    // Find matching schema
-    const matchedSchema = findMatchingSchema(value, this.deps.ctx.schemas, schemaNames);
+    for (const arm of step.arms) {
+      // Check if schema matches
+      if (arm.schema !== '_') {
+        // Check if this schema matches the value
+        const schemaMatches = findMatchingSchema(value, this.deps.ctx.schemas, [arm.schema]);
+        if (!schemaMatches) {
+          continue;
+        }
+      }
 
-    if (!matchedSchema) {
+      // If there's a guard, check it
+      if (arm.guard) {
+        const guardResult = evaluate(arm.guard, this.deps.ctx, value);
+        if (!guardResult) {
+          continue; // Guard failed, try next arm
+        }
+      }
+
+      // Found a match
+      matchedArm = arm;
+      break;
+    }
+
+    if (!matchedArm) {
       throw new NoMatchError(value);
     }
 
-    this.deps.log(`Matched schema: ${matchedSchema}`);
-
-    // Find the matching arm
-    const arm = step.arms.find(a => a.schema === matchedSchema);
-
-    if (!arm) {
-      // Shouldn't happen if findMatchingSchema works correctly
-      throw new NoMatchError(value);
-    }
+    this.deps.log(`Matched schema: ${matchedArm.schema}${matchedArm.guard ? ' (with guard)' : ''}`);
 
     // Handle flow directive
-    if (arm.flow) {
+    if (matchedArm.flow) {
       // 'continue' means proceed normally - don't throw
-      if (arm.flow.type === 'continue') {
+      if (matchedArm.flow.type === 'continue') {
         return;
       }
-      this.handleFlowDirective(arm.flow, value);
+      this.handleFlowDirective(matchedArm.flow, value);
     }
 
     // Execute steps
-    if (arm.steps) {
-      for (const innerStep of arm.steps) {
+    if (matchedArm.steps) {
+      for (const innerStep of matchedArm.steps) {
         await this.deps.executeStep(innerStep, this.deps.actionName, this.deps.ctx);
       }
     }

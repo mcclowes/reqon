@@ -32,7 +32,7 @@
     "@apidevtools/swagger-parser": "^12.1.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "dotenv": "^16.4.7",
-    "vague-lang": "file:../vague",
+    "vague-lang": "^3.3.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
