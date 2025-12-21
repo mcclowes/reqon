@@ -160,7 +160,6 @@ describe('HttpClient', () => {
   describe('calculateDelay', () => {
     it('calculates exponential backoff delay', async () => {
       const client = new HttpClient({ baseUrl: 'https://api.example.com' });
-      const delays: number[] = [];
 
       let callCount = 0;
       globalThis.fetch = vi.fn(async () => {
@@ -176,10 +175,10 @@ describe('HttpClient', () => {
         { maxAttempts: 3, backoff: 'exponential', initialDelay: 1000 }
       );
 
-      // First retry delay: ~1000ms (1000 * 2^0)
-      await vi.advanceTimersByTimeAsync(1000);
-      // Second retry delay: ~2000ms (1000 * 2^1)
-      await vi.advanceTimersByTimeAsync(2000);
+      // First retry delay: ~1000ms (1000 * 2^0) + up to 10% jitter
+      // Second retry delay: ~2000ms (1000 * 2^1) + up to 10% jitter
+      // Advance enough time for both retries with jitter buffer
+      await vi.advanceTimersByTimeAsync(4000);
 
       await requestPromise;
 
@@ -279,7 +278,7 @@ describe('HttpClient', () => {
 
       const requestPromise = client.request(
         { method: 'GET', path: '/users' },
-        { maxAttempts: 3 }
+        { maxAttempts: 3, backoff: 'constant', initialDelay: 100 }
       );
 
       // Should wait 5 seconds as specified in Retry-After
@@ -291,21 +290,26 @@ describe('HttpClient', () => {
     });
 
     it('throws after max retry attempts', async () => {
+      // Use real timers for this test to avoid unhandled rejection timing issues
+      vi.useRealTimers();
+
       const client = new HttpClient({ baseUrl: 'https://api.example.com' });
 
       globalThis.fetch = vi.fn(async () => {
         throw new Error('Network error');
       });
 
-      const requestPromise = client.request(
-        { method: 'GET', path: '/users' },
-        { maxAttempts: 3, backoff: 'constant', initialDelay: 100 }
-      );
+      await expect(
+        client.request(
+          { method: 'GET', path: '/users' },
+          { maxAttempts: 3, backoff: 'constant', initialDelay: 10 } // Short delay for fast test
+        )
+      ).rejects.toThrow('Network error');
 
-      // Advance through all retries (need more time for async operations)
-      await vi.advanceTimersByTimeAsync(500);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
 
-      await expect(requestPromise).rejects.toThrow('Network error');
+      // Restore fake timers for remaining tests
+      vi.useFakeTimers();
     });
   });
 
