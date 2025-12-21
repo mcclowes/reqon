@@ -857,6 +857,7 @@ export class MissionExecutor {
     // Check for custom store adapter
     if (this.config.stores?.[store.name]) {
       this.ctx.stores.set(store.name, this.config.stores[store.name]);
+      this.ctx.storeTypes.set(store.name, 'custom');
       this.log(`Initialized store: ${store.name} (custom adapter)`);
       return;
     }
@@ -872,6 +873,7 @@ export class MissionExecutor {
     });
 
     this.ctx.stores.set(store.name, adapter);
+    this.ctx.storeTypes.set(store.name, storeType);
     this.log(`Initialized store: ${store.name} (${storeType}${storeType !== store.storeType ? ` <- ${store.storeType}` : ''})`);
   }
 
