@@ -92,6 +92,17 @@ export {
   type AuthCredentials,
   type SourceCredentials,
 } from './auth/credentials.js';
+export {
+  WebhookServer,
+  MemoryWebhookStore,
+  FileWebhookStore,
+  type WebhookStore,
+  type WebhookServerConfig,
+  type WebhookServerCallbacks,
+  type WebhookRegistration,
+  type WebhookEvent,
+  type WaitResult,
+} from './webhook/index.js';
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';

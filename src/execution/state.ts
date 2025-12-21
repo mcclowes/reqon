@@ -47,6 +47,28 @@ export interface Checkpoint {
   variables?: Record<string, unknown>;
   /** Timestamp */
   createdAt: Date;
+  /** Webhook wait state (for resuming webhook waits) */
+  webhookWait?: WebhookWaitState;
+}
+
+/**
+ * State for waiting on webhook callbacks
+ */
+export interface WebhookWaitState {
+  /** Webhook registration ID */
+  registrationId: string;
+  /** Path for the webhook endpoint */
+  path: string;
+  /** Full webhook URL */
+  webhookUrl: string;
+  /** Number of expected events */
+  expectedEvents: number;
+  /** Number of events received so far */
+  receivedEvents: number;
+  /** When the wait started */
+  waitStartedAt: Date;
+  /** When the wait expires */
+  expiresAt: Date;
 }
 
 /**

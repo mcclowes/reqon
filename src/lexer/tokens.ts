@@ -73,6 +73,14 @@ export enum ReqonTokenType {
 
   // Type checking
   IS = 'IS',
+
+  // Webhook support
+  WAIT = 'WAIT',
+  TIMEOUT = 'TIMEOUT',
+  PATH = 'PATH',
+  EXPECTED_EVENTS = 'EXPECTED_EVENTS',
+  EVENT_FILTER = 'EVENT_FILTER',
+  STORAGE = 'STORAGE',
 }
 
 // Combined token type
@@ -153,6 +161,14 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
 
   // Type checking
   is: ReqonTokenType.IS,
+
+  // Webhook support
+  wait: ReqonTokenType.WAIT,
+  timeout: ReqonTokenType.TIMEOUT,
+  path: ReqonTokenType.PATH,
+  expectedEvents: ReqonTokenType.EXPECTED_EVENTS,
+  eventFilter: ReqonTokenType.EVENT_FILTER,
+  storage: ReqonTokenType.STORAGE,
 };
 
 export interface ReqonToken {

@@ -21,6 +21,8 @@ import type {
   MatchArm,
   FlowDirective,
   LetStep,
+  WebhookStep,
+  WebhookStorageConfig,
   PaginationConfig,
   RetryConfig,
   FieldMapping,
@@ -622,6 +624,7 @@ export class ReqonParser extends ReqonExpressionParser {
     if (this.check(ReqonTokenType.STORE)) return this.parseStoreStep();
     if (this.check(TokenType.MATCH)) return this.parseMatchStep();
     if (this.check(TokenType.LET)) return this.parseLetStep();
+    if (this.check(ReqonTokenType.WAIT)) return this.parseWaitStep();
 
     throw this.error(`Expected action step, got: ${this.peek().value}`);
   }
@@ -1233,6 +1236,119 @@ export class ReqonParser extends ReqonExpressionParser {
     const value = this.parseExpression();
 
     return { type: 'LetStep', name, value };
+  }
+
+  // ============================================
+  // Wait step (webhook support)
+  // ============================================
+
+  /**
+   * Parse wait step: wait { timeout: 60000, path: "/webhooks/callback", ... }
+   * Waits for an external webhook callback before continuing execution
+   */
+  private parseWaitStep(): WebhookStep {
+    this.consume(ReqonTokenType.WAIT, "Expected 'wait'");
+    this.consume(TokenType.LBRACE, "Expected '{'");
+
+    const step: WebhookStep = { type: 'WebhookStep' };
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      // Accept keyword tokens as option keys
+      let key: string;
+      if (this.check(ReqonTokenType.TIMEOUT)) {
+        this.advance();
+        key = 'timeout';
+      } else if (this.check(ReqonTokenType.PATH)) {
+        this.advance();
+        key = 'path';
+      } else if (this.check(ReqonTokenType.EXPECTED_EVENTS)) {
+        this.advance();
+        key = 'expectedEvents';
+      } else if (this.check(ReqonTokenType.EVENT_FILTER)) {
+        this.advance();
+        key = 'eventFilter';
+      } else if (this.check(ReqonTokenType.RETRY)) {
+        this.advance();
+        key = 'retry';
+      } else if (this.check(ReqonTokenType.STORAGE)) {
+        this.advance();
+        key = 'storage';
+      } else {
+        key = this.consume(TokenType.IDENTIFIER, 'Expected option key').value;
+      }
+      this.consume(TokenType.COLON, "Expected ':'");
+
+      switch (key) {
+        case 'timeout':
+          step.timeout = parseInt(this.consume(TokenType.NUMBER, 'Expected timeout value').value, 10);
+          break;
+        case 'path':
+          step.path = this.consume(TokenType.STRING, 'Expected path string').value;
+          break;
+        case 'expectedEvents':
+          step.expectedEvents = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'eventFilter':
+          step.eventFilter = this.parseExpression();
+          break;
+        case 'retry':
+          step.retryOnTimeout = this.parseRetryConfig();
+          break;
+        case 'storage':
+          step.storage = this.parseWebhookStorageConfig();
+          break;
+        default:
+          throw this.error(`Unknown wait option: ${key}`);
+      }
+
+      this.match(TokenType.COMMA);
+    }
+
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    return step;
+  }
+
+  /**
+   * Parse webhook storage config: { target: store_name, key: .id }
+   */
+  private parseWebhookStorageConfig(): WebhookStorageConfig {
+    this.consume(TokenType.LBRACE, "Expected '{'");
+
+    let target: string | undefined;
+    let key: Expression | undefined;
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      let optionKey: string;
+      if (this.check(ReqonTokenType.KEY)) {
+        this.advance();
+        optionKey = 'key';
+      } else {
+        optionKey = this.consume(TokenType.IDENTIFIER, 'Expected option key').value;
+      }
+      this.consume(TokenType.COLON, "Expected ':'");
+
+      switch (optionKey) {
+        case 'target':
+          target = this.consume(TokenType.IDENTIFIER, 'Expected store name').value;
+          break;
+        case 'key':
+          key = this.parseExpression();
+          break;
+        default:
+          throw this.error(`Unknown storage option: ${optionKey}`);
+      }
+
+      this.match(TokenType.COMMA);
+    }
+
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    if (!target) {
+      throw this.error('Webhook storage must have a target store');
+    }
+
+    return { target, key };
   }
 
   // ============================================
