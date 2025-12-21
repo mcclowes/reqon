@@ -44,13 +44,12 @@ function HomepageHeader() {
         <p className="hero__subtitle">{siteConfig.tagline}</p>
         <div className={styles.buttons}>
           <Link
-            className="button button--secondary button--lg"
+            className="button button--primary button--lg"
             to="/docs/">
             Get Started
           </Link>
           <Link
-            className="button button--outline button--lg"
-            style={{marginLeft: '1rem', color: 'white', borderColor: 'white'}}
+            className="button button--secondary button--lg"
             to="/docs/examples">
             View Examples
           </Link>
@@ -66,27 +65,33 @@ function CodeExample() {
       <div className="container">
         <div className="row">
           <div className="col col--6">
-            <Heading as="h2">Declarative Data Pipelines</Heading>
-            <p>
-              Define what you want to happen, not how. Reqon handles pagination,
-              retries, rate limiting, and error handling automatically.
-            </p>
-            <ul>
-              <li>Automatic pagination with offset, page, or cursor strategies</li>
-              <li>Built-in retry with exponential backoff</li>
-              <li>Incremental sync with checkpoint tracking</li>
-              <li>Pattern matching for error handling</li>
-            </ul>
-            <Link
-              className="button button--primary button--lg"
-              to="/docs/getting-started">
-              Learn the Syntax
-            </Link>
+            <div className={styles.codeExampleContent}>
+              <Heading as="h2">Declarative Data Pipelines</Heading>
+              <p>
+                Define what you want to happen, not how. Reqon handles pagination,
+                retries, rate limiting, and error handling automatically.
+              </p>
+              <ul>
+                <li>Automatic pagination with offset, page, or cursor strategies</li>
+                <li>Built-in retry with exponential backoff</li>
+                <li>Incremental sync with checkpoint tracking</li>
+                <li>Pattern matching for error handling</li>
+              </ul>
+              <div>
+                <Link
+                  className="button button--primary button--lg"
+                  to="/docs/getting-started">
+                  Learn the Syntax
+                </Link>
+              </div>
+            </div>
           </div>
           <div className="col col--6">
-            <CodeBlock language="vague" title="sync.vague">
-              {exampleCode}
-            </CodeBlock>
+            <div className={styles.codeBlockWrapper}>
+              <CodeBlock language="vague" title="sync.vague">
+                {exampleCode}
+              </CodeBlock>
+            </div>
           </div>
         </div>
       </div>

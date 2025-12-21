@@ -72,13 +72,16 @@ const FeatureList: FeatureItem[] = [
   },
 ];
 
-function Feature({title, icon, description}: FeatureItem) {
+function Feature({title, icon, description, index}: FeatureItem & {index: number}) {
   return (
-    <div className={clsx('col col--4')}>
-      <div className="text--center padding-horiz--md">
+    <div className={clsx('col col--4')} style={{marginBottom: '2rem'}}>
+      <div
+        className={styles.featureCard}
+        style={{'--animation-order': index} as React.CSSProperties}
+      >
         <div className={styles.featureIcon}>{icon}</div>
-        <Heading as="h3">{title}</Heading>
-        <p>{description}</p>
+        <Heading as="h3" className={styles.featureTitle}>{title}</Heading>
+        <p className={styles.featureDescription}>{description}</p>
       </div>
     </div>
   );
@@ -88,15 +91,15 @@ export default function HomepageFeatures(): ReactNode {
   return (
     <section className={styles.features}>
       <div className="container">
-        <div className="text--center margin-bottom--xl">
-          <Heading as="h2">Why Reqon?</Heading>
-          <p className="hero__subtitle">
+        <div className="text--center margin-bottom--lg">
+          <Heading as="h2" className={styles.sectionTitle}>Why Reqon?</Heading>
+          <p className={styles.sectionSubtitle}>
             Stop writing boilerplate. Start building data pipelines.
           </p>
         </div>
         <div className="row">
           {FeatureList.map((props, idx) => (
-            <Feature key={idx} {...props} />
+            <Feature key={idx} index={idx} {...props} />
           ))}
         </div>
       </div>
