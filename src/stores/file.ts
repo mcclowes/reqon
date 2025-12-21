@@ -12,16 +12,19 @@ import {
 export interface FileStoreOptions {
   /** Base directory for data files (default: '.reqon-data') */
   baseDir?: string;
-  /** Write mode: 'immediate' writes on every change, 'batch' only on flush/close */
-  persist?: 'immediate' | 'batch';
+  /** Write mode: 'immediate' writes on every change, 'batch' only on flush/close, 'debounce' batches writes */
+  persist?: 'immediate' | 'batch' | 'debounce';
   /** Pretty-print JSON for readability (default: true) */
   pretty?: boolean;
+  /** Debounce delay in milliseconds (default: 100ms, only used with persist: 'debounce') */
+  debounceMs?: number;
 }
 
 const DEFAULT_OPTIONS: Required<FileStoreOptions> = {
   baseDir: '.reqon-data',
   persist: 'immediate',
   pretty: true,
+  debounceMs: 100,
 };
 
 /**
@@ -34,6 +37,8 @@ export class FileStore implements StoreAdapter {
   private options: Required<FileStoreOptions>;
   private dirty = false;
   private initialized: Promise<void>;
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingWrite: Promise<void> | null = null;
 
   constructor(name: string, options: FileStoreOptions = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -64,7 +69,28 @@ export class FileStore implements StoreAdapter {
       this.dirty = true;
       return;
     }
+    if (this.options.persist === 'debounce') {
+      this.dirty = true;
+      this.scheduleDebouncedWrite();
+      return;
+    }
     await this.writeToDisk();
+  }
+
+  private scheduleDebouncedWrite(): void {
+    // Clear existing timer if any
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+    // Schedule new write
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      if (this.dirty && !this.pendingWrite) {
+        this.pendingWrite = this.writeToDisk().finally(() => {
+          this.pendingWrite = null;
+        });
+      }
+    }, this.options.debounceMs);
   }
 
   private async writeToDisk(): Promise<void> {
@@ -90,6 +116,16 @@ export class FileStore implements StoreAdapter {
   async set(key: string, value: Record<string, unknown>): Promise<void> {
     await this.initialized;
     this.data.set(key, { ...value });
+    await this.persist();
+  }
+
+  async bulkSet(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void> {
+    await this.initialized;
+    // Set all records in memory first (no disk I/O per record)
+    for (const { key, value } of records) {
+      this.data.set(key, { ...value });
+    }
+    // Single persist operation for all records
     await this.persist();
   }
 
@@ -131,10 +167,15 @@ export class FileStore implements StoreAdapter {
   }
 
   /**
-   * Flush pending changes to disk (only needed in 'batch' mode)
+   * Flush pending changes to disk (needed in 'batch' or 'debounce' mode)
    * Uses synchronous I/O to ensure data is written before process exits
    */
   flush(): void {
+    // Cancel any pending debounce timer
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
     if (this.dirty) {
       this.writeToDiskSync();
     }

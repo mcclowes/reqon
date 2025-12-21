@@ -32,28 +32,39 @@ export function evaluate(expr: Expression, ctx: ExecutionContext, current?: unkn
     }
 
     case 'QualifiedName': {
+      // Try from current/response first (common case)
       let value: unknown = current ?? ctx.response;
-
-      for (const part of expr.parts) {
-        if (value && typeof value === 'object' && value !== null) {
-          value = (value as Record<string, unknown>)[part];
-        } else {
-          // Try from variables
-          if (expr.parts.length > 0) {
-            value = getVariable(ctx, expr.parts[0]);
-            for (let i = 1; i < expr.parts.length; i++) {
-              if (value && typeof value === 'object') {
-                value = (value as Record<string, unknown>)[expr.parts[i]];
-              } else {
-                return undefined;
-              }
-            }
+      if (value && typeof value === 'object' && value !== null) {
+        let found = true;
+        for (const part of expr.parts) {
+          if (value && typeof value === 'object' && value !== null) {
+            value = (value as Record<string, unknown>)[part];
+          } else {
+            found = false;
+            break;
           }
-          break;
+        }
+        if (found && value !== undefined) {
+          return value;
         }
       }
 
-      return value;
+      // Fall back: try from variables (first part is variable name)
+      if (expr.parts.length > 0) {
+        value = getVariable(ctx, expr.parts[0]);
+        if (value !== undefined) {
+          for (let i = 1; i < expr.parts.length; i++) {
+            if (value && typeof value === 'object') {
+              value = (value as Record<string, unknown>)[expr.parts[i]];
+            } else {
+              return undefined;
+            }
+          }
+          return value;
+        }
+      }
+
+      return undefined;
     }
 
     case 'BinaryExpression': {
@@ -206,33 +217,29 @@ export function interpolatePath(path: string, ctx: ExecutionContext, current?: u
   });
 }
 
+/** Type check functions map - more efficient than switch statement */
+const TYPE_CHECKERS: Map<string, (value: unknown) => boolean> = new Map([
+  ['array', (v) => Array.isArray(v)],
+  ['object', (v) => v !== null && typeof v === 'object' && !Array.isArray(v)],
+  ['string', (v) => typeof v === 'string'],
+  ['number', (v) => typeof v === 'number'],
+  ['decimal', (v) => typeof v === 'number'],
+  ['int', (v) => typeof v === 'number' && Number.isInteger(v)],
+  ['integer', (v) => typeof v === 'number' && Number.isInteger(v)],
+  ['boolean', (v) => typeof v === 'boolean'],
+  ['null', (v) => v === null],
+  ['undefined', (v) => v === undefined],
+  ['date', (v) => v instanceof Date || (typeof v === 'string' && !isNaN(Date.parse(v)))],
+]);
+
 /**
  * Check if a value matches a type.
  * Supports: array, object, string, number, boolean, null, undefined, int, decimal, date
  */
 function checkType(value: unknown, typeName: string): boolean {
-  switch (typeName.toLowerCase()) {
-    case 'array':
-      return Array.isArray(value);
-    case 'object':
-      return value !== null && typeof value === 'object' && !Array.isArray(value);
-    case 'string':
-      return typeof value === 'string';
-    case 'number':
-    case 'decimal':
-      return typeof value === 'number';
-    case 'int':
-    case 'integer':
-      return typeof value === 'number' && Number.isInteger(value);
-    case 'boolean':
-      return typeof value === 'boolean';
-    case 'null':
-      return value === null;
-    case 'undefined':
-      return value === undefined;
-    case 'date':
-      return value instanceof Date || (typeof value === 'string' && !isNaN(Date.parse(value)));
-    default:
-      throw new Error(`Unknown type for 'is' check: ${typeName}`);
+  const checker = TYPE_CHECKERS.get(typeName.toLowerCase());
+  if (!checker) {
+    throw new Error(`Unknown type for 'is' check: ${typeName}`);
   }
+  return checker(value);
 }
