@@ -7,8 +7,8 @@ mission SyncPosts {
     base: "https://jsonplaceholder.typicode.com"
   }
 
-  store posts_raw: sql("posts_raw")
-  store posts_normalized: sql("posts_normalized")
+  store posts_raw: memory("posts_raw")
+  store posts_normalized: memory("posts_normalized")
 
   action FetchPosts {
     get "/posts"

@@ -23,6 +23,7 @@ node dist/cli.js examples/jsonplaceholder/posts.vague --output output.json
 
 - `auth: none` for public APIs
 - `get` for simple requests
+- `memory()` store for quick prototyping (no setup required)
 - `map` for schema transformation
 - `for...in` iteration over stored items
 - `run...then` for action sequencing
