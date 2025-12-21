@@ -7,7 +7,7 @@
 - [ ] **Idempotency** - Upsert semantics and conflict resolution strategies
 - [x] **Schema overloading** - `match response { Schema1 -> ..., Schema2 -> ... }` - auto-fork based on response shape matching
 - [x] **Error handling via match** - Flow control directives (continue, skip, abort, retry, queue, jump) in match arms
-- [x] **Multi-file missions** - Split actions into separate files within a folder (mission.reqon + action files)
+- [x] **Multi-file missions** - Split actions into separate files within a folder (mission.vague + action files)
 - [x] **Vague plugin system** - Extended Vague with runtime-extensible keywords and statement parsers; Reqon exports a plugin for Vague integration
 
 ## Store Adapters
@@ -34,7 +34,7 @@
 ## Developer Experience
 
 - [x] **Better error messages** - Line numbers, column, source context with pointer in parse/lexer/runtime errors
-- [ ] **VS Code extension** - Syntax highlighting and LSP for `.reqon` files
+- [ ] **VS Code extension** - Syntax highlighting and LSP for `.vague` files
 - [ ] **Debug mode** - Step-through execution with state inspection
 - [ ] **Dry run improvements** - Mock responses based on schema
 

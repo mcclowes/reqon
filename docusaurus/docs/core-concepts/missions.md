@@ -8,7 +8,7 @@ A **Mission** is the top-level container in Reqon. It defines a complete data pi
 
 ## Basic Structure
 
-```reqon
+```vague
 mission MissionName {
   // Source definitions (APIs)
   source SourceName { auth: type, base: "url" }
@@ -35,7 +35,7 @@ mission MissionName {
 
 Define the APIs your mission connects to:
 
-```reqon
+```vague
 mission DataSync {
   source MainAPI {
     auth: bearer,
@@ -53,7 +53,7 @@ mission DataSync {
 
 Define where data is persisted:
 
-```reqon
+```vague
 mission DataSync {
   store customers: file("customers")
   store orders: memory("orders")
@@ -65,7 +65,7 @@ mission DataSync {
 
 Define data shapes for validation and pattern matching:
 
-```reqon
+```vague
 mission DataSync {
   schema Customer {
     id: string,
@@ -87,7 +87,7 @@ For schema syntax details, see the [Vague documentation](https://github.com/mccl
 
 Define the processing logic:
 
-```reqon
+```vague
 mission DataSync {
   action FetchCustomers {
     get "/customers"
@@ -107,7 +107,7 @@ mission DataSync {
 
 Define execution order:
 
-```reqon
+```vague
 mission DataSync {
   // Sequential execution
   run FetchCustomers then ProcessOrders
@@ -121,7 +121,7 @@ mission DataSync {
 
 A Reqon file can contain multiple missions:
 
-```reqon
+```vague
 mission SyncCustomers {
   source API { auth: bearer, base: "https://api.example.com" }
   store customers: file("customers")
@@ -151,7 +151,7 @@ mission SyncOrders {
 
 Add a schedule to run missions automatically:
 
-```reqon
+```vague
 mission DailySync {
   schedule: every 6 hours
 
@@ -173,7 +173,7 @@ See [Scheduling](../category/scheduling) for more details.
 
 Missions can include additional options:
 
-```reqon
+```vague
 mission RobustSync {
   // Scheduling
   schedule: cron "0 */6 * * *"
@@ -200,7 +200,7 @@ mission RobustSync {
 
 Each mission should have a single responsibility:
 
-```reqon
+```vague
 // Good: focused mission
 mission SyncInvoices {
   // Only deals with invoices
@@ -213,7 +213,7 @@ mission SyncPayments {
 
 ### Use Descriptive Names
 
-```reqon
+```vague
 // Good
 mission SyncXeroInvoicesToQuickBooks { }
 
@@ -228,17 +228,17 @@ For complex pipelines, use [multi-file missions](../advanced/multi-file-missions
 ```
 missions/
 └── invoice-sync/
-    ├── mission.reqon     # Main definition
-    ├── fetch.reqon       # Fetch actions
-    ├── transform.reqon   # Transform actions
-    └── export.reqon      # Export actions
+    ├── mission.vague     # Main definition
+    ├── fetch.vague       # Fetch actions
+    ├── transform.vague   # Transform actions
+    └── export.vague      # Export actions
 ```
 
 ### Handle Errors Gracefully
 
 Always include error handling:
 
-```reqon
+```vague
 mission RobustSync {
   action FetchData {
     get "/data"

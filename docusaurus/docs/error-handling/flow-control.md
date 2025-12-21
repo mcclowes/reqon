@@ -21,7 +21,7 @@ Flow control directives determine what happens after pattern matching. They prov
 
 Proceed to the next step normally:
 
-```reqon
+```vague
 match response {
   { data: _ } -> continue,
   _ -> abort "No data"
@@ -39,7 +39,7 @@ Use `continue` when:
 
 Skip remaining steps in the current loop iteration:
 
-```reqon
+```vague
 for item in items {
   match item {
     { status: "inactive" } -> skip,
@@ -61,7 +61,7 @@ Use `skip` when:
 
 Stop mission execution immediately:
 
-```reqon
+```vague
 match response {
   { error: msg } -> abort msg,
   { error: _ } -> abort "Unknown error occurred",
@@ -71,7 +71,7 @@ match response {
 
 With custom message:
 
-```reqon
+```vague
 match response {
   { code: 401 } -> abort "Authentication failed - check credentials",
   { code: 403 } -> abort "Permission denied - check API permissions",
@@ -90,7 +90,7 @@ Use `abort` when:
 
 Retry the previous HTTP request:
 
-```reqon
+```vague
 match response {
   { error: _, code: 429 } -> retry {
     maxAttempts: 5,
@@ -114,7 +114,7 @@ match response {
 
 ### Simple Retry
 
-```reqon
+```vague
 match response {
   { code: 503 } -> retry,  // Uses defaults
   _ -> continue
@@ -123,7 +123,7 @@ match response {
 
 ### Fixed Delay
 
-```reqon
+```vague
 match response {
   { code: 429, headers: h } -> retry {
     delay: h["Retry-After"] * 1000
@@ -136,7 +136,7 @@ match response {
 
 Send failed items to a dead letter queue:
 
-```reqon
+```vague
 match response {
   { error: e } -> queue dlq {
     item: {
@@ -151,7 +151,7 @@ match response {
 
 ### Queue Options
 
-```reqon
+```vague
 queue queueName {
   item: itemToStore,
   key: optionalKey
@@ -160,7 +160,7 @@ queue queueName {
 
 Store the queue as a regular store:
 
-```reqon
+```vague
 mission ErrorHandling {
   store dlq: file("dead-letter-queue")
 
@@ -179,7 +179,7 @@ mission ErrorHandling {
 
 Execute another action, then continue or retry:
 
-```reqon
+```vague
 match response {
   { code: 401 } -> jump RefreshToken then retry,
   _ -> continue
@@ -196,7 +196,7 @@ action RefreshToken {
 
 Common pattern for token refresh:
 
-```reqon
+```vague
 action FetchData {
   get "/protected-resource"
 
@@ -219,7 +219,7 @@ action RefreshToken {
 
 ### Jump Then Continue
 
-```reqon
+```vague
 match response {
   { needsSetup: true } -> jump SetupResource then continue,
   _ -> continue
@@ -230,7 +230,7 @@ match response {
 
 ### Layered Error Handling
 
-```reqon
+```vague
 match response {
   // Retry transient errors
   { code: 429 } -> retry { maxAttempts: 5 },
@@ -256,7 +256,7 @@ match response {
 
 ### Per-Item Error Handling
 
-```reqon
+```vague
 for item in items {
   get concat("/items/", item.id)
 
@@ -282,7 +282,7 @@ for item in items {
 
 ### Be Specific
 
-```reqon
+```vague
 // Good: specific error handling
 match response {
   { code: 401 } -> jump RefreshToken then retry,
@@ -302,7 +302,7 @@ match response {
 
 ### Always Have a Default
 
-```reqon
+```vague
 match response {
   { status: "ok" } -> continue,
   { status: "error" } -> abort "Error",
@@ -312,7 +312,7 @@ match response {
 
 ### Log Before Abort
 
-```reqon
+```vague
 match response {
   { error: e } -> {
     store { error: e, timestamp: now() } -> errorLog
@@ -324,7 +324,7 @@ match response {
 
 ### Use Queue for Later Processing
 
-```reqon
+```vague
 match response {
   { error: "rate_limit" } -> queue retryQueue {
     item: {

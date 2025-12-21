@@ -11,21 +11,21 @@ For complex missions, organize your code across multiple files in a folder struc
 ```
 missions/
 └── customer-sync/
-    ├── mission.reqon      # Main mission definition
+    ├── mission.vague      # Main mission definition
     ├── actions/
-    │   ├── fetch.reqon    # Fetch actions
-    │   ├── transform.reqon
-    │   └── export.reqon
+    │   ├── fetch.vague    # Fetch actions
+    │   ├── transform.vague
+    │   └── export.vague
     └── schemas/
-        └── customer.reqon
+        └── customer.vague
 ```
 
 ## Main Mission File
 
-The `mission.reqon` file defines the mission structure:
+The `mission.vague` file defines the mission structure:
 
-```reqon
-// mission.reqon
+```vague
+// mission.vague
 mission CustomerSync {
   source API {
     auth: oauth2,
@@ -36,8 +36,8 @@ mission CustomerSync {
   store customers: file("customers")
   store errors: file("errors")
 
-  // Actions are loaded from actions/*.reqon
-  // Schemas are loaded from schemas/*.reqon
+  // Actions are loaded from actions/*.vague
+  // Schemas are loaded from schemas/*.vague
 
   run FetchCustomers then TransformCustomers then ExportCustomers
 }
@@ -45,9 +45,9 @@ mission CustomerSync {
 
 ## Action Files
 
-### actions/fetch.reqon
+### actions/fetch.vague
 
-```reqon
+```vague
 action FetchCustomers {
   get "/customers" {
     paginate: offset(offset, 100),
@@ -59,9 +59,9 @@ action FetchCustomers {
 }
 ```
 
-### actions/transform.reqon
+### actions/transform.vague
 
-```reqon
+```vague
 action TransformCustomers {
   for customer in rawCustomers {
     validate customer {
@@ -81,9 +81,9 @@ action TransformCustomers {
 }
 ```
 
-### actions/export.reqon
+### actions/export.vague
 
-```reqon
+```vague
 action ExportCustomers {
   for customer in customers where .updatedAt > lastExport {
     post ExportAPI "/customers" {
@@ -100,9 +100,9 @@ action ExportCustomers {
 
 ## Schema Files
 
-### schemas/customer.reqon
+### schemas/customer.vague
 
-```reqon
+```vague
 schema RawCustomer {
   id: string,
   firstName: string,
@@ -141,9 +141,9 @@ reqon ./missions/customer-sync/ --auth ./credentials.json --verbose
 
 ## File Loading Order
 
-1. `mission.reqon` (required)
-2. `schemas/*.reqon` (loaded first)
-3. `actions/*.reqon` (loaded after schemas)
+1. `mission.vague` (required)
+2. `schemas/*.vague` (loaded first)
+3. `actions/*.vague` (loaded after schemas)
 
 ## Benefits
 
@@ -167,11 +167,11 @@ reqon ./missions/customer-sync/ --auth ./credentials.json --verbose
 missions/
 ├── shared/
 │   └── schemas/
-│       └── common.reqon
+│       └── common.vague
 ├── customer-sync/
-│   └── mission.reqon (imports shared)
+│   └── mission.vague (imports shared)
 └── order-sync/
-    └── mission.reqon (imports shared)
+    └── mission.vague (imports shared)
 ```
 
 ## Best Practices
@@ -180,15 +180,15 @@ missions/
 
 ```
 actions/
-├── fetch-customers.reqon     # Verb-noun
-├── transform-customers.reqon
-└── export-customers.reqon
+├── fetch-customers.vague     # Verb-noun
+├── transform-customers.vague
+└── export-customers.vague
 ```
 
 ### One Action Per File
 
-```reqon
-// actions/fetch-customers.reqon
+```vague
+// actions/fetch-customers.vague
 action FetchCustomers {
   // Single responsibility
 }
@@ -196,8 +196,8 @@ action FetchCustomers {
 
 ### Group Related Schemas
 
-```reqon
-// schemas/customer.reqon
+```vague
+// schemas/customer.vague
 schema RawCustomer { ... }
 schema StandardCustomer { ... }
 schema CustomerError { ... }
@@ -205,8 +205,8 @@ schema CustomerError { ... }
 
 ### Document with Comments
 
-```reqon
-// actions/fetch-customers.reqon
+```vague
+// actions/fetch-customers.vague
 
 // FetchCustomers retrieves customer data from the API
 // Uses pagination and incremental sync for efficiency
@@ -227,10 +227,10 @@ action FetchCustomers {
 
 ### "Mission not found"
 
-Ensure `mission.reqon` exists in the folder:
+Ensure `mission.vague` exists in the folder:
 
 ```bash
-ls ./missions/customer-sync/mission.reqon
+ls ./missions/customer-sync/mission.vague
 ```
 
 ### "Action not found"

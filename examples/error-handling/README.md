@@ -12,7 +12,7 @@ Demonstrates comprehensive error handling with schema matching and all flow cont
 ## Run
 
 ```bash
-node dist/cli.js examples/error-handling/payment-processor.reqon --auth credentials.json --verbose
+node dist/cli.js examples/error-handling/payment-processor.vague --auth credentials.json --verbose
 ```
 
 ## Flow Control Directives
@@ -20,7 +20,7 @@ node dist/cli.js examples/error-handling/payment-processor.reqon --auth credenti
 This example demonstrates all six flow control directives:
 
 ### 1. `continue` - Proceed to next step
-```reqon
+```vague
 match response {
   FraudWarning where .risk_level == "low" -> continue
 }
@@ -28,7 +28,7 @@ match response {
 When the condition matches, continue with the next steps in the action.
 
 ### 2. `skip` - Skip remaining steps in current iteration
-```reqon
+```vague
 match response {
   _ -> skip  // Unknown response - skip this payment, move to next
 }
@@ -36,7 +36,7 @@ match response {
 Skips remaining steps for the current item in a `for` loop but continues with the next item.
 
 ### 3. `abort "message"` - Halt mission with error
-```reqon
+```vague
 match response {
   ServerError -> abort "Payment gateway unavailable"
 }
@@ -44,7 +44,7 @@ match response {
 Immediately stops the entire mission and reports the error.
 
 ### 4. `retry { config }` - Retry with backoff
-```reqon
+```vague
 match response {
   RateLimitError -> retry {
     maxAttempts: 5,
@@ -57,7 +57,7 @@ match response {
 Retries the current fetch with configurable backoff strategy.
 
 ### 5. `queue target` - Send to dead-letter queue
-```reqon
+```vague
 match response {
   ServerError -> queue dead_letter_queue
 }
@@ -65,7 +65,7 @@ match response {
 Parks the current item for later processing or manual review.
 
 ### 6. `jump Action then retry` - Execute action, then continue
-```reqon
+```vague
 match response {
   AuthenticationError -> jump RefreshAuth then retry
 }
@@ -75,28 +75,28 @@ Jumps to another action (e.g., to refresh auth), then retries the original reque
 ## Schema Matching Patterns
 
 ### Simple Schema Match
-```reqon
+```vague
 match response {
   PaymentSuccess -> { store response -> payments }
 }
 ```
 
 ### Schema with Guard Clause
-```reqon
+```vague
 match response {
   FraudWarning where .risk_level == "high" -> queue fraud_review
 }
 ```
 
 ### Array Schema Match
-```reqon
+```vague
 match response {
   [PaymentSuccess] -> { store response -> payments { key: .id } }
 }
 ```
 
 ### Wildcard (Catch-All)
-```reqon
+```vague
 match response {
   SuccessSchema -> continue,
   ErrorSchema -> abort "Error occurred",
@@ -107,12 +107,12 @@ match response {
 ## Error Handling Patterns
 
 ### 1. Retry with Auth Refresh
-```reqon
+```vague
 AuthenticationError -> jump RefreshAuth then retry
 ```
 
 ### 2. Progressive Backoff
-```reqon
+```vague
 RateLimitError -> retry {
   maxAttempts: 5,
   backoff: exponential,
@@ -122,12 +122,12 @@ RateLimitError -> retry {
 ```
 
 ### 3. Dead Letter Queue for Failures
-```reqon
+```vague
 ServerError -> queue dead_letter_queue
 ```
 
 ### 4. Conditional Processing
-```reqon
+```vague
 match response {
   FraudWarning where .risk_level == "low" -> continue,
   FraudWarning where .risk_level == "medium" -> {

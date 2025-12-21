@@ -8,7 +8,7 @@ Dead letter queues (DLQ) store failed items for later processing. They prevent d
 
 ## Basic Usage
 
-```reqon
+```vague
 mission DataSync {
   store data: file("data")
   store dlq: file("dead-letter-queue")
@@ -38,7 +38,7 @@ mission DataSync {
 
 ## Queue Directive Syntax
 
-```reqon
+```vague
 queue storeName {
   item: objectToStore,
   key: optionalKey
@@ -47,7 +47,7 @@ queue storeName {
 
 ### With Key
 
-```reqon
+```vague
 queue dlq {
   item: { error: "failed" },
   key: concat("error-", item.id)
@@ -56,7 +56,7 @@ queue dlq {
 
 ### Without Key (Auto-Generated)
 
-```reqon
+```vague
 queue dlq {
   item: { error: "failed" }
 }
@@ -66,7 +66,7 @@ queue dlq {
 
 ### Minimum Information
 
-```reqon
+```vague
 queue dlq {
   item: {
     id: item.id,
@@ -78,7 +78,7 @@ queue dlq {
 
 ### Full Context
 
-```reqon
+```vague
 queue dlq {
   item: {
     // Identifiers
@@ -111,7 +111,7 @@ queue dlq {
 
 ### Simple Error Queue
 
-```reqon
+```vague
 mission Simple {
   store dlq: file("errors")
 
@@ -130,7 +130,7 @@ mission Simple {
 
 ### Categorized Queues
 
-```reqon
+```vague
 mission Categorized {
   store retryable: file("retryable-errors")
   store permanent: file("permanent-errors")
@@ -164,7 +164,7 @@ mission Categorized {
 
 ### DLQ with Retry Counter
 
-```reqon
+```vague
 for item in items {
   get concat("/api/", item.id)
 
@@ -199,7 +199,7 @@ for item in items {
 Export and review:
 
 ```bash
-reqon mission.reqon --output ./exports/
+reqon mission.vague --output ./exports/
 # Review exports/dead-letter-queue.json
 ```
 
@@ -207,7 +207,7 @@ reqon mission.reqon --output ./exports/
 
 Create a retry mission:
 
-```reqon
+```vague
 mission RetryFailed {
   store dlq: file("dead-letter-queue")
   store data: file("data")
@@ -250,7 +250,7 @@ mission RetryFailed {
 
 ### Scheduled Retry
 
-```reqon
+```vague
 mission ScheduledRetry {
   schedule: every 1 hour
 
@@ -269,7 +269,7 @@ mission ScheduledRetry {
 
 ## DLQ with Notifications
 
-```reqon
+```vague
 action NotifyOnFailure {
   for item in items {
     get concat("/api/", item.id)
@@ -304,7 +304,7 @@ action NotifyOnFailure {
 
 ### Include Enough Context
 
-```reqon
+```vague
 queue dlq {
   item: {
     // What failed
@@ -329,7 +329,7 @@ queue dlq {
 
 ### Separate Retryable vs Permanent
 
-```reqon
+```vague
 // Retryable: server errors, rate limits
 queue retryQueue { item: { ... } }
 
@@ -341,7 +341,7 @@ queue permanentQueue { item: { ... } }
 
 Periodically clean old entries:
 
-```reqon
+```vague
 action CleanOldEntries {
   for item in dlq where .timestamp < addDays(now(), -30) {
     // Archive or delete items older than 30 days
@@ -352,7 +352,7 @@ action CleanOldEntries {
 
 ### Monitor Queue Size
 
-```reqon
+```vague
 action MonitorDLQ {
   match dlq {
     _ where length(dlq) > 1000 -> {
@@ -380,7 +380,7 @@ action MonitorDLQ {
 
 Mark as permanent failure:
 
-```reqon
+```vague
 match item {
   _ where item.attemptCount > 10 -> {
     store item -> permanentFailures { key: item.id }
@@ -394,6 +394,6 @@ match item {
 
 Use idempotent operations:
 
-```reqon
+```vague
 store response -> data { key: item.id, upsert: true }
 ```

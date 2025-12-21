@@ -8,7 +8,7 @@ Match steps route data based on its structure. They're essential for error handl
 
 ## Basic Syntax
 
-```reqon
+```vague
 match target {
   Pattern1 -> action1,
   Pattern2 -> action2,
@@ -20,7 +20,7 @@ match target {
 
 Match against defined schemas:
 
-```reqon
+```vague
 schema SuccessResponse {
   data: any,
   status: string
@@ -46,7 +46,7 @@ action HandleResponse {
 
 Match based on object structure:
 
-```reqon
+```vague
 match response {
   { data: _, success: true } -> continue,
   { error: e, code: 401 } -> jump RefreshAuth then retry,
@@ -60,7 +60,7 @@ match response {
 
 Capture values from patterns:
 
-```reqon
+```vague
 match response {
   { error: errorMsg, code: errorCode } -> {
     store { message: errorMsg, code: errorCode } -> errors
@@ -74,7 +74,7 @@ match response {
 
 Add conditions with `where`:
 
-```reqon
+```vague
 match order {
   { status: "pending" } where .total > 1000 -> {
     // High-value pending order
@@ -103,7 +103,7 @@ Match arms can use these directives:
 
 Proceed to the next step:
 
-```reqon
+```vague
 match response {
   { data: _ } -> continue,
   _ -> abort "No data"
@@ -115,7 +115,7 @@ match response {
 
 Skip remaining steps in current loop iteration:
 
-```reqon
+```vague
 for item in items {
   match item {
     { status: "inactive" } -> skip,
@@ -130,7 +130,7 @@ for item in items {
 
 Stop mission execution:
 
-```reqon
+```vague
 match response {
   { error: msg } -> abort msg,
   { error: _ } -> abort "Unknown error",
@@ -142,7 +142,7 @@ match response {
 
 Retry the previous fetch:
 
-```reqon
+```vague
 match response {
   { error: _, code: 429 } -> retry {
     maxAttempts: 5,
@@ -159,7 +159,7 @@ match response {
 
 Send to dead letter queue:
 
-```reqon
+```vague
 match response {
   { error: e } -> queue dlq {
     item: {
@@ -176,7 +176,7 @@ match response {
 
 Execute another action:
 
-```reqon
+```vague
 match response {
   { error: _, code: 401 } -> jump RefreshToken then retry,
   _ -> continue
@@ -191,7 +191,7 @@ action RefreshToken {
 
 ## Matching Arrays
 
-```reqon
+```vague
 match response.items {
   [] -> abort "No items found",
   [single] -> store single -> item,
@@ -203,7 +203,7 @@ match response.items {
 
 Execute multiple steps in a match arm:
 
-```reqon
+```vague
 match response {
   { status: "error" } -> {
     // Multiple steps
@@ -222,7 +222,7 @@ match response {
 
 ## Type Matching
 
-```reqon
+```vague
 match value {
   v where v is string -> { /* handle string */ },
   v where v is number -> { /* handle number */ },
@@ -234,7 +234,7 @@ match value {
 
 ## HTTP Status Code Handling
 
-```reqon
+```vague
 schema Success { data: any }
 schema NotFound { error: string }
 schema RateLimit { error: string, retryAfter: number }
@@ -257,7 +257,7 @@ action FetchWithErrorHandling {
 
 Patterns are matched in order; first match wins:
 
-```reqon
+```vague
 match value {
   // More specific patterns first
   { status: "urgent", priority: 1 } -> handleUrgent,
@@ -272,7 +272,7 @@ match value {
 
 Always include a catch-all pattern:
 
-```reqon
+```vague
 // Good: handles all cases
 match response {
   { data: _ } -> continue,
@@ -290,7 +290,7 @@ match response {
 
 ## Complete Example
 
-```reqon
+```vague
 mission RobustDataSync {
   source API { auth: oauth2, base: "https://api.example.com" }
 

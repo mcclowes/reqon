@@ -10,7 +10,7 @@ API key authentication sends a key in either a header or query parameter. Many S
 
 ### Mission File
 
-```reqon
+```vague
 source API {
   auth: api_key,
   base: "https://api.example.com"
@@ -199,7 +199,7 @@ GET /api/data?api_key=your-api-key HTTP/1.1
 
 ### In Mission
 
-```reqon
+```vague
 source API {
   auth: api_key,
   base: "https://api.example.com",
@@ -212,7 +212,7 @@ source API {
 
 For APIs requiring multiple keys:
 
-```reqon
+```vague
 source API {
   auth: api_key,
   base: "https://api.example.com",
@@ -267,7 +267,7 @@ Some APIs support multiple active keys:
 
 ## Error Handling
 
-```reqon
+```vague
 action FetchData {
   get "/data"
 
@@ -335,5 +335,5 @@ Check the exact header name the API expects:
 Debug by checking what's being sent:
 
 ```bash
-reqon mission.reqon --verbose
+reqon mission.vague --verbose
 ```

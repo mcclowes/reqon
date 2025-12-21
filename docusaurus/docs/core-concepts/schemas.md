@@ -8,7 +8,7 @@ sidebar_position: 5
 
 ## Basic Syntax
 
-```reqon
+```vague
 schema SchemaName {
   field: type,
   optionalField: type?,
@@ -35,7 +35,7 @@ schema SchemaName {
 
 Use `?` suffix for optional fields:
 
-```reqon
+```vague
 schema User {
   id: string,
   name: string,
@@ -48,7 +48,7 @@ schema User {
 
 Specify array element types:
 
-```reqon
+```vague
 schema UserList {
   users: array<User>,
   total: number
@@ -68,7 +68,7 @@ schema Order {
 
 Define complex nested structures:
 
-```reqon
+```vague
 schema Invoice {
   id: string,
   customer: {
@@ -92,7 +92,7 @@ schema Invoice {
 
 Reference other schemas:
 
-```reqon
+```vague
 schema Address {
   street: string,
   city: string,
@@ -112,7 +112,7 @@ schema Customer {
 
 Validate data against schemas:
 
-```reqon
+```vague
 action ValidateResponse {
   get "/users"
 
@@ -131,7 +131,7 @@ action ValidateResponse {
 
 Route data based on schema matches:
 
-```reqon
+```vague
 schema SuccessResponse {
   data: any,
   status: string
@@ -166,7 +166,7 @@ Schemas match when:
 2. Field types match
 3. Optional fields, if present, match their types
 
-```reqon
+```vague
 schema StrictUser {
   id: string,     // Required
   name: string,   // Required
@@ -183,7 +183,7 @@ schema StrictUser {
 
 Use `is` for inline type checking:
 
-```reqon
+```vague
 validate response {
   assume .items is array,
   assume .count is number,
@@ -195,7 +195,7 @@ validate response {
 
 Use schemas in complex match patterns:
 
-```reqon
+```vague
 schema PaginatedResponse {
   data: array,
   meta: {
@@ -228,7 +228,7 @@ action FetchPaginated {
 
 Extend schemas using Vague's composition:
 
-```reqon
+```vague
 schema BaseEntity {
   id: string,
   createdAt: date,
@@ -254,7 +254,7 @@ For advanced schema features, see the [Vague documentation](https://github.com/m
 
 ### Define Schemas for API Responses
 
-```reqon
+```vague
 mission APISync {
   schema UserResponse {
     users: array<User>,
@@ -274,7 +274,7 @@ mission APISync {
 
 ### Use Schemas for Error Handling
 
-```reqon
+```vague
 schema APIError {
   error: {
     message: string,
@@ -305,7 +305,7 @@ action Fetch {
 
 Schemas serve as documentation:
 
-```reqon
+```vague
 // XeroInvoice represents an invoice from Xero API
 schema XeroInvoice {
   InvoiceID: string,
@@ -330,7 +330,7 @@ schema XeroInvoice {
 
 Define schemas in the same mission where they're used:
 
-```reqon
+```vague
 mission XeroSync {
   // Schema definitions at the top
   schema XeroInvoice { /* ... */ }
@@ -344,10 +344,10 @@ Or use multi-file missions to organize:
 
 ```
 missions/xero-sync/
-├── mission.reqon
+├── mission.vague
 ├── schemas/
-│   ├── invoice.reqon
-│   └── contact.reqon
+│   ├── invoice.vague
+│   └── contact.vague
 └── actions/
-    └── fetch.reqon
+    └── fetch.vague
 ```

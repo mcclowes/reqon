@@ -15,7 +15,7 @@ reqon <file-or-folder> [options]
 Run a single mission file:
 
 ```bash
-reqon sync-customers.reqon
+reqon sync-customers.vague
 ```
 
 Run a mission folder (multi-file mission):
@@ -42,7 +42,7 @@ reqon ./missions/customer-sync/
 Validate your mission syntax without making actual API calls:
 
 ```bash
-reqon sync-data.reqon --dry-run
+reqon sync-data.vague --dry-run
 ```
 
 ### Verbose Output
@@ -50,7 +50,7 @@ reqon sync-data.reqon --dry-run
 Get detailed execution logs:
 
 ```bash
-reqon sync-data.reqon --verbose
+reqon sync-data.vague --verbose
 ```
 
 Output includes:
@@ -64,7 +64,7 @@ Output includes:
 Provide credentials via a JSON file:
 
 ```bash
-reqon sync-data.reqon --auth ./credentials.json
+reqon sync-data.vague --auth ./credentials.json
 ```
 
 The credentials file should match your source names:
@@ -91,7 +91,7 @@ The credentials file should match your source names:
 Save store contents to JSON after execution:
 
 ```bash
-reqon sync-data.reqon --output ./output/
+reqon sync-data.vague --output ./output/
 ```
 
 This creates JSON files for each store:
@@ -139,7 +139,7 @@ Useful for cron-triggered executions where you want external scheduling.
 
 | Variable | Description |
 |----------|-------------|
-| `REQON_STATE_DIR` | Directory for execution state (default: `.reqon-data`) |
+| `REQON_STATE_DIR` | Directory for execution state (default: `.vague-data`) |
 | `REQON_LOG_LEVEL` | Logging level: `debug`, `info`, `warn`, `error` |
 | `REQON_DRY_RUN` | Enable dry-run mode (same as `--dry-run`) |
 
@@ -150,13 +150,13 @@ For complex missions, organize them as folders:
 ```
 missions/
 └── customer-sync/
-    ├── mission.reqon     # Main mission definition
+    ├── mission.vague     # Main mission definition
     ├── actions/
-    │   ├── fetch.reqon   # Fetch action
-    │   ├── transform.reqon
-    │   └── export.reqon
+    │   ├── fetch.vague   # Fetch action
+    │   ├── transform.vague
+    │   └── export.vague
     └── schemas/
-        └── customer.reqon
+        └── customer.vague
 ```
 
 Run with:
@@ -165,7 +165,7 @@ Run with:
 reqon ./missions/customer-sync/
 ```
 
-Reqon automatically discovers and loads all `.reqon` files in the folder.
+Reqon automatically discovers and loads all `.vague` files in the folder.
 
 ## Integrating with CI/CD
 
@@ -186,7 +186,7 @@ jobs:
         with:
           node-version: '20'
       - run: npm install
-      - run: npx reqon ./missions/sync.reqon --auth ./credentials.json
+      - run: npx reqon ./missions/sync.vague --auth ./credentials.json
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
 ```
@@ -214,10 +214,10 @@ npm install reqon
 
 ### "Permission denied"
 
-The state directory (`.reqon-data`) needs write access:
+The state directory (`.vague-data`) needs write access:
 
 ```bash
-chmod 755 .reqon-data
+chmod 755 .vague-data
 ```
 
 ### Debugging HTTP Issues
@@ -225,5 +225,5 @@ chmod 755 .reqon-data
 Use verbose mode to see request/response details:
 
 ```bash
-reqon mission.reqon --verbose 2>&1 | tee debug.log
+reqon mission.vague --verbose 2>&1 | tee debug.log
 ```

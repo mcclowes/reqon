@@ -8,7 +8,7 @@ For loops iterate over collections, allowing you to process each item individual
 
 ## Basic Syntax
 
-```reqon
+```vague
 for item in collection {
   // steps to execute for each item
 }
@@ -16,7 +16,7 @@ for item in collection {
 
 ## Iterating Over Response Data
 
-```reqon
+```vague
 action ProcessUsers {
   get "/users"
 
@@ -28,7 +28,7 @@ action ProcessUsers {
 
 ## Iterating Over Store Data
 
-```reqon
+```vague
 action ProcessStoredData {
   for customer in customers {
     get concat("/customers/", customer.id, "/orders")
@@ -41,7 +41,7 @@ action ProcessStoredData {
 
 Add conditions to filter items:
 
-```reqon
+```vague
 action ProcessActiveUsers {
   get "/users"
 
@@ -54,7 +54,7 @@ action ProcessActiveUsers {
 
 ### Multiple Conditions
 
-```reqon
+```vague
 action ProcessPremiumActiveUsers {
   for user in users where .status == "active" and .tier == "premium" {
     // Process premium active users
@@ -64,7 +64,7 @@ action ProcessPremiumActiveUsers {
 
 ### Comparison Operators
 
-```reqon
+```vague
 // Equality
 for item in items where .status == "pending" { }
 
@@ -86,7 +86,7 @@ for item in items where .tags is array { }
 
 ### Complex Conditions
 
-```reqon
+```vague
 for order in orders where (.status == "pending" or .status == "processing") and .total > 100 {
   // Process high-value pending/processing orders
 }
@@ -94,7 +94,7 @@ for order in orders where (.status == "pending" or .status == "processing") and 
 
 ## Nested Loops
 
-```reqon
+```vague
 action ProcessOrderItems {
   for order in orders {
     for item in order.lineItems {
@@ -114,7 +114,7 @@ action ProcessOrderItems {
 
 Loop variables are scoped to their block:
 
-```reqon
+```vague
 action ScopedVariables {
   get "/users"
 
@@ -140,7 +140,7 @@ action ScopedVariables {
 
 Use dot notation to access properties:
 
-```reqon
+```vague
 for user in users {
   // Direct access
   store user -> allUsers { key: .id }
@@ -162,7 +162,7 @@ for user in users {
 
 Combine pagination with iteration:
 
-```reqon
+```vague
 action FetchAllOrders {
   get "/orders" {
     paginate: offset(page, 100),
@@ -178,7 +178,7 @@ action FetchAllOrders {
 
 For processing each page separately:
 
-```reqon
+```vague
 action ProcessPagesSequentially {
   get "/orders" {
     paginate: offset(page, 100),
@@ -203,7 +203,7 @@ action ProcessPagesSequentially {
 
 Use `skip` in match to skip to the next iteration:
 
-```reqon
+```vague
 for user in users {
   match user {
     { status: "inactive" } -> skip,
@@ -220,7 +220,7 @@ for user in users {
 
 Handle errors per-item:
 
-```reqon
+```vague
 for user in users {
   get concat("/users/", user.id, "/details")
 
@@ -243,7 +243,7 @@ for user in users {
 
 Instead of individual requests:
 
-```reqon
+```vague
 // Less efficient: one request per user
 for user in users {
   get concat("/users/", user.id)
@@ -252,7 +252,7 @@ for user in users {
 
 Consider batching if the API supports it:
 
-```reqon
+```vague
 // More efficient: batch request
 post "/users/batch" {
   body: { ids: users.map(.id) }
@@ -263,13 +263,13 @@ post "/users/batch" {
 
 For independent operations, consider parallel actions:
 
-```reqon
+```vague
 run [FetchOrders, FetchProducts, FetchCustomers] then MergeData
 ```
 
 ## Complete Example
 
-```reqon
+```vague
 mission OrderProcessing {
   source API { auth: bearer, base: "https://api.example.com" }
 

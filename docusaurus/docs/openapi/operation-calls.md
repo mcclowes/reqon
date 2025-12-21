@@ -8,7 +8,7 @@ Call OpenAPI operations using the `call` syntax with operation IDs.
 
 ## Basic Syntax
 
-```reqon
+```vague
 call SourceName.operationId
 call SourceName.operationId { options }
 ```
@@ -17,7 +17,7 @@ call SourceName.operationId { options }
 
 ### GET Operations
 
-```reqon
+```vague
 // OpenAPI: GET /pets with operationId: listPets
 call Petstore.listPets
 
@@ -27,7 +27,7 @@ call Petstore.getPetById { params: { petId: "123" } }
 
 ### POST Operations
 
-```reqon
+```vague
 // OpenAPI: POST /pets with operationId: addPet
 call Petstore.addPet {
   body: {
@@ -39,7 +39,7 @@ call Petstore.addPet {
 
 ### PUT/PATCH Operations
 
-```reqon
+```vague
 // PUT - full replacement
 call API.updateItem {
   params: { id: "123" },
@@ -55,7 +55,7 @@ call API.patchItem {
 
 ### DELETE Operations
 
-```reqon
+```vague
 call API.deleteItem {
   params: { id: "123" }
 }
@@ -67,7 +67,7 @@ call API.deleteItem {
 
 For `/pets/{petId}`:
 
-```reqon
+```vague
 call Petstore.getPetById {
   params: { petId: "123" }
 }
@@ -78,7 +78,7 @@ call Petstore.getPetById {
 
 For `/pets?limit=10&status=available`:
 
-```reqon
+```vague
 call Petstore.listPets {
   params: {
     limit: 10,
@@ -89,7 +89,7 @@ call Petstore.listPets {
 
 ### Combined Parameters
 
-```reqon
+```vague
 call API.listUserOrders {
   params: {
     userId: "123",      // Path: /users/{userId}/orders
@@ -104,7 +104,7 @@ call API.listUserOrders {
 
 ### Simple Body
 
-```reqon
+```vague
 call API.createItem {
   body: {
     name: "Test Item",
@@ -115,7 +115,7 @@ call API.createItem {
 
 ### Dynamic Body
 
-```reqon
+```vague
 for item in items {
   call API.createItem {
     body: {
@@ -132,7 +132,7 @@ for item in items {
 
 ### From Variable
 
-```reqon
+```vague
 map data -> Payload {
   name: .name,
   status: "active"
@@ -145,7 +145,7 @@ call API.createItem { body: data }
 
 ### Custom Headers
 
-```reqon
+```vague
 call API.listItems {
   headers: {
     "X-Request-ID": uuid(),
@@ -156,7 +156,7 @@ call API.listItems {
 
 ### Tenant Headers
 
-```reqon
+```vague
 call Xero.listInvoices {
   headers: {
     "Xero-Tenant-Id": env("XERO_TENANT_ID")
@@ -166,7 +166,7 @@ call Xero.listInvoices {
 
 ## Pagination with Operations
 
-```reqon
+```vague
 call API.listItems {
   params: { limit: 100 },
   paginate: offset(offset, 100),
@@ -176,7 +176,7 @@ call API.listItems {
 
 ### Cursor Pagination
 
-```reqon
+```vague
 call API.listItems {
   paginate: cursor(cursor, 100, "meta.nextCursor"),
   until: response.meta.nextCursor == null
@@ -185,7 +185,7 @@ call API.listItems {
 
 ## Combining Options
 
-```reqon
+```vague
 call API.searchItems {
   params: {
     query: "test",
@@ -205,7 +205,7 @@ call API.searchItems {
 
 ## Response Handling
 
-```reqon
+```vague
 action FetchWithHandling {
   call API.getItem { params: { id: itemId } }
 
@@ -219,7 +219,7 @@ action FetchWithHandling {
 
 ## Operation Chaining
 
-```reqon
+```vague
 action CreateAndFetch {
   // Create
   call API.createItem {
@@ -237,7 +237,7 @@ action CreateAndFetch {
 
 ## Error Handling
 
-```reqon
+```vague
 call API.riskyOperation { params: { id: "123" } }
 
 match response {
@@ -254,7 +254,7 @@ match response {
 
 ### Based on Condition
 
-```reqon
+```vague
 action SmartSync {
   call API.checkItem { params: { id: item.id } }
 
@@ -279,7 +279,7 @@ action SmartSync {
 operationId: listUsers  # camelCase recommended
 ```
 
-```reqon
+```vague
 call API.listUsers  # Match exactly
 ```
 
@@ -298,7 +298,7 @@ operationId: get2
 
 ### Handle All Response Codes
 
-```reqon
+```vague
 call API.operation
 
 match response {

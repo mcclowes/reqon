@@ -8,7 +8,7 @@ Reqon supports full cron expression syntax for precise scheduling.
 
 ## Syntax
 
-```reqon
+```vague
 schedule: cron "minute hour day month weekday"
 ```
 
@@ -35,20 +35,20 @@ schedule: cron "minute hour day month weekday"
 
 ### Every Minute
 
-```reqon
+```vague
 schedule: cron "* * * * *"
 ```
 
 ### Every Hour
 
-```reqon
+```vague
 // At minute 0
 schedule: cron "0 * * * *"
 ```
 
 ### Every N Minutes
 
-```reqon
+```vague
 // Every 5 minutes
 schedule: cron "*/5 * * * *"
 
@@ -61,7 +61,7 @@ schedule: cron "*/30 * * * *"
 
 ### Every N Hours
 
-```reqon
+```vague
 // Every 2 hours
 schedule: cron "0 */2 * * *"
 
@@ -74,7 +74,7 @@ schedule: cron "0 */12 * * *"
 
 ### Daily
 
-```reqon
+```vague
 // At midnight
 schedule: cron "0 0 * * *"
 
@@ -90,7 +90,7 @@ schedule: cron "0 23 * * *"
 
 ### Multiple Times Per Day
 
-```reqon
+```vague
 // At 9am and 5pm
 schedule: cron "0 9,17 * * *"
 
@@ -100,7 +100,7 @@ schedule: cron "0 0,8,16 * * *"
 
 ### Weekly
 
-```reqon
+```vague
 // Every Sunday at midnight
 schedule: cron "0 0 * * 0"
 
@@ -113,7 +113,7 @@ schedule: cron "0 17 * * 5"
 
 ### Weekdays Only
 
-```reqon
+```vague
 // Weekdays at 9am
 schedule: cron "0 9 * * 1-5"
 
@@ -123,14 +123,14 @@ schedule: cron "0 9-17 * * 1-5"
 
 ### Weekends Only
 
-```reqon
+```vague
 // Weekends at noon
 schedule: cron "0 12 * * 0,6"
 ```
 
 ### Monthly
 
-```reqon
+```vague
 // First of month at midnight
 schedule: cron "0 0 1 * *"
 
@@ -146,14 +146,14 @@ schedule: cron "0 0 28 * *"
 
 ### Quarterly
 
-```reqon
+```vague
 // First day of quarter at 6am
 schedule: cron "0 6 1 1,4,7,10 *"
 ```
 
 ### Yearly
 
-```reqon
+```vague
 // January 1st at midnight
 schedule: cron "0 0 1 1 *"
 
@@ -165,28 +165,28 @@ schedule: cron "0 9 1-7 1 1"
 
 ### Business Hours Only
 
-```reqon
+```vague
 // Every 30 minutes, 9am-5pm, weekdays
 schedule: cron "*/30 9-17 * * 1-5"
 ```
 
 ### Night Batch Jobs
 
-```reqon
+```vague
 // At 2am every day
 schedule: cron "0 2 * * *"
 ```
 
 ### Multiple Specific Times
 
-```reqon
+```vague
 // 8am, 12pm, 6pm every day
 schedule: cron "0 8,12,18 * * *"
 ```
 
 ### End of Month (Approximation)
 
-```reqon
+```vague
 // 28th of every month
 schedule: cron "0 0 28 * *"
 ```
@@ -197,7 +197,7 @@ Cron expressions use the system timezone by default.
 
 ### Specify Timezone
 
-```reqon
+```vague
 mission TimezoneSync {
   schedule: cron "0 9 * * *"
   timezone: "America/New_York"
@@ -206,7 +206,7 @@ mission TimezoneSync {
 
 ### UTC
 
-```reqon
+```vague
 mission UTCSync {
   schedule: cron "0 9 * * *"
   timezone: "UTC"
@@ -218,7 +218,7 @@ mission UTCSync {
 ### Dry Run
 
 ```bash
-reqon ./mission.reqon --dry-run
+reqon ./mission.vague --dry-run
 # Shows: Next run at: 2024-01-20 09:00:00
 ```
 
@@ -241,7 +241,7 @@ reqon --validate-cron "0 9 * * *"
 
 Many systems run jobs at midnight, causing load spikes:
 
-```reqon
+```vague
 // Instead of 0 0 * * *
 schedule: cron "0 3 * * *"  // 3am
 ```
@@ -250,7 +250,7 @@ schedule: cron "0 3 * * *"  // 3am
 
 Stagger related jobs:
 
-```reqon
+```vague
 mission SyncCustomers {
   schedule: cron "0 * * * *"  // On the hour
 }
@@ -268,7 +268,7 @@ mission SyncProducts {
 
 Account for job duration:
 
-```reqon
+```vague
 // If job takes 10 minutes, don't schedule every 5
 schedule: cron "*/15 * * * *"  // Every 15 minutes
 
@@ -291,7 +291,7 @@ TZ=UTC date  # UTC time
 
 If daemon was down, jobs don't backfill. Consider:
 
-```reqon
+```vague
 retryOnFailure: { maxAttempts: 3 }
 ```
 

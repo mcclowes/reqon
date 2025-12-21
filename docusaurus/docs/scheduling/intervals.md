@@ -8,7 +8,7 @@ Interval scheduling runs missions at fixed time intervals.
 
 ## Syntax
 
-```reqon
+```vague
 schedule: every N units
 ```
 
@@ -26,14 +26,14 @@ schedule: every N units
 
 ### Seconds
 
-```reqon
+```vague
 // Every 30 seconds (for real-time sync)
 schedule: every 30 seconds
 ```
 
 ### Minutes
 
-```reqon
+```vague
 // Every 5 minutes
 schedule: every 5 minutes
 
@@ -46,7 +46,7 @@ schedule: every 30 minutes
 
 ### Hours
 
-```reqon
+```vague
 // Hourly
 schedule: every 1 hour
 
@@ -62,7 +62,7 @@ schedule: every 12 hours
 
 ### Days
 
-```reqon
+```vague
 // Daily
 schedule: every 1 day
 
@@ -72,7 +72,7 @@ schedule: every 2 days
 
 ### Weeks
 
-```reqon
+```vague
 // Weekly
 schedule: every 1 week
 
@@ -88,7 +88,7 @@ schedule: every 2 weeks
 - Simpler to configure
 - Less precise timing
 
-```reqon
+```vague
 schedule: every 6 hours
 // Runs at: start, start+6h, start+12h, ...
 ```
@@ -99,7 +99,7 @@ schedule: every 6 hours
 - More control
 - Predictable times
 
-```reqon
+```vague
 schedule: cron "0 */6 * * *"
 // Runs at: 0:00, 6:00, 12:00, 18:00
 ```
@@ -112,7 +112,7 @@ Intervals start from:
 
 ### First Run Behavior
 
-```reqon
+```vague
 mission ImmediateStart {
   schedule: every 1 hour
   runImmediately: true  // Run once at start
@@ -128,7 +128,7 @@ mission DelayedStart {
 
 ### With Retry
 
-```reqon
+```vague
 mission RobustSync {
   schedule: every 15 minutes
 
@@ -141,7 +141,7 @@ mission RobustSync {
 
 ### With Concurrency Control
 
-```reqon
+```vague
 mission ControlledSync {
   schedule: every 5 minutes
   skipIfRunning: true  // Don't overlap
@@ -150,7 +150,7 @@ mission ControlledSync {
 
 ### With Timeout
 
-```reqon
+```vague
 mission TimedSync {
   schedule: every 1 hour
   timeout: 1800000  // 30 minute timeout
@@ -161,7 +161,7 @@ mission TimedSync {
 
 ### Real-Time Sync
 
-```reqon
+```vague
 mission RealtimeSync {
   schedule: every 30 seconds
 
@@ -174,7 +174,7 @@ mission RealtimeSync {
 
 ### Hourly Updates
 
-```reqon
+```vague
 mission HourlySync {
   schedule: every 1 hour
 
@@ -187,7 +187,7 @@ mission HourlySync {
 
 ### Daily Reports
 
-```reqon
+```vague
 mission DailyReport {
   schedule: every 1 day
 
@@ -200,7 +200,7 @@ mission DailyReport {
 
 ### Weekly Cleanup
 
-```reqon
+```vague
 mission WeeklyCleanup {
   schedule: every 1 week
 
@@ -226,7 +226,7 @@ mission WeeklyCleanup {
 
 ### Account for Execution Time
 
-```reqon
+```vague
 // If sync takes 10 minutes
 schedule: every 15 minutes  // Good: 5 minute buffer
 
@@ -236,7 +236,7 @@ schedule: every 5 minutes   // Risk: overlapping runs
 
 ### Use skipIfRunning
 
-```reqon
+```vague
 mission SafeSync {
   schedule: every 5 minutes
   skipIfRunning: true
@@ -249,7 +249,7 @@ mission SafeSync {
 
 ### Add Jitter for Distributed Systems
 
-```reqon
+```vague
 mission JitteredSync {
   schedule: every 1 hour
   jitter: 300000  // +/- 5 minutes random delay
@@ -262,7 +262,7 @@ mission JitteredSync {
 
 Check interval unit:
 
-```reqon
+```vague
 // This runs every 30 SECONDS
 schedule: every 30 seconds
 
@@ -274,7 +274,7 @@ schedule: every 30 minutes
 
 Add skipIfRunning:
 
-```reqon
+```vague
 schedule: every 5 minutes
 skipIfRunning: true
 ```

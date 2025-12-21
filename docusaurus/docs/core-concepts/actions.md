@@ -8,7 +8,7 @@ An **Action** is a named sequence of steps that process data. Actions are the bu
 
 ## Basic Structure
 
-```reqon
+```vague
 action ActionName {
   // Step 1
   get "/endpoint"
@@ -41,7 +41,7 @@ Actions can contain the following step types:
 
 Fetch data from APIs:
 
-```reqon
+```vague
 action FetchData {
   // Simple GET
   get "/users"
@@ -69,7 +69,7 @@ action FetchData {
 
 Process collections:
 
-```reqon
+```vague
 action ProcessUsers {
   get "/users"
 
@@ -89,7 +89,7 @@ action ProcessUsers {
 
 Transform data shapes:
 
-```reqon
+```vague
 action TransformData {
   get "/users"
 
@@ -112,7 +112,7 @@ See the [Vague documentation](https://github.com/mcclowes/vague) for expression 
 
 Check data constraints:
 
-```reqon
+```vague
 action ValidateData {
   get "/users"
 
@@ -133,7 +133,7 @@ action ValidateData {
 
 Persist data:
 
-```reqon
+```vague
 action SaveData {
   get "/users"
 
@@ -155,7 +155,7 @@ action SaveData {
 
 Route data based on shape:
 
-```reqon
+```vague
 action HandleResponse {
   get "/users"
 
@@ -173,7 +173,7 @@ action HandleResponse {
 
 Actions can reference other actions via `jump`:
 
-```reqon
+```vague
 action Main {
   get "/data"
 
@@ -193,7 +193,7 @@ action RefreshAuth {
 
 Actions are composed in the `run` statement:
 
-```reqon
+```vague
 mission DataPipeline {
   action Fetch { /* ... */ }
   action Transform { /* ... */ }
@@ -211,7 +211,7 @@ mission DataPipeline {
 
 Variables are scoped to their action and nested contexts:
 
-```reqon
+```vague
 action ProcessData {
   get "/users"  // response is set
 
@@ -236,7 +236,7 @@ action ProcessData {
 
 Each action should do one thing well:
 
-```reqon
+```vague
 // Good: focused actions
 action FetchUsers {
   get "/users"
@@ -261,7 +261,7 @@ action DoEverything {
 
 ### Handle Errors at Action Boundaries
 
-```reqon
+```vague
 action FetchWithErrorHandling {
   get "/users"
 
@@ -274,7 +274,7 @@ action FetchWithErrorHandling {
 
 ### Use Descriptive Names
 
-```reqon
+```vague
 // Good
 action FetchActiveCustomersWithOrders { }
 action TransformToQuickBooksFormat { }

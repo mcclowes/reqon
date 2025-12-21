@@ -17,7 +17,7 @@ Store adapters provide pluggable backends for data persistence. Reqon includes s
 
 ## Quick Start
 
-```reqon
+```vague
 mission DataSync {
   // Define stores
   store cache: memory("cache")
@@ -57,13 +57,13 @@ interface StoreAdapter {
 
 ### Basic Store
 
-```reqon
+```vague
 store response -> myStore
 ```
 
 ### With Key
 
-```reqon
+```vague
 store response -> myStore { key: .id }
 ```
 
@@ -71,7 +71,7 @@ store response -> myStore { key: .id }
 
 Insert or update based on key:
 
-```reqon
+```vague
 store response -> myStore { key: .id, upsert: true }
 ```
 
@@ -79,7 +79,7 @@ store response -> myStore { key: .id, upsert: true }
 
 Update only specified fields:
 
-```reqon
+```vague
 store response -> myStore { key: .id, partial: true }
 ```
 
@@ -87,7 +87,7 @@ store response -> myStore { key: .id, partial: true }
 
 ### In For Loops
 
-```reqon
+```vague
 for item in myStore {
   // Process each item
 }
@@ -95,7 +95,7 @@ for item in myStore {
 
 ### With Filtering
 
-```reqon
+```vague
 for item in myStore where .status == "active" {
   // Process active items
 }
@@ -103,7 +103,7 @@ for item in myStore where .status == "active" {
 
 ### Multiple Conditions
 
-```reqon
+```vague
 for item in myStore where .status == "pending" and .priority > 5 {
   // Process high-priority pending items
 }
@@ -113,7 +113,7 @@ for item in myStore where .status == "pending" and .priority > 5 {
 
 ### Check Existence
 
-```reqon
+```vague
 match myStore {
   [] -> abort "Store is empty",
   _ -> continue
@@ -122,7 +122,7 @@ match myStore {
 
 ### Count Items
 
-```reqon
+```vague
 validate {
   assume length(myStore) > 0
 }
@@ -130,7 +130,7 @@ validate {
 
 ### Cross-Store Operations
 
-```reqon
+```vague
 for order in orders {
   for customer in customers where .id == order.customerId {
     // Join data from multiple stores
@@ -142,28 +142,28 @@ for order in orders {
 
 ### Development
 
-```reqon
+```vague
 // Use file for local development
 store data: file("my-data")
 ```
 
 ### Testing
 
-```reqon
+```vague
 // Use memory for tests
 store testData: memory("test")
 ```
 
 ### Production
 
-```reqon
+```vague
 // Use SQL/NoSQL for production
 store data: sql("items")
 ```
 
 ## Environment-Based Selection
 
-```reqon
+```vague
 mission AdaptiveSync {
   // Choose adapter based on environment
   store data: match env("NODE_ENV") {
@@ -179,7 +179,7 @@ mission AdaptiveSync {
 ### Via CLI
 
 ```bash
-reqon mission.reqon --store-config ./stores.json
+reqon mission.vague --store-config ./stores.json
 ```
 
 ### Configuration File
@@ -204,7 +204,7 @@ reqon mission.reqon --store-config ./stores.json
 ### Via CLI
 
 ```bash
-reqon mission.reqon --output ./exports/
+reqon mission.vague --output ./exports/
 ```
 
 Creates JSON files:
@@ -232,7 +232,7 @@ for (const [name, store] of result.stores) {
 
 ### Use Descriptive Names
 
-```reqon
+```vague
 // Good
 store activeCustomers: file("active-customers")
 store pendingInvoices: file("pending-invoices")
@@ -244,7 +244,7 @@ store temp: file("temp")
 
 ### Always Specify Keys
 
-```reqon
+```vague
 // Good: explicit key
 store response -> items { key: .id }
 
@@ -254,7 +254,7 @@ store response -> items
 
 ### Use Upsert for Syncs
 
-```reqon
+```vague
 // For incremental syncs
 store response -> items { key: .id, upsert: true }
 ```

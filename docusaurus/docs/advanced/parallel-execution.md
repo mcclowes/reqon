@@ -8,7 +8,7 @@ Reqon supports parallel execution of independent actions for improved performanc
 
 ## Basic Parallel Execution
 
-```reqon
+```vague
 run [ActionA, ActionB, ActionC] then MergeResults
 ```
 
@@ -23,7 +23,7 @@ Execution:
 
 ### Parallel Group
 
-```reqon
+```vague
 run [Action1, Action2, Action3]
 ```
 
@@ -31,7 +31,7 @@ All actions run simultaneously.
 
 ### Parallel Then Sequential
 
-```reqon
+```vague
 run [Fetch1, Fetch2] then Process then [Export1, Export2]
 ```
 
@@ -45,7 +45,7 @@ run [Fetch1, Fetch2] then Process then [Export1, Export2]
 
 ### Fetching from Multiple Sources
 
-```reqon
+```vague
 mission MultiSourceSync {
   source Xero { auth: oauth2, base: "https://api.xero.com" }
   source QuickBooks { auth: oauth2, base: "https://quickbooks.api.com" }
@@ -80,7 +80,7 @@ mission MultiSourceSync {
 
 ### Independent Processing
 
-```reqon
+```vague
 mission DataProcessing {
   action ProcessCustomers {
     for customer in rawCustomers {
@@ -110,7 +110,7 @@ mission DataProcessing {
 
 ### Fan-Out Fan-In
 
-```reqon
+```vague
 mission FanOutFanIn {
   action FetchMaster {
     get "/items"
@@ -150,7 +150,7 @@ mission FanOutFanIn {
 
 ### Limit Parallel Actions
 
-```reqon
+```vague
 mission ControlledParallel {
   maxConcurrency: 3
 
@@ -161,7 +161,7 @@ mission ControlledParallel {
 
 ### Per-Action Limits
 
-```reqon
+```vague
 action FetchWithLimit {
   concurrency: 5  // Max 5 concurrent requests within this action
 
@@ -177,14 +177,14 @@ action FetchWithLimit {
 
 All parallel actions run even if one fails:
 
-```reqon
+```vague
 run [ActionA, ActionB, ActionC]
 // If ActionB fails, ActionA and ActionC still complete
 ```
 
 ### Fail-Fast Mode
 
-```reqon
+```vague
 mission FailFast {
   parallelMode: "fail-fast"
 
@@ -195,7 +195,7 @@ mission FailFast {
 
 ### Handling Partial Results
 
-```reqon
+```vague
 action Merge {
   // Check which sources succeeded
   match {
@@ -216,7 +216,7 @@ action Merge {
 
 Parallel actions have isolated variable contexts:
 
-```reqon
+```vague
 action ParallelA {
   // Sets its own 'response'
   get "/a"
@@ -232,7 +232,7 @@ action ParallelB {
 
 All actions can write to shared stores:
 
-```reqon
+```vague
 action ParallelA {
   get "/a"
   store response -> shared { key: concat("a-", .id) }
@@ -259,7 +259,7 @@ action ParallelB {
 
 Parallel execution uses more memory:
 
-```reqon
+```vague
 // Memory-efficient: process and discard
 run Fetch then Process then Export
 
@@ -271,7 +271,7 @@ run [FetchA, FetchB, FetchC] then Combine
 
 Too much parallelism can saturate network:
 
-```reqon
+```vague
 // May overwhelm API
 run [A, B, C, D, E, F, G, H, I, J]
 
@@ -284,7 +284,7 @@ run [A, B, C, D, E, F, G, H, I, J]
 
 ### Group Related Operations
 
-```reqon
+```vague
 // Good: related fetches together
 run [FetchOrders, FetchOrderItems, FetchOrderPayments] then ProcessOrders
 
@@ -294,7 +294,7 @@ run [FetchOrders, SendEmails, CleanupLogs]
 
 ### Balance Parallelism
 
-```reqon
+```vague
 // Good: measured parallelism
 maxConcurrency: 5
 run [A, B, C, D, E, F, G, H] then Merge
@@ -305,7 +305,7 @@ run [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P]
 
 ### Handle Failures Gracefully
 
-```reqon
+```vague
 action Merge {
   match {
     length(errors) > 0 -> {
@@ -323,7 +323,7 @@ action Merge {
 
 Check syntax uses brackets:
 
-```reqon
+```vague
 // This is parallel
 run [A, B, C]
 
@@ -335,7 +335,7 @@ run A then B then C
 
 Use unique keys when writing to shared stores:
 
-```reqon
+```vague
 // Good: unique keys
 store response -> shared { key: concat(source, "-", .id) }
 
@@ -347,7 +347,7 @@ store response -> shared { key: .id }
 
 Reduce parallelism or process in batches:
 
-```reqon
+```vague
 maxConcurrency: 2
 run [A, B, C, D, E, F]
 ```

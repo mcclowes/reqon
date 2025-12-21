@@ -8,7 +8,7 @@ Validate steps check data constraints before processing or storing. They help en
 
 ## Basic Syntax
 
-```reqon
+```vague
 validate target {
   assume constraint1,
   assume constraint2
@@ -17,7 +17,7 @@ validate target {
 
 ## Simple Validation
 
-```reqon
+```vague
 action ValidateUsers {
   get "/users"
 
@@ -37,7 +37,7 @@ action ValidateUsers {
 
 ### Type Checking
 
-```reqon
+```vague
 validate data {
   assume .id is string,
   assume .count is number,
@@ -50,7 +50,7 @@ validate data {
 
 ### Existence Checks
 
-```reqon
+```vague
 validate data {
   assume .id != null,
   assume .name != null,
@@ -60,7 +60,7 @@ validate data {
 
 ### String Constraints
 
-```reqon
+```vague
 validate user {
   assume length(.name) > 0,
   assume length(.name) < 100,
@@ -72,7 +72,7 @@ validate user {
 
 ### Numeric Constraints
 
-```reqon
+```vague
 validate order {
   assume .quantity > 0,
   assume .price >= 0,
@@ -83,7 +83,7 @@ validate order {
 
 ### Array Constraints
 
-```reqon
+```vague
 validate response {
   assume length(.items) > 0,
   assume length(.items) <= 100
@@ -92,7 +92,7 @@ validate response {
 
 ### Comparison
 
-```reqon
+```vague
 validate event {
   assume .endDate >= .startDate,
   assume .createdAt <= now()
@@ -103,7 +103,7 @@ validate event {
 
 ### Logical Operators
 
-```reqon
+```vague
 validate user {
   assume .status == "active" or .status == "pending",
   assume .age >= 18 and .age <= 120,
@@ -113,7 +113,7 @@ validate user {
 
 ### Conditional Validation
 
-```reqon
+```vague
 validate order {
   // If discount is present, it must be valid
   assume .discount == null or (.discount >= 0 and .discount <= 50),
@@ -129,7 +129,7 @@ validate order {
 
 By default, failed validations are warnings and don't stop execution:
 
-```reqon
+```vague
 validate user {
   assume length(.name) > 0  // Warning if fails
 }
@@ -140,7 +140,7 @@ validate user {
 
 Combine with match for strict validation:
 
-```reqon
+```vague
 action StrictValidation {
   get "/users"
 
@@ -161,7 +161,7 @@ action StrictValidation {
 
 ## Validating Nested Data
 
-```reqon
+```vague
 validate order {
   assume .id is string,
   assume .customer.id is string,
@@ -173,7 +173,7 @@ validate order {
 
 ## Validating Arrays
 
-```reqon
+```vague
 action ValidateAllItems {
   get "/orders"
 
@@ -200,7 +200,7 @@ action ValidateAllItems {
 
 Use match for custom error handling:
 
-```reqon
+```vague
 action ValidateWithMessages {
   get "/users"
 
@@ -226,7 +226,7 @@ action ValidateWithMessages {
 
 Always validate before storing:
 
-```reqon
+```vague
 action SafeStore {
   get "/data"
 
@@ -250,7 +250,7 @@ action SafeStore {
 
 Use schemas for reusable validation:
 
-```reqon
+```vague
 schema ValidUser {
   id: string,
   name: string,
@@ -271,7 +271,7 @@ action ValidateAgainstSchema {
 
 ## Built-in Validation Functions
 
-```reqon
+```vague
 validate data {
   // String functions
   assume length(.name) > 0,
@@ -294,7 +294,7 @@ validate data {
 
 ## Complete Example
 
-```reqon
+```vague
 mission DataValidation {
   source API { auth: bearer, base: "https://api.example.com" }
 
@@ -353,7 +353,7 @@ mission DataValidation {
 
 ### Validate Early
 
-```reqon
+```vague
 action Process {
   get "/data"
 
@@ -370,7 +370,7 @@ action Process {
 
 ### Use Specific Constraints
 
-```reqon
+```vague
 // Good: specific constraints
 validate user {
   assume .email contains "@",
@@ -386,7 +386,7 @@ validate user {
 
 ### Log Validation Failures
 
-```reqon
+```vague
 action ValidateWithLogging {
   for item in items {
     match item {

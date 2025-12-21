@@ -8,7 +8,7 @@ Fetch steps make HTTP requests to APIs. They're the primary way to retrieve data
 
 ## HTTP Methods
 
-```reqon
+```vague
 // GET request
 get "/users"
 
@@ -29,7 +29,7 @@ delete "/users/123"
 
 ### Query Parameters
 
-```reqon
+```vague
 get "/users" {
   params: {
     limit: 100,
@@ -41,7 +41,7 @@ get "/users" {
 
 ### Request Body
 
-```reqon
+```vague
 post "/users" {
   body: {
     name: "John Doe",
@@ -53,7 +53,7 @@ post "/users" {
 
 ### Custom Headers
 
-```reqon
+```vague
 get "/users" {
   headers: {
     "X-Custom-Header": "value",
@@ -66,7 +66,7 @@ get "/users" {
 
 ### Offset-Based
 
-```reqon
+```vague
 get "/users" {
   paginate: offset(page, 100),
   until: length(response) == 0
@@ -79,7 +79,7 @@ Parameters:
 
 ### Page Number-Based
 
-```reqon
+```vague
 get "/users" {
   paginate: page(pageNum, 50),
   until: response.meta.hasNext == false
@@ -92,7 +92,7 @@ Parameters:
 
 ### Cursor-Based
 
-```reqon
+```vague
 get "/users" {
   paginate: cursor(cursor, 100, "meta.nextCursor"),
   until: response.meta.nextCursor == null
@@ -110,7 +110,7 @@ See [Pagination](../http/pagination) for detailed documentation.
 
 The `until` option specifies when to stop paginating:
 
-```reqon
+```vague
 // Stop when empty response
 get "/users" {
   paginate: offset(page, 100),
@@ -138,7 +138,7 @@ get "/users" {
 
 ## Retry Configuration
 
-```reqon
+```vague
 get "/users" {
   retry: {
     maxAttempts: 3,
@@ -161,7 +161,7 @@ See [Retry Strategies](../http/retry) for details.
 
 Fetch only changes since last run:
 
-```reqon
+```vague
 get "/users" {
   since: lastSync
 }
@@ -175,7 +175,7 @@ See [Incremental Sync](../http/incremental-sync) for details.
 
 The `response` variable is automatically set after each fetch:
 
-```reqon
+```vague
 action FetchUsers {
   get "/users"
 
@@ -188,7 +188,7 @@ action FetchUsers {
 
 ### Response Structure
 
-```reqon
+```vague
 action InspectResponse {
   get "/users"
 
@@ -206,7 +206,7 @@ action InspectResponse {
 
 When you have multiple sources, specify which to use:
 
-```reqon
+```vague
 mission MultiSource {
   source Primary { auth: bearer, base: "https://primary.api.com" }
   source Secondary { auth: bearer, base: "https://secondary.api.com" }
@@ -225,7 +225,7 @@ mission MultiSource {
 
 Use expressions in paths:
 
-```reqon
+```vague
 action FetchUserOrders {
   for user in users {
     get concat("/users/", user.id, "/orders")
@@ -238,7 +238,7 @@ action FetchUserOrders {
 
 When using OAS sources, use `call` syntax:
 
-```reqon
+```vague
 source Petstore from "./petstore.yaml" { auth: bearer }
 
 action FetchPets {
@@ -256,7 +256,7 @@ See [OpenAPI Integration](../category/openapi-integration) for details.
 
 ## Complete Example
 
-```reqon
+```vague
 mission DataSync {
   source API {
     auth: bearer,

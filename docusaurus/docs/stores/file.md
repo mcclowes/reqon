@@ -4,18 +4,18 @@ sidebar_position: 3
 
 # File Store
 
-The file store persists data as JSON files in the `.reqon-data` directory.
+The file store persists data as JSON files in the `.vague-data` directory.
 
 ## Configuration
 
-```reqon
+```vague
 store customers: file("customers")
 store orders: file("orders")
 ```
 
 Creates:
 ```
-.reqon-data/
+.vague-data/
 ├── customers.json
 └── orders.json
 ```
@@ -43,7 +43,7 @@ When using keys:
 
 ### Local Development
 
-```reqon
+```vague
 mission DevSync {
   store data: file("dev-data")
 
@@ -56,7 +56,7 @@ mission DevSync {
 
 ### Persistent Cache
 
-```reqon
+```vague
 mission CachedSync {
   store cache: file("sync-cache")
 
@@ -69,7 +69,7 @@ mission CachedSync {
 
 ### Data Export
 
-```reqon
+```vague
 mission ExportData {
   store export: file("export")
 
@@ -86,8 +86,8 @@ mission ExportData {
 
 ## Custom Directory
 
-```reqon
-// Default: .reqon-data/
+```vague
+// Default: .vague-data/
 store data: file("data")
 
 // Custom path (via config)
@@ -97,14 +97,14 @@ store data: file("data", { dir: "./custom-dir" })
 Or via CLI:
 
 ```bash
-REQON_STATE_DIR=./my-data reqon mission.reqon
+REQON_STATE_DIR=./my-data reqon mission.vague
 ```
 
 ## Operations
 
 ### Write
 
-```reqon
+```vague
 // Simple write
 store response -> data { key: .id }
 
@@ -117,7 +117,7 @@ store response -> data { key: .id, partial: true }
 
 ### Read
 
-```reqon
+```vague
 // Iterate all
 for item in data { }
 
@@ -127,7 +127,7 @@ for item in data where .status == "active" { }
 
 ### Delete
 
-```reqon
+```vague
 // Delete by key
 delete data[item.id]
 
@@ -149,7 +149,7 @@ This ensures data integrity even during crashes.
 
 ### Use Meaningful Names
 
-```reqon
+```vague
 // Good
 store activeCustomers: file("active-customers")
 store invoiceArchive: file("invoice-archive-2024")
@@ -162,12 +162,12 @@ store d: file("d")
 
 ```gitignore
 # Reqon data directory
-.reqon-data/
+.vague-data/
 ```
 
 ### Use for Development Only
 
-```reqon
+```vague
 mission ConfigurableSync {
   store data: match env("NODE_ENV") {
     "production" => sql("items"),
@@ -182,7 +182,7 @@ For important development data:
 
 ```bash
 # Backup before major changes
-cp -r .reqon-data .reqon-data.backup
+cp -r .vague-data .vague-data.backup
 ```
 
 ## Size Considerations
@@ -195,7 +195,7 @@ For larger datasets, consider SQL stores.
 
 ### Performance Tips
 
-```reqon
+```vague
 // For large datasets, batch operations
 for batch in chunks(items, 1000) {
   for item in batch {
@@ -210,20 +210,20 @@ for batch in chunks(items, 1000) {
 
 ```bash
 # View raw data
-cat .reqon-data/customers.json | jq
+cat .vague-data/customers.json | jq
 
 # Count records
-cat .reqon-data/customers.json | jq 'length'
+cat .vague-data/customers.json | jq 'length'
 ```
 
 ### Reset Data
 
 ```bash
 # Clear specific store
-rm .reqon-data/customers.json
+rm .vague-data/customers.json
 
 # Clear all data
-rm -rf .reqon-data/
+rm -rf .vague-data/
 ```
 
 ## Comparison

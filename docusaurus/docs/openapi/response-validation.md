@@ -8,7 +8,7 @@ Reqon can validate API responses against OpenAPI schema definitions.
 
 ## Enabling Validation
 
-```reqon
+```vague
 source API from "./spec.yaml" {
   auth: bearer,
   validateResponses: true
@@ -49,7 +49,7 @@ components:
 ```
 
 Reqon validates:
-```reqon
+```vague
 call API.getPetById { params: { petId: "123" } }
 // Validates response against Pet schema
 ```
@@ -60,7 +60,7 @@ call API.getPetById { params: { petId: "123" } }
 
 Fails on schema mismatch:
 
-```reqon
+```vague
 source API from "./spec.yaml" {
   validateResponses: true,
   validationMode: "strict"
@@ -71,7 +71,7 @@ source API from "./spec.yaml" {
 
 Logs warning but continues:
 
-```reqon
+```vague
 source API from "./spec.yaml" {
   validateResponses: true,
   validationMode: "warn"
@@ -82,7 +82,7 @@ source API from "./spec.yaml" {
 
 No validation (default):
 
-```reqon
+```vague
 source API from "./spec.yaml" {
   validateResponses: false
 }
@@ -149,7 +149,7 @@ Each item in array is validated.
 
 ### With Validation Errors
 
-```reqon
+```vague
 call API.getPet { params: { id: "123" } }
 
 match response {
@@ -166,7 +166,7 @@ match response {
 
 ### Catching Specific Errors
 
-```reqon
+```vague
 match response {
   { validationErrors: e } where includes(e, "missing required") -> {
     // Handle missing fields
@@ -187,7 +187,7 @@ match response {
 
 Beyond schema validation:
 
-```reqon
+```vague
 call API.getOrder { params: { id: orderId } }
 
 // Schema validation happens automatically
@@ -205,7 +205,7 @@ store response -> orders { key: .id }
 
 ### Combining Validations
 
-```reqon
+```vague
 action ValidatedFetch {
   call API.listItems
 
@@ -274,7 +274,7 @@ Validates against matching schema.
 
 ### Use Validation in Development
 
-```reqon
+```vague
 source API from "./spec.yaml" {
   validateResponses: env("NODE_ENV") != "production"
 }
@@ -282,7 +282,7 @@ source API from "./spec.yaml" {
 
 ### Log Validation Failures
 
-```reqon
+```vague
 match response {
   { validationErrors: e } -> {
     store {
@@ -305,7 +305,7 @@ Ensure spec matches actual API:
 
 ### Handle Gracefully
 
-```reqon
+```vague
 // Don't fail hard on validation
 source API from "./spec.yaml" {
   validateResponses: true,

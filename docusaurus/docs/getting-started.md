@@ -25,9 +25,9 @@ yarn add reqon
 
 ## Your First Mission
 
-Create a file called `hello.reqon`:
+Create a file called `hello.vague`:
 
-```reqon
+```vague
 mission HelloWorld {
   source JSONPlaceholder {
     auth: none,
@@ -59,13 +59,13 @@ mission HelloWorld {
 ### Using the CLI
 
 ```bash
-npx reqon hello.reqon
+npx reqon hello.vague
 ```
 
 With verbose output:
 
 ```bash
-npx reqon hello.reqon --verbose
+npx reqon hello.vague --verbose
 ```
 
 ### Using the API
@@ -106,7 +106,7 @@ When you run a mission, Reqon provides detailed execution information:
 
 Every Reqon mission follows this structure:
 
-```reqon
+```vague
 mission MissionName {
   // 1. Define data sources (APIs)
   source SourceName { auth: type, base: "url" }
@@ -131,7 +131,7 @@ mission MissionName {
 
 Use `map` to transform data:
 
-```reqon
+```vague
 action TransformPosts {
   get "/posts"
 
@@ -151,7 +151,7 @@ action TransformPosts {
 
 Use `validate` to check constraints:
 
-```reqon
+```vague
 action ValidatedFetch {
   get "/posts"
 
@@ -170,7 +170,7 @@ action ValidatedFetch {
 
 Most APIs require pagination. Reqon makes this easy:
 
-```reqon
+```vague
 action FetchAllPosts {
   get "/posts" {
     paginate: offset(page, 20),
@@ -185,7 +185,7 @@ action FetchAllPosts {
 
 Use `match` for pattern-based error handling:
 
-```reqon
+```vague
 action RobustFetch {
   get "/posts"
 
@@ -212,7 +212,7 @@ Now that you've run your first mission, explore these topics:
 
 Make sure you've defined the source before using it in an action:
 
-```reqon
+```vague
 mission Example {
   source API { auth: none, base: "https://api.example.com" }  // Define first
 
@@ -228,7 +228,7 @@ mission Example {
 
 Ensure stores are defined at the mission level:
 
-```reqon
+```vague
 mission Example {
   store myData: memory("data")  // Define at mission level
 
@@ -245,7 +245,7 @@ mission Example {
 
 Add retry configuration for unreliable networks:
 
-```reqon
+```vague
 get "/data" {
   retry: {
     maxAttempts: 3,

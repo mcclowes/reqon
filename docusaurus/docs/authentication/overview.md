@@ -20,7 +20,7 @@ Reqon supports multiple authentication methods for connecting to APIs. Authentic
 
 ### In Mission File
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com"
@@ -43,7 +43,7 @@ Create `credentials.json`:
 ### Run with Credentials
 
 ```bash
-reqon mission.reqon --auth ./credentials.json
+reqon mission.vague --auth ./credentials.json
 ```
 
 ## Credential Sources
@@ -51,7 +51,7 @@ reqon mission.reqon --auth ./credentials.json
 ### File-Based
 
 ```bash
-reqon mission.reqon --auth ./credentials.json
+reqon mission.vague --auth ./credentials.json
 ```
 
 ### Environment Variables
@@ -69,7 +69,7 @@ Reference in credentials:
 
 Or in mission file:
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -96,7 +96,7 @@ await execute(source, {
 
 Handle multiple APIs with different auth:
 
-```reqon
+```vague
 mission MultiSource {
   source Xero {
     auth: oauth2,
@@ -161,7 +161,7 @@ Reqon automatically refreshes OAuth2 tokens when they expire:
 
 For non-standard token refresh:
 
-```reqon
+```vague
 action FetchData {
   get "/data"
 
@@ -196,7 +196,7 @@ credentials.json
 
 ```bash
 export API_TOKEN="your-token"
-reqon mission.reqon
+reqon mission.vague
 ```
 
 ### Rotate Tokens Regularly
@@ -235,7 +235,7 @@ For OAuth2, ensure:
 
 Match the type in credentials to mission:
 
-```reqon
+```vague
 // Mission says bearer
 source API { auth: bearer, base: "..." }
 ```

@@ -22,7 +22,7 @@ src/
 │   ├── fetch-handler.ts # HTTP fetch with sync checkpoints
 │   ├── pagination.ts    # Pagination strategies (offset, page, cursor)
 │   └── http.ts          # HTTP client with retry/backoff
-├── lexer/         # Extended lexer with Reqon keywords
+├── lexer/         # Reqon keywords (uses Vague's lexer via plugin)
 ├── oas/           # OpenAPI spec integration
 ├── parser/        # Parser for mission/action/fetch/store syntax
 ├── scheduler/     # Cron scheduling for missions
@@ -66,7 +66,7 @@ Key constructs:
 
 ## Key Decisions
 
-1. **Extends Vague**: Reqon tokens/parser extend Vague's, reusing expression syntax
+1. **Extends Vague**: Reqon uses Vague's lexer (via plugin system) and expression syntax; parser extends Vague's token types
 2. **Keyword conflicts**: Parser explicitly handles Reqon keywords (key, partial, upsert, page, etc.) when they appear in option contexts
 3. **`response` identifier**: Special-cased in evaluator to reference `ctx.response`
 4. **Store adapters**: Interface-based design for pluggable storage backends

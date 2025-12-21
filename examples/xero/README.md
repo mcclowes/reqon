@@ -28,7 +28,7 @@ Requires a `credentials.json`:
 ## Features demonstrated
 
 ### OAuth2 Authentication
-```reqon
+```vague
 source Xero {
   auth: oauth2,
   base: "https://api.xero.com/api.xro/2.0"
@@ -36,7 +36,7 @@ source Xero {
 ```
 
 ### Pagination with Until Condition
-```reqon
+```vague
 get "/Invoices" {
   paginate: offset(page, 100),
   until: length(response.Invoices) == 0
@@ -45,7 +45,7 @@ get "/Invoices" {
 
 ### Schema Overloading with Match Steps
 Handle different API response types declaratively:
-```reqon
+```vague
 match response {
   XeroInvoiceList -> { store response.Invoices -> cache },
   XeroRateLimitError -> retry { maxAttempts: 5, backoff: exponential },
@@ -66,7 +66,7 @@ match response {
 | `jump` | `Schema -> jump Action then retry` | Execute action, then continue |
 
 ### Partial Record Hydration
-```reqon
+```vague
 store response.Invoices -> invoices_cache {
   key: .InvoiceID,
   partial: true  // Mark as needing hydration
@@ -78,7 +78,7 @@ for invoice in invoices_cache where ._partial == true {
 ```
 
 ### Match Expressions for Field Mapping
-```reqon
+```vague
 status: match .Status {
   "PAID" => "paid",
   "AUTHORISED" => "approved",

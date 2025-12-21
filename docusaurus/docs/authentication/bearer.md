@@ -10,7 +10,7 @@ Bearer token authentication is the most common auth method for REST APIs. The to
 
 ### Mission File
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com"
@@ -62,12 +62,12 @@ Then set the environment variable:
 
 ```bash
 export API_TOKEN="your-token"
-reqon mission.reqon --auth credentials.json
+reqon mission.vague --auth credentials.json
 ```
 
 ### In Mission File
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -79,7 +79,7 @@ source API {
 
 ### GitHub API
 
-```reqon
+```vague
 source GitHub {
   auth: bearer,
   base: "https://api.github.com"
@@ -97,7 +97,7 @@ source GitHub {
 
 ### Stripe API
 
-```reqon
+```vague
 source Stripe {
   auth: bearer,
   base: "https://api.stripe.com/v1"
@@ -115,7 +115,7 @@ source Stripe {
 
 ### Custom API
 
-```reqon
+```vague
 source CustomAPI {
   auth: bearer,
   base: "https://api.mycompany.com/v1"
@@ -160,7 +160,7 @@ await execute(source, {
 
 Bearer tokens may expire. Handle with match:
 
-```reqon
+```vague
 action FetchData {
   get "/data"
 
@@ -173,7 +173,7 @@ action FetchData {
 
 Or with token refresh:
 
-```reqon
+```vague
 action FetchData {
   get "/data"
 
@@ -195,7 +195,7 @@ action RefreshToken {
 
 For APIs requiring different tokens per endpoint:
 
-```reqon
+```vague
 source ReadAPI {
   auth: bearer,
   base: "https://api.example.com"
@@ -268,7 +268,7 @@ Ensure token doesn't have extra whitespace:
 
 Verify source name matches:
 
-```reqon
+```vague
 source MyAPI { auth: bearer }  // Name: MyAPI
 ```
 

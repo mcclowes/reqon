@@ -10,7 +10,7 @@ Real-world examples demonstrating Reqon's capabilities.
 
 Fetch and store data from a public API:
 
-```reqon
+```vague
 mission JSONPlaceholderSync {
   source API {
     auth: none,
@@ -50,7 +50,7 @@ mission JSONPlaceholderSync {
 
 Sync invoices from Xero with OAuth2 authentication:
 
-```reqon
+```vague
 mission XeroInvoiceSync {
   source Xero {
     auth: oauth2,
@@ -123,7 +123,7 @@ mission XeroInvoiceSync {
 
 Sync and reconcile data from multiple sources:
 
-```reqon
+```vague
 mission OrderReconciliation {
   source Shopify { auth: bearer, base: "https://mystore.myshopify.com/admin/api/2024-01" }
   source Stripe { auth: bearer, base: "https://api.stripe.com/v1" }
@@ -206,7 +206,7 @@ mission OrderReconciliation {
 
 Use OpenAPI spec for type-safe API calls:
 
-```reqon
+```vague
 mission PetstoreSync {
   source Petstore from "https://petstore3.swagger.io/api/v3/openapi.json" {
     auth: api_key,
@@ -258,7 +258,7 @@ mission PetstoreSync {
 
 Robust error handling with retry and DLQ:
 
-```reqon
+```vague
 mission RobustSync {
   source API {
     auth: bearer,
@@ -337,7 +337,7 @@ mission RobustSync {
 
 Regular incremental sync with scheduling:
 
-```reqon
+```vague
 mission ScheduledSync {
   schedule: every 15 minutes
   skipIfRunning: true
@@ -399,7 +399,7 @@ mission ScheduledSync {
 
 Sync repository data from GitHub:
 
-```reqon
+```vague
 mission GitHubSync {
   source GitHub {
     auth: bearer,

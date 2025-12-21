@@ -8,10 +8,10 @@ This mission is organized as a folder with separate action files:
 
 ```
 github-sync/
-├── mission.reqon       # Main file: sources, stores, schemas, pipeline
-├── fetch-issues.reqon  # Fetches issues with pagination and error handling
-├── fetch-prs.reqon     # Fetches pull requests with error handling
-├── normalize.reqon     # Normalizes to unified schema
+├── mission.vague       # Main file: sources, stores, schemas, pipeline
+├── fetch-issues.vague  # Fetches issues with pagination and error handling
+├── fetch-prs.vague     # Fetches pull requests with error handling
+├── normalize.vague     # Normalizes to unified schema
 └── README.md
 ```
 
@@ -44,19 +44,19 @@ Requires a `credentials.json`:
 ## Features demonstrated
 
 ### Multi-file Missions
-- `mission.reqon` contains sources, stores, schemas, and pipeline
-- Action files (`fetch-issues.reqon`, etc.) are automatically discovered and merged
+- `mission.vague` contains sources, stores, schemas, and pipeline
+- Action files (`fetch-issues.vague`, etc.) are automatically discovered and merged
 - Actions can reference stores and schemas defined in the root file
 
 ### Parallel Execution
-```reqon
+```vague
 run [FetchIssues, FetchPRs] then Normalize
 ```
 - `[FetchIssues, FetchPRs]` runs both actions concurrently
 - `then Normalize` waits for both to complete before running
 
 ### Schema Overloading with Match Steps
-```reqon
+```vague
 match response {
   [GitHubIssue] -> { store response -> issues_raw },
   RateLimitError -> retry { maxAttempts: 5 },

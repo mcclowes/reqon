@@ -11,7 +11,7 @@ Reqon is a **declarative DSL framework for building fetch, map, validate pipelin
 
 Reqon allows you to define data pipelines using a clean, readable syntax. Instead of writing imperative code to fetch data, transform it, validate it, and store it, you declare *what* you want to happen, and Reqon handles *how* it happens.
 
-```reqon
+```vague
 mission SyncCustomers {
   source API { auth: bearer, base: "https://api.example.com" }
   store customers: file("customers")

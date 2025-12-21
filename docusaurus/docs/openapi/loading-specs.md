@@ -10,7 +10,7 @@ Reqon can load OpenAPI specifications from files or URLs.
 
 ### YAML Format
 
-```reqon
+```vague
 source API from "./openapi.yaml" {
   auth: bearer
 }
@@ -18,7 +18,7 @@ source API from "./openapi.yaml" {
 
 ### JSON Format
 
-```reqon
+```vague
 source API from "./openapi.json" {
   auth: bearer
 }
@@ -26,7 +26,7 @@ source API from "./openapi.json" {
 
 ### Relative Paths
 
-```reqon
+```vague
 // Relative to mission file
 source API from "./specs/api.yaml"
 
@@ -38,7 +38,7 @@ source API from "/home/user/specs/api.yaml"
 
 ### Public Specs
 
-```reqon
+```vague
 source Petstore from "https://petstore3.swagger.io/api/v3/openapi.json" {
   auth: none
 }
@@ -46,7 +46,7 @@ source Petstore from "https://petstore3.swagger.io/api/v3/openapi.json" {
 
 ### Authenticated Specs
 
-```reqon
+```vague
 source PrivateAPI from "https://api.company.com/openapi.json" {
   auth: bearer,
   specAuth: {
@@ -60,7 +60,7 @@ source PrivateAPI from "https://api.company.com/openapi.json" {
 
 Reqon caches resolved specs:
 
-```reqon
+```vague
 // First run: downloads and caches
 source API from "https://api.example.com/openapi.json"
 
@@ -70,7 +70,7 @@ source API from "https://api.example.com/openapi.json"
 ### Cache Location
 
 ```
-.reqon-data/
+.vague-data/
 └── oas-cache/
     └── api.example.com-openapi.json
 ```
@@ -79,10 +79,10 @@ source API from "https://api.example.com/openapi.json"
 
 ```bash
 # Clear cache
-rm -rf .reqon-data/oas-cache/
+rm -rf .vague-data/oas-cache/
 
 # Or use --no-cache flag
-reqon mission.reqon --no-oas-cache
+reqon mission.vague --no-oas-cache
 ```
 
 ## Spec Structure
@@ -193,7 +193,7 @@ servers:
 
 ### Override Base URL
 
-```reqon
+```vague
 source API from "./spec.yaml" {
   auth: bearer,
   base: "https://custom.example.com"  # Overrides spec
@@ -202,7 +202,7 @@ source API from "./spec.yaml" {
 
 ### Environment-Based
 
-```reqon
+```vague
 source API from "./spec.yaml" {
   auth: bearer,
   base: env("API_BASE_URL")
@@ -244,7 +244,7 @@ Reqon validates the spec structure:
 
 ### Per-Source
 
-```reqon
+```vague
 mission MultiAPI {
   source Products from "./products.yaml" { auth: bearer }
   source Orders from "./orders.yaml" { auth: bearer }
@@ -262,7 +262,7 @@ mission MultiAPI {
 
 If specs share schemas, use a single bundled spec:
 
-```reqon
+```vague
 source API from "./bundled-api.yaml" { auth: bearer }
 ```
 

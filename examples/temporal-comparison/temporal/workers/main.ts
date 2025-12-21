@@ -123,7 +123,7 @@ run().catch((err) => {
  *
  * COMPARE TO REQON:
  *
- *   $ reqon reconciliation.reqon --auth ./credentials.json
+ *   $ reqon reconciliation.vague --auth ./credentials.json
  *
  * That's it. No infrastructure. No workers. No database setup.
  * Just a single command that runs anywhere Node.js is available.

@@ -8,7 +8,7 @@ A **Source** defines an API endpoint that your mission connects to. Sources conf
 
 ## Basic Syntax
 
-```reqon
+```vague
 source SourceName {
   auth: authType,
   base: "https://api.example.com"
@@ -27,7 +27,7 @@ source SourceName {
 
 ### No Authentication
 
-```reqon
+```vague
 source PublicAPI {
   auth: none,
   base: "https://jsonplaceholder.typicode.com"
@@ -36,7 +36,7 @@ source PublicAPI {
 
 ### Bearer Token
 
-```reqon
+```vague
 source GitHub {
   auth: bearer,
   base: "https://api.github.com"
@@ -56,7 +56,7 @@ Credentials are provided via CLI or config:
 
 ### API Key
 
-```reqon
+```vague
 source StripeAPI {
   auth: api_key,
   base: "https://api.stripe.com/v1"
@@ -88,7 +88,7 @@ Or in query parameter:
 
 ### Basic Authentication
 
-```reqon
+```vague
 source LegacyAPI {
   auth: basic,
   base: "https://legacy.example.com"
@@ -107,7 +107,7 @@ source LegacyAPI {
 
 ### OAuth 2.0
 
-```reqon
+```vague
 source Xero {
   auth: oauth2,
   base: "https://api.xero.com/api.xro/2.0"
@@ -134,7 +134,7 @@ Reqon automatically refreshes tokens when they expire.
 
 Load source configuration from an OpenAPI specification:
 
-```reqon
+```vague
 source Petstore from "./petstore.yaml" {
   auth: bearer,
   validateResponses: true
@@ -152,7 +152,7 @@ See [OpenAPI Integration](../category/openapi-integration) for details.
 
 ### Custom Headers
 
-```reqon
+```vague
 source CustomAPI {
   auth: bearer,
   base: "https://api.example.com",
@@ -165,7 +165,7 @@ source CustomAPI {
 
 ### Rate Limiting
 
-```reqon
+```vague
 source RateLimitedAPI {
   auth: bearer,
   base: "https://api.example.com",
@@ -185,7 +185,7 @@ Strategies:
 
 Prevent cascading failures:
 
-```reqon
+```vague
 source UnreliableAPI {
   auth: bearer,
   base: "https://flaky-api.example.com",
@@ -201,7 +201,7 @@ See [Circuit Breaker](../http/circuit-breaker) for details.
 
 ### Timeout
 
-```reqon
+```vague
 source SlowAPI {
   auth: bearer,
   base: "https://slow-api.example.com",
@@ -213,7 +213,7 @@ source SlowAPI {
 
 Sources are automatically selected when making requests:
 
-```reqon
+```vague
 mission MultiSource {
   source Primary { auth: bearer, base: "https://primary.example.com" }
   source Secondary { auth: bearer, base: "https://secondary.example.com" }
@@ -234,7 +234,7 @@ mission MultiSource {
 
 The first defined source is the default:
 
-```reqon
+```vague
 mission Example {
   source API { auth: bearer, base: "https://api.example.com" }
 
@@ -248,7 +248,7 @@ mission Example {
 
 Prefix requests with source name:
 
-```reqon
+```vague
 action FetchFromMultiple {
   get Primary "/users"
   get Secondary "/users"
@@ -259,7 +259,7 @@ action FetchFromMultiple {
 
 Use environment variables in source definitions:
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: env("API_BASE_URL")
@@ -270,7 +270,7 @@ source API {
 
 Pattern for handling different environments:
 
-```reqon
+```vague
 mission Sync {
   source API {
     auth: bearer,
@@ -287,7 +287,7 @@ mission Sync {
 
 ### Use Descriptive Names
 
-```reqon
+```vague
 // Good
 source XeroAccounting { }
 source QuickBooksOnline { }
@@ -300,7 +300,7 @@ source Source { }
 
 ### Configure Appropriate Timeouts
 
-```reqon
+```vague
 // For fast APIs
 source FastAPI {
   timeout: 5000  // 5 seconds
@@ -314,7 +314,7 @@ source BulkExportAPI {
 
 ### Always Use Rate Limiting for Production
 
-```reqon
+```vague
 source ProductionAPI {
   auth: bearer,
   base: "https://api.example.com",
@@ -327,7 +327,7 @@ source ProductionAPI {
 
 ### Enable Circuit Breakers for Unreliable Sources
 
-```reqon
+```vague
 source ThirdPartyAPI {
   auth: bearer,
   base: "https://third-party.example.com",

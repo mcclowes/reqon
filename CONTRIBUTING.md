@@ -61,7 +61,7 @@ src/
 ├── errors/        # Structured error classes
 ├── execution/     # Execution state management and persistence
 ├── interpreter/   # Runtime execution (context, evaluator, executor)
-├── lexer/         # Extended lexer with Reqon keywords
+├── lexer/         # Reqon keywords (uses Vague's lexer via plugin)
 ├── oas/           # OpenAPI spec integration
 ├── parser/        # Parser for mission/action/fetch/store syntax
 ├── scheduler/     # Cron scheduling for missions
@@ -148,7 +148,7 @@ When reporting bugs, please include:
 
 - Reqon version
 - Node.js version
-- Minimal reproduction case (ideally a `.reqon` snippet)
+- Minimal reproduction case (ideally a `.vague` snippet)
 - Expected vs actual behavior
 - Error messages and stack traces
 

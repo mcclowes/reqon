@@ -8,7 +8,7 @@ Reqon provides configurable retry strategies for handling transient failures. Ch
 
 ## Retry Configuration
 
-```reqon
+```vague
 retry: {
   maxAttempts: 5,
   backoff: exponential,
@@ -23,7 +23,7 @@ retry: {
 
 Best for most APIs. Delays double after each attempt:
 
-```reqon
+```vague
 match response {
   { code: 429 } -> retry {
     maxAttempts: 5,
@@ -47,7 +47,7 @@ Attempt 5: wait 8000ms (8s)
 
 Delays increase by a fixed amount:
 
-```reqon
+```vague
 match response {
   { code: 503 } -> retry {
     maxAttempts: 5,
@@ -71,7 +71,7 @@ Attempt 5: wait 8000ms (8s)
 
 Same delay every time:
 
-```reqon
+```vague
 match response {
   { code: 504 } -> retry {
     maxAttempts: 5,
@@ -95,7 +95,7 @@ Attempt 5: wait 5000ms (5s)
 
 Prevent extremely long waits:
 
-```reqon
+```vague
 retry: {
   maxAttempts: 10,
   backoff: exponential,
@@ -120,7 +120,7 @@ Attempt 9: wait 30000ms (30s)
 
 Override backoff calculation:
 
-```reqon
+```vague
 match response {
   { code: 429, retryAfter: seconds } -> retry {
     maxAttempts: 5,
@@ -134,7 +134,7 @@ match response {
 
 ### Transient Errors (Should Retry)
 
-```reqon
+```vague
 match response {
   { code: 408 } -> retry,  // Request Timeout
   { code: 429 } -> retry,  // Too Many Requests
@@ -148,7 +148,7 @@ match response {
 
 ### Permanent Errors (Don't Retry)
 
-```reqon
+```vague
 match response {
   { code: 400 } -> abort "Bad request",      // Won't improve
   { code: 401 } -> abort "Unauthorized",     // Need new creds
@@ -161,7 +161,7 @@ match response {
 
 ### Conditional Retry
 
-```reqon
+```vague
 match response {
   // Retry rate limits with longer wait
   { code: 429 } -> retry {
@@ -192,7 +192,7 @@ match response {
 
 Respect API's `Retry-After` header:
 
-```reqon
+```vague
 match response {
   { code: 429, headers: h } where h["Retry-After"] != null -> retry {
     delay: toNumber(h["Retry-After"]) * 1000
@@ -208,7 +208,7 @@ match response {
 
 ## Retry with Token Refresh
 
-```reqon
+```vague
 action FetchProtectedData {
   get "/protected"
 
@@ -231,7 +231,7 @@ action RefreshToken {
 
 Configure default retry for all requests:
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -245,7 +245,7 @@ source API {
 
 Override per request:
 
-```reqon
+```vague
 get "/critical-endpoint" {
   retry: {
     maxAttempts: 10  // More attempts for critical requests
@@ -267,7 +267,7 @@ get "/critical-endpoint" {
 
 ### Start Small, Increase Gradually
 
-```reqon
+```vague
 retry: {
   maxAttempts: 5,
   backoff: exponential,
@@ -278,7 +278,7 @@ retry: {
 
 ### Be Respectful to APIs
 
-```reqon
+```vague
 // Good: respect rate limits
 retry: {
   maxAttempts: 5,
@@ -296,7 +296,7 @@ retry: {
 
 ### Log Retry Attempts
 
-```reqon
+```vague
 match response {
   { code: 503 } -> {
     store {
@@ -312,7 +312,7 @@ match response {
 
 ### Have a Fallback
 
-```reqon
+```vague
 match response {
   { error: _ } -> {
     // After max retries, queue for later
@@ -329,7 +329,7 @@ match response {
 
 Ensure match directive triggers retry:
 
-```reqon
+```vague
 // This triggers retry
 match response {
   { error: _ } -> retry,
@@ -346,7 +346,7 @@ get "/data" {
 
 Lower maxAttempts or add maxDelay:
 
-```reqon
+```vague
 retry: {
   maxAttempts: 3,
   maxDelay: 30000
@@ -357,7 +357,7 @@ retry: {
 
 Be specific about which errors to retry:
 
-```reqon
+```vague
 match response {
   // Only retry specific codes
   { code: 429 } -> retry,

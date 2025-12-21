@@ -69,7 +69,7 @@ Execute a mission from a file.
 ```typescript
 import { fromFile } from 'reqon';
 
-const result = await fromFile('./mission.reqon', {
+const result = await fromFile('./mission.vague', {
   auth: {
     API: { type: 'bearer', token: 'xxx' }
   }
@@ -77,7 +77,7 @@ const result = await fromFile('./mission.reqon', {
 ```
 
 **Parameters:**
-- `filePath: string` - Path to .reqon file
+- `filePath: string` - Path to .vague file
 - `config?: ExecutorConfig` - Optional configuration
 
 **Returns:** `Promise<ExecutionResult>`
@@ -90,7 +90,7 @@ Execute a mission from a file or folder.
 import { fromPath } from 'reqon';
 
 // Single file
-const result1 = await fromPath('./mission.reqon');
+const result1 = await fromPath('./mission.vague');
 
 // Folder (multi-file mission)
 const result2 = await fromPath('./missions/customer-sync/');
@@ -400,20 +400,20 @@ import { CLI } from 'reqon/cli';
 const cli = new CLI();
 
 // Run mission
-await cli.run(['./mission.reqon', '--verbose']);
+await cli.run(['./mission.vague', '--verbose']);
 
 // Daemon mode
 await cli.run(['./missions/', '--daemon']);
 
 // With auth
-await cli.run(['./mission.reqon', '--auth', './credentials.json']);
+await cli.run(['./mission.vague', '--auth', './credentials.json']);
 ```
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `REQON_STATE_DIR` | State directory (default: `.reqon-data`) |
+| `REQON_STATE_DIR` | State directory (default: `.vague-data`) |
 | `REQON_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` |
 | `REQON_LOG_FORMAT` | Log format: `text`, `json` |
 | `REQON_DRY_RUN` | Enable dry-run mode |

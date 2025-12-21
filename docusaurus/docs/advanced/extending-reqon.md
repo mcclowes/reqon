@@ -53,7 +53,7 @@ registerFunction('sum', (...args: number[]) => {
 
 ### Using Custom Functions
 
-```reqon
+```vague
 map order -> Output {
   doubled: double(.quantity),
   rate: fetchRate(.currency),
@@ -114,7 +114,7 @@ registerAuthProvider('myauth', (config) => {
 
 Usage:
 
-```reqon
+```vague
 source API {
   auth: myauth,
   base: "https://api.example.com"
@@ -139,7 +139,7 @@ registerStepHandler('notify', async (step, ctx: ExecutionContext) => {
 
 Usage:
 
-```reqon
+```vague
 action WithNotification {
   get "/data"
   store response -> data { key: .id }
@@ -292,7 +292,7 @@ registerPaginationStrategy('link', () => new LinkHeaderPagination());
 
 Usage:
 
-```reqon
+```vague
 get "/items" {
   paginate: link(),
   until: !hasMore

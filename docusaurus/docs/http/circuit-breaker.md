@@ -33,7 +33,7 @@ The circuit breaker pattern prevents cascading failures when an API is experienc
 
 ## Configuration
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -61,7 +61,7 @@ source API {
 
 Normal operation:
 
-```reqon
+```vague
 // All requests pass through normally
 get "/data"  // Success
 get "/data"  // Success
@@ -76,7 +76,7 @@ Failures are counted within the `failureWindow`. Successes reset the counter.
 
 When `failureThreshold` is reached:
 
-```reqon
+```vague
 // After 5 consecutive failures...
 get "/data"  // Immediately fails - circuit is OPEN
 get "/data"  // Immediately fails - no actual request made
@@ -88,7 +88,7 @@ All requests fail fast without calling the API.
 
 After `resetTimeout`:
 
-```reqon
+```vague
 // After 30 seconds...
 get "/data"  // Actually sent - testing if API is back
 
@@ -102,7 +102,7 @@ get "/data"  // Sent - need 2 successes total
 
 ## Error Handling with Circuit Breaker
 
-```reqon
+```vague
 action FetchWithCircuitBreaker {
   get "/data"
 
@@ -123,7 +123,7 @@ action FetchWithCircuitBreaker {
 
 ## Combining with Retry
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -158,7 +158,7 @@ Order of operations:
 
 ## Combining with Rate Limiting
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -181,7 +181,7 @@ Both work together:
 
 Each source has its own circuit breaker:
 
-```reqon
+```vague
 mission MultiSourceSync {
   source ReliableAPI {
     auth: bearer,
@@ -210,7 +210,7 @@ mission MultiSourceSync {
 
 ## Monitoring Circuit State
 
-```reqon
+```vague
 action MonitoredFetch {
   get "/data"
 
@@ -246,7 +246,7 @@ action MonitoredFetch {
 
 ### Fallback to Cache
 
-```reqon
+```vague
 action FetchWithFallback {
   get "/data"
 
@@ -272,7 +272,7 @@ action FetchWithFallback {
 
 ### Fallback to Secondary Source
 
-```reqon
+```vague
 mission FallbackSync {
   source Primary { circuitBreaker: { failureThreshold: 3 } }
   source Secondary { circuitBreaker: { failureThreshold: 5 } }
@@ -297,7 +297,7 @@ mission FallbackSync {
 
 ### Configure Based on API Behavior
 
-```reqon
+```vague
 // For stable APIs
 circuitBreaker: {
   failureThreshold: 10,
@@ -319,7 +319,7 @@ circuitBreaker: {
 
 ### Use with Error Handling
 
-```reqon
+```vague
 action RobustFetch {
   get "/data"
 
@@ -336,7 +336,7 @@ action RobustFetch {
 
 ### Set Appropriate Timeouts
 
-```reqon
+```vague
 // For fast recovery APIs
 circuitBreaker: {
   resetTimeout: 10000  // 10 seconds
@@ -350,7 +350,7 @@ circuitBreaker: {
 
 ### Consider Failure Window
 
-```reqon
+```vague
 // For burst-tolerant scenarios
 circuitBreaker: {
   failureThreshold: 5,
@@ -370,7 +370,7 @@ circuitBreaker: {
 
 Increase threshold or window:
 
-```reqon
+```vague
 circuitBreaker: {
   failureThreshold: 10,  // More tolerance
   failureWindow: 120000  // Longer window
@@ -381,7 +381,7 @@ circuitBreaker: {
 
 Decrease reset timeout:
 
-```reqon
+```vague
 circuitBreaker: {
   resetTimeout: 10000  // Try sooner
 }
@@ -391,7 +391,7 @@ circuitBreaker: {
 
 Ensure only real failures count:
 
-```reqon
+```vague
 match response {
   { code: 404 } -> skip,  // Not a failure
   { code: 400 } -> abort "Bad request",  // Not a failure

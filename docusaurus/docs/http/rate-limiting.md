@@ -8,7 +8,7 @@ Reqon provides adaptive rate limiting that learns from API responses and respect
 
 ## Source-Level Configuration
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -33,7 +33,7 @@ source API {
 
 Wait when rate limit is reached:
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -53,7 +53,7 @@ When limit is reached:
 
 Slow down requests proactively:
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -70,7 +70,7 @@ Automatically spaces requests to stay within limits.
 
 Throw error when limit is reached:
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -83,7 +83,7 @@ source API {
 
 Use with error handling:
 
-```reqon
+```vague
 action FetchWithRateLimitHandling {
   get "/data"
 
@@ -124,7 +124,7 @@ Reqon will automatically:
 
 Reqon learns from API responses:
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -145,7 +145,7 @@ With `adaptive: true`:
 
 Some APIs have different limits per endpoint:
 
-```reqon
+```vague
 mission APISync {
   source API {
     auth: bearer,
@@ -169,7 +169,7 @@ mission APISync {
 
 ## Combining with Pagination
 
-```reqon
+```vague
 get "/items" {
   paginate: offset(offset, 100),
   until: length(response.items) == 0
@@ -180,7 +180,7 @@ Rate limiting applies to each page request, not just the action.
 
 ## Combining with Retry
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -210,7 +210,7 @@ Order of operations:
 
 Even with rate limiting, you might hit limits. Handle gracefully:
 
-```reqon
+```vague
 action RobustFetch {
   get "/data"
 
@@ -227,7 +227,7 @@ action RobustFetch {
 
 ## Multiple Sources with Different Limits
 
-```reqon
+```vague
 mission MultiSourceSync {
   source HighVolumeAPI {
     auth: bearer,
@@ -253,7 +253,7 @@ mission MultiSourceSync {
 
 Track rate limit status:
 
-```reqon
+```vague
 action MonitoredFetch {
   get "/data"
 
@@ -276,7 +276,7 @@ action MonitoredFetch {
 
 ### Start Conservative
 
-```reqon
+```vague
 // Good: start below the actual limit
 source API {
   rateLimit: { requestsPerMinute: 50 }  // API allows 60
@@ -290,7 +290,7 @@ source API {
 
 ### Use Pause for Critical Syncs
 
-```reqon
+```vague
 source API {
   rateLimit: {
     requestsPerMinute: 60,
@@ -301,7 +301,7 @@ source API {
 
 ### Use Throttle for Background Jobs
 
-```reqon
+```vague
 source API {
   rateLimit: {
     requestsPerMinute: 60,
@@ -312,7 +312,7 @@ source API {
 
 ### Set Reasonable maxWait
 
-```reqon
+```vague
 source API {
   rateLimit: {
     requestsPerMinute: 60,
@@ -324,7 +324,7 @@ source API {
 
 ### Combine with Circuit Breaker
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -345,7 +345,7 @@ source API {
 
 Lower your configured limit:
 
-```reqon
+```vague
 source API {
   rateLimit: {
     requestsPerMinute: 30,  // Lower than API limit
@@ -358,7 +358,7 @@ source API {
 
 Check if throttle strategy is too aggressive:
 
-```reqon
+```vague
 // If using throttle, switch to pause
 source API {
   rateLimit: {
@@ -372,7 +372,7 @@ source API {
 
 Use adaptive mode:
 
-```reqon
+```vague
 source API {
   rateLimit: {
     requestsPerMinute: 60,

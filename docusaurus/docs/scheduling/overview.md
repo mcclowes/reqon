@@ -16,7 +16,7 @@ Reqon supports scheduling missions to run automatically at specified intervals o
 
 ## Quick Start
 
-```reqon
+```vague
 mission DailySync {
   schedule: every 1 day
 
@@ -52,7 +52,7 @@ reqon ./missions/ --once
 
 ## Interval Scheduling
 
-```reqon
+```vague
 // Every N minutes
 schedule: every 15 minutes
 
@@ -70,7 +70,7 @@ schedule: every 1 week
 
 Full cron expression support:
 
-```reqon
+```vague
 // Every day at midnight
 schedule: cron "0 0 * * *"
 
@@ -89,7 +89,7 @@ schedule: cron "0 6 1 * *"
 
 ## One-Time Scheduling
 
-```reqon
+```vague
 // Specific datetime
 schedule: at "2024-12-25 00:00 UTC"
 
@@ -99,7 +99,7 @@ schedule: at "2024-01-20T09:00:00Z"
 
 ## Schedule Options
 
-```reqon
+```vague
 mission ConfiguredSync {
   schedule: every 1 hour
 
@@ -121,7 +121,7 @@ mission ConfiguredSync {
 
 Each mission has its own schedule:
 
-```reqon
+```vague
 mission FrequentSync {
   schedule: every 15 minutes
   // ...
@@ -144,7 +144,7 @@ mission WeeklyCleanup {
 
 Access when mission last ran:
 
-```reqon
+```vague
 action IncrementalSync {
   get "/data" {
     since: lastSync  // Uses last successful completion time
@@ -156,7 +156,7 @@ action IncrementalSync {
 
 Detect if running on schedule:
 
-```reqon
+```vague
 action FlexibleSync {
   match env("REQON_SCHEDULED") {
     "true" -> get "/data" { since: lastSync },
@@ -169,7 +169,7 @@ action FlexibleSync {
 
 ### Use Incremental Sync
 
-```reqon
+```vague
 mission EfficientSync {
   schedule: every 15 minutes
 
@@ -182,7 +182,7 @@ mission EfficientSync {
 
 ### Add Error Handling
 
-```reqon
+```vague
 mission RobustSync {
   schedule: every 1 hour
 
@@ -204,7 +204,7 @@ mission RobustSync {
 
 ### Monitor Execution
 
-```reqon
+```vague
 mission MonitoredSync {
   schedule: every 1 hour
 

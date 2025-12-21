@@ -8,7 +8,7 @@ Map steps transform data from one shape to another. They're used to normalize AP
 
 ## Basic Syntax
 
-```reqon
+```vague
 map sourceData -> TargetSchema {
   field: expression,
   anotherField: expression
@@ -17,7 +17,7 @@ map sourceData -> TargetSchema {
 
 ## Simple Mapping
 
-```reqon
+```vague
 action TransformUser {
   get "/users/123"
 
@@ -35,7 +35,7 @@ action TransformUser {
 
 ### Direct Access
 
-```reqon
+```vague
 map user -> Output {
   id: .id,
   name: .name
@@ -44,7 +44,7 @@ map user -> Output {
 
 ### Nested Access
 
-```reqon
+```vague
 map user -> Output {
   userId: .id,
   street: .address.street,
@@ -55,7 +55,7 @@ map user -> Output {
 
 ### Array Access
 
-```reqon
+```vague
 map order -> Output {
   firstItem: .items[0],
   lastItem: .items[length(.items) - 1]
@@ -68,7 +68,7 @@ For detailed expression syntax, see the [Vague documentation](https://github.com
 
 ### String Operations
 
-```reqon
+```vague
 map user -> Output {
   fullName: concat(.firstName, " ", .lastName),
   email: lowercase(.email),
@@ -79,7 +79,7 @@ map user -> Output {
 
 ### Numeric Operations
 
-```reqon
+```vague
 map order -> Output {
   subtotal: .price * .quantity,
   tax: .price * .quantity * 0.1,
@@ -90,7 +90,7 @@ map order -> Output {
 
 ### Conditional Expressions
 
-```reqon
+```vague
 map user -> Output {
   status: if .active then "Active" else "Inactive",
   tier: if .totalSpent > 10000 then "Gold"
@@ -101,7 +101,7 @@ map user -> Output {
 
 ### Pattern Matching in Maps
 
-```reqon
+```vague
 map order -> Output {
   statusLabel: match .status {
     "pending" => "Awaiting Processing",
@@ -117,7 +117,7 @@ map order -> Output {
 
 ### Static Nested Objects
 
-```reqon
+```vague
 map user -> Output {
   id: .id,
   profile: {
@@ -134,7 +134,7 @@ map user -> Output {
 
 ### Mapping Arrays
 
-```reqon
+```vague
 map order -> Output {
   id: .id,
   items: .lineItems.map(item => {
@@ -150,7 +150,7 @@ map order -> Output {
 
 ### From Multiple Sources
 
-```reqon
+```vague
 action EnrichOrders {
   for order in orders {
     get concat("/customers/", order.customerId)
@@ -172,7 +172,7 @@ action EnrichOrders {
 
 ### Merging Objects
 
-```reqon
+```vague
 map source -> Output {
   ...baseData,
   ...additionalData,
@@ -182,7 +182,7 @@ map source -> Output {
 
 ## Date Transformations
 
-```reqon
+```vague
 map event -> Output {
   timestamp: parseDate(.created_at),
   formattedDate: formatDate(.created_at, "YYYY-MM-DD"),
@@ -195,7 +195,7 @@ map event -> Output {
 
 ### Default Values
 
-```reqon
+```vague
 map user -> Output {
   name: .name or "Unknown",
   email: .email or "no-email@example.com",
@@ -205,7 +205,7 @@ map user -> Output {
 
 ### Null Checks
 
-```reqon
+```vague
 map user -> Output {
   hasEmail: .email != null,
   displayEmail: if .email != null then .email else "Not provided"
@@ -214,7 +214,7 @@ map user -> Output {
 
 ## Type Coercion
 
-```reqon
+```vague
 map data -> Output {
   id: toString(.id),
   count: toNumber(.count),
@@ -225,7 +225,7 @@ map data -> Output {
 
 ## Computed Fields
 
-```reqon
+```vague
 map invoice -> Output {
   id: .id,
   lineItems: .items,
@@ -239,7 +239,7 @@ map invoice -> Output {
 
 ## Renaming Fields
 
-```reqon
+```vague
 // Transform API response to standard format
 map xeroInvoice -> StandardInvoice {
   id: .InvoiceID,
@@ -254,7 +254,7 @@ map xeroInvoice -> StandardInvoice {
 
 ## Flattening Nested Data
 
-```reqon
+```vague
 map order -> FlatOrder {
   orderId: .id,
   orderDate: .createdAt,
@@ -268,7 +268,7 @@ map order -> FlatOrder {
 
 ## Grouping and Aggregation
 
-```reqon
+```vague
 map orders -> Summary {
   totalOrders: length(orders),
   totalRevenue: sum(orders.map(.total)),
@@ -282,7 +282,7 @@ map orders -> Summary {
 
 ## Complete Example
 
-```reqon
+```vague
 mission TransformXeroData {
   source Xero { auth: oauth2, base: "https://api.xero.com/api.xro/2.0" }
 

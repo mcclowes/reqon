@@ -10,7 +10,7 @@ The PostgREST store adapter connects to PostgreSQL via PostgREST or Supabase, en
 
 ### Mission File
 
-```reqon
+```vague
 store items: sql("items")
 store users: sql("users")
 ```
@@ -32,7 +32,7 @@ Create `stores.json`:
 Run with:
 
 ```bash
-reqon mission.reqon --store-config ./stores.json
+reqon mission.vague --store-config ./stores.json
 ```
 
 ## Supabase Setup
@@ -116,7 +116,7 @@ volumes:
 
 ### Write
 
-```reqon
+```vague
 // Insert
 store response -> items { key: .id }
 
@@ -129,14 +129,14 @@ store response -> items { key: .id, partial: true }
 
 ### Read
 
-```reqon
+```vague
 for item in items { }
 for item in items where .status == "active" { }
 ```
 
 ### Delete
 
-```reqon
+```vague
 delete items[item.id]
 ```
 
@@ -256,7 +256,7 @@ For high-volume usage:
 
 ## Error Handling
 
-```reqon
+```vague
 action SafeStore {
   get "/items"
 

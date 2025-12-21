@@ -8,7 +8,7 @@ Reqon lets you define data synchronization pipelines in a readable, declarative 
 
 ## Example
 
-```reqon
+```vague
 mission SyncXeroInvoices {
   source Xero {
     auth: oauth2,
@@ -65,9 +65,9 @@ npm install reqon
 ### CLI
 
 ```bash
-reqon sync-invoices.reqon --verbose
-reqon sync-invoices.reqon --auth ./credentials.json
-reqon sync-invoices.reqon --dry-run
+reqon sync-invoices.vague --verbose
+reqon sync-invoices.vague --auth ./credentials.json
+reqon sync-invoices.vague --dry-run
 ```
 
 ### Programmatic
@@ -100,7 +100,7 @@ console.log(result.stores.get('items').list());
 
 Sources can be defined with explicit base URLs or by referencing an OpenAPI spec:
 
-```reqon
+```vague
 // Traditional: explicit base URL
 source Name {
   auth: oauth2 | bearer | basic | api_key,
@@ -116,7 +116,7 @@ source Petstore from "./petstore-openapi.yaml" {
 
 ### Stores
 
-```reqon
+```vague
 store name: memory("collection")
 store name: sql("table_name")
 store name: nosql("collection")
@@ -124,7 +124,7 @@ store name: nosql("collection")
 
 ### Actions
 
-```reqon
+```vague
 action Name {
   // Steps: get/post/put/patch/delete, call, for, map, validate, store
 }
@@ -134,7 +134,7 @@ action Name {
 
 Two styles are supported:
 
-```reqon
+```vague
 // Traditional: explicit HTTP method and path
 get "/path" {
   paginate: offset(page, 100),
@@ -153,7 +153,7 @@ When using OAS-based `call`, the HTTP method and path are resolved from the Open
 
 ### Iteration
 
-```reqon
+```vague
 for item in collection where .status == "pending" {
   // nested steps
 }
@@ -161,7 +161,7 @@ for item in collection where .status == "pending" {
 
 ### Mapping
 
-```reqon
+```vague
 map source -> TargetSchema {
   field: .sourceField,
   computed: .price * .quantity,
@@ -174,7 +174,7 @@ map source -> TargetSchema {
 
 ### Validation
 
-```reqon
+```vague
 validate target {
   assume .amount > 0,
   assume .date >= .createdAt
@@ -183,7 +183,7 @@ validate target {
 
 ### Pipeline
 
-```reqon
+```vague
 // Sequential execution
 run Step1 then Step2 then Step3
 
@@ -195,7 +195,7 @@ run [Step1, Step2] then Step3  // Step1 and Step2 run in parallel, then Step3
 
 Reqon can consume OpenAPI specs directly, eliminating the need for handwritten SDK code:
 
-```reqon
+```vague
 mission SyncPets {
   // Load API definition from OpenAPI spec
   source Petstore from "./petstore.yaml" {

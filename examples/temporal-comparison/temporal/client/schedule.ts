@@ -199,19 +199,19 @@ main().catch((err) => {
  * REQON EQUIVALENT:
  *
  * # Run once
- * reqon reconciliation.reqon
+ * reqon reconciliation.vague
  *
  * # Run with credentials
- * reqon reconciliation.reqon --auth ./credentials.json
+ * reqon reconciliation.vague --auth ./credentials.json
  *
  * # Dry run (preview without API calls)
- * reqon reconciliation.reqon --dry-run
+ * reqon reconciliation.vague --dry-run
  *
  * # Resume from checkpoint
- * reqon reconciliation.reqon --resume execution-abc123
+ * reqon reconciliation.vague --resume execution-abc123
  *
  * # For scheduling, use cron or any scheduler:
- * 0 2 * * * reqon reconciliation.reqon >> /var/log/reqon.log
+ * 0 2 * * * reqon reconciliation.vague >> /var/log/reqon.log
  *
  * No Temporal server. No workers. No client SDK.
  * Just a declarative DSL that runs anywhere.

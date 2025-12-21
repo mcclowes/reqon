@@ -1,11 +1,11 @@
 # VS Code Extension Skill
 
-Use this skill when creating or enhancing VS Code support for Reqon's `.reqon` files.
+Use this skill when creating or enhancing VS Code support for Reqon's `.vague` files.
 
 ## Capabilities
 
 ### TextMate Grammar
-Create syntax highlighting for `.reqon` files:
+Create syntax highlighting for `.vague` files:
 - Keywords: mission, source, store, action, fetch, map, validate, run, then, for, in, where, match, assume
 - Auth types: oauth2, bearer, basic, api_key
 - Store types: memory, sql, nosql
@@ -41,9 +41,9 @@ When using this skill, read:
 ### TextMate Grammar Structure
 ```json
 {
-  "name": "Reqon",
-  "scopeName": "source.reqon",
-  "fileTypes": ["reqon"],
+  "name": "Vague",
+  "scopeName": "source.vague",
+  "fileTypes": ["vague"],
   "patterns": [
     { "include": "#keywords" },
     { "include": "#strings" },
@@ -52,7 +52,7 @@ When using this skill, read:
   "repository": {
     "keywords": {
       "match": "\\b(mission|source|store|action|fetch|map|validate|run|then|for|in|where|match|assume)\\b",
-      "name": "keyword.control.reqon"
+      "name": "keyword.control.vague"
     }
   }
 }
@@ -61,18 +61,18 @@ When using this skill, read:
 ### Extension package.json
 ```json
 {
-  "name": "reqon-vscode",
-  "displayName": "Reqon",
+  "name": "vague-vscode",
+  "displayName": "Vague",
   "contributes": {
     "languages": [{
-      "id": "reqon",
-      "extensions": [".reqon"],
+      "id": "vague",
+      "extensions": [".vague"],
       "configuration": "./language-configuration.json"
     }],
     "grammars": [{
-      "language": "reqon",
-      "scopeName": "source.reqon",
-      "path": "./syntaxes/reqon.tmLanguage.json"
+      "language": "vague",
+      "scopeName": "source.vague",
+      "path": "./syntaxes/vague.tmLanguage.json"
     }]
   }
 }
@@ -101,13 +101,13 @@ When using this skill, read:
 
 ## Directory Structure
 ```
-reqon-vscode/
+vague-vscode/
 ├── package.json
 ├── language-configuration.json
 ├── syntaxes/
-│   └── reqon.tmLanguage.json
+│   └── vague.tmLanguage.json
 ├── snippets/
-│   └── reqon.json
+│   └── vague.json
 └── src/
     └── extension.ts  # LSP client
 ```

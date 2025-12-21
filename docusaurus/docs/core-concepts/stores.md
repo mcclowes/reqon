@@ -8,7 +8,7 @@ A **Store** is a named data persistence target. Stores allow you to save, retrie
 
 ## Basic Syntax
 
-```reqon
+```vague
 store storeName: adapter("identifier")
 ```
 
@@ -25,7 +25,7 @@ store storeName: adapter("identifier")
 
 In-memory storage that doesn't persist between runs:
 
-```reqon
+```vague
 store cache: memory("cache")
 store tempData: memory("temp")
 ```
@@ -37,16 +37,16 @@ Best for:
 
 ## File Store
 
-JSON file storage in the `.reqon-data` directory:
+JSON file storage in the `.vague-data` directory:
 
-```reqon
+```vague
 store customers: file("customers")
 store orders: file("orders")
 ```
 
 Creates files like:
 ```
-.reqon-data/
+.vague-data/
 ├── customers.json
 └── orders.json
 ```
@@ -60,7 +60,7 @@ Best for:
 
 SQL database storage via PostgREST or direct connection:
 
-```reqon
+```vague
 store customers: sql("customers_table")
 store orders: sql("orders")
 ```
@@ -85,7 +85,7 @@ See [PostgREST Store](../stores/postgrest) for details.
 
 NoSQL database storage:
 
-```reqon
+```vague
 store events: nosql("events_collection")
 store logs: nosql("activity_logs")
 ```
@@ -96,7 +96,7 @@ Currently falls back to file storage in development. Full MongoDB/DynamoDB suppo
 
 ### Writing Data
 
-```reqon
+```vague
 action SaveData {
   get "/users"
 
@@ -115,7 +115,7 @@ action SaveData {
 
 The `key` option specifies which field to use as the unique identifier:
 
-```reqon
+```vague
 store response -> users { key: .id }
 store response -> users { key: .email }
 store response -> users { key: concat(.orgId, "-", .userId) }
@@ -125,7 +125,7 @@ store response -> users { key: concat(.orgId, "-", .userId) }
 
 Insert or update based on key:
 
-```reqon
+```vague
 store response -> users {
   key: .id,
   upsert: true
@@ -136,7 +136,7 @@ store response -> users {
 
 Update only provided fields:
 
-```reqon
+```vague
 store response -> users {
   key: .id,
   partial: true
@@ -147,7 +147,7 @@ store response -> users {
 
 Stores are available as variables in actions:
 
-```reqon
+```vague
 action ProcessStoredData {
   // Iterate over store contents
   for user in users {
@@ -192,7 +192,7 @@ interface StoreAdapter {
 
 Use `where` clauses when iterating:
 
-```reqon
+```vague
 action ProcessFiltered {
   // Status filter
   for order in orders where .status == "pending" {
@@ -215,7 +215,7 @@ action ProcessFiltered {
 
 Access store metadata:
 
-```reqon
+```vague
 action CheckStore {
   // Get count
   validate {
@@ -234,7 +234,7 @@ action CheckStore {
 
 Reference multiple stores:
 
-```reqon
+```vague
 action Reconcile {
   for order in orders {
     // Look up related customer
@@ -255,7 +255,7 @@ action Reconcile {
 
 ### Use Appropriate Adapters
 
-```reqon
+```vague
 // Development
 store data: file("data")
 
@@ -265,7 +265,7 @@ store data: sql("data_table")
 
 ### Always Specify Keys
 
-```reqon
+```vague
 // Good: explicit key
 store response -> users { key: .id }
 
@@ -275,7 +275,7 @@ store response -> users
 
 ### Use Upsert for Sync Operations
 
-```reqon
+```vague
 action IncrementalSync {
   get "/users" { since: lastSync }
 
@@ -287,7 +287,7 @@ action IncrementalSync {
 
 ### Clean Up Temporary Stores
 
-```reqon
+```vague
 mission CleanPipeline {
   store temp: memory("temp")
 
@@ -301,7 +301,7 @@ mission CleanPipeline {
 
 ### Use Descriptive Store Names
 
-```reqon
+```vague
 // Good
 store activeCustomers: file("active-customers")
 store pendingOrders: file("pending-orders")
@@ -317,7 +317,7 @@ store temp: file("temp")
 Use the CLI to export stores after execution:
 
 ```bash
-reqon mission.reqon --output ./exports/
+reqon mission.vague --output ./exports/
 ```
 
 Or programmatically:

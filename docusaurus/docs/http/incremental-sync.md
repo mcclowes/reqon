@@ -8,7 +8,7 @@ Incremental sync allows you to fetch only changes since the last run, reducing A
 
 ## Basic Usage
 
-```reqon
+```vague
 get "/items" {
   since: lastSync
 }
@@ -39,10 +39,10 @@ GET /items?modified_since=2024-01-20T10:30:00Z
 
 ### Checkpoint Storage
 
-Checkpoints are stored in `.reqon-data/` by default:
+Checkpoints are stored in `.vague-data/` by default:
 
 ```
-.reqon-data/
+.vague-data/
 ├── sync-checkpoints.json
 └── stores/
 ```
@@ -53,7 +53,7 @@ Checkpoints are stored in `.reqon-data/` by default:
 
 Specify the API's expected parameter:
 
-```reqon
+```vague
 get "/items" {
   since: lastSync,
   sinceParam: "updatedAfter"
@@ -66,7 +66,7 @@ Generates: `?updatedAfter=2024-01-20T10:30:00Z`
 
 Customize the date format:
 
-```reqon
+```vague
 get "/items" {
   since: lastSync,
   sinceFormat: "YYYY-MM-DD"
@@ -83,7 +83,7 @@ Common formats:
 
 Override the automatic checkpoint key:
 
-```reqon
+```vague
 get "/items" {
   since: lastSync,
   syncKey: "items-main-sync"
@@ -92,7 +92,7 @@ get "/items" {
 
 ## Combining with Pagination
 
-```reqon
+```vague
 get "/items" {
   paginate: offset(offset, 100),
   until: length(response.items) == 0,
@@ -104,7 +104,7 @@ The `since` parameter is added to each paginated request.
 
 ## Combining with Filters
 
-```reqon
+```vague
 get "/items" {
   params: {
     status: "active",
@@ -120,7 +120,7 @@ Generates: `?status=active&type=order&modified_since=2024-01-20T10:30:00Z`
 
 Use upsert mode for incremental updates:
 
-```reqon
+```vague
 action IncrementalSync {
   get "/items" {
     paginate: offset(offset, 100),
@@ -138,7 +138,7 @@ action IncrementalSync {
 
 Different sources maintain separate checkpoints:
 
-```reqon
+```vague
 mission MultiSourceSync {
   source Xero { auth: oauth2, base: "https://api.xero.com" }
   source QuickBooks { auth: oauth2, base: "https://quickbooks.api.com" }
@@ -159,7 +159,7 @@ mission MultiSourceSync {
 
 Each endpoint maintains its own checkpoint:
 
-```reqon
+```vague
 action SyncAll {
   get "/customers" { since: lastSync }
   // Checkpoint: source-/customers
@@ -178,10 +178,10 @@ action SyncAll {
 
 ```bash
 # Reset all checkpoints
-rm -rf .reqon-data/sync-checkpoints.json
+rm -rf .vague-data/sync-checkpoints.json
 
 # Then run a full sync
-reqon sync.reqon
+reqon sync.vague
 ```
 
 ### Programmatically
@@ -202,7 +202,7 @@ await clearSyncCheckpoint('source-/items');
 
 Sometimes you need a full resync:
 
-```reqon
+```vague
 action FullSync {
   get "/items"  // No since option = full sync
   store response -> items { key: .id, upsert: true }
@@ -220,7 +220,7 @@ run IncrementalSync  // Default: incremental
 
 ### Conditional Sync
 
-```reqon
+```vague
 action SmartSync {
   get "/status"
 
@@ -243,7 +243,7 @@ Incremental sync doesn't automatically handle deleted items. Handle this based o
 
 ### Soft Deletes
 
-```reqon
+```vague
 get "/items" {
   params: { includeDeleted: true },
   since: lastSync
@@ -262,7 +262,7 @@ for item in response.items {
 
 ### Deletion Endpoint
 
-```reqon
+```vague
 action SyncItems {
   get "/items" { since: lastSync }
   store response -> items { key: .id, upsert: true }
@@ -283,7 +283,7 @@ run [SyncItems, SyncDeletions]
 
 ### Always Use Upsert
 
-```reqon
+```vague
 // Good: handles both new and updated items
 store item -> items { key: .id, upsert: true }
 
@@ -293,7 +293,7 @@ store item -> items { key: .id }
 
 ### Handle Empty Responses
 
-```reqon
+```vague
 get "/items" { since: lastSync }
 
 match response {
@@ -311,7 +311,7 @@ match response {
 
 ### Log Sync Progress
 
-```reqon
+```vague
 action IncrementalSync {
   get "/items" { since: lastSync }
 
@@ -329,7 +329,7 @@ action IncrementalSync {
 
 ### Schedule Regular Syncs
 
-```reqon
+```vague
 mission RegularSync {
   schedule: every 15 minutes
 
@@ -348,7 +348,7 @@ mission RegularSync {
 
 Checkpoints only update on successful completion. Check for errors:
 
-```reqon
+```vague
 action DebugSync {
   get "/items" { since: lastSync }
 
@@ -370,7 +370,7 @@ action DebugSync {
 
 Match your API's expected format:
 
-```reqon
+```vague
 // For APIs expecting ISO 8601
 get "/items" { since: lastSync }
 
@@ -385,7 +385,7 @@ get "/items" { since: lastSync, sinceFormat: "YYYY-MM-DD" }
 
 Ensure your API uses the same field for filtering:
 
-```reqon
+```vague
 // If API uses "updatedAt" field
 get "/items" { since: lastSync, sinceParam: "updatedAt" }
 

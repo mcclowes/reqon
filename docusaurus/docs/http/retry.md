@@ -8,7 +8,7 @@ Reqon provides built-in retry handling for transient failures with configurable 
 
 ## Basic Retry Configuration
 
-```reqon
+```vague
 get "/data" {
   retry: {
     maxAttempts: 3,
@@ -34,7 +34,7 @@ get "/data" {
 
 Doubles the delay after each attempt:
 
-```reqon
+```vague
 get "/data" {
   retry: {
     maxAttempts: 5,
@@ -55,7 +55,7 @@ Timing:
 
 Adds a fixed delay each time:
 
-```reqon
+```vague
 get "/data" {
   retry: {
     maxAttempts: 5,
@@ -76,7 +76,7 @@ Timing:
 
 Same delay every time:
 
-```reqon
+```vague
 get "/data" {
   retry: {
     maxAttempts: 5,
@@ -97,7 +97,7 @@ Timing:
 
 Cap the maximum delay:
 
-```reqon
+```vague
 get "/data" {
   retry: {
     maxAttempts: 10,
@@ -119,7 +119,7 @@ With `maxDelay: 30000`, all delays are capped at 30 seconds.
 
 Use `match` for conditional retry logic:
 
-```reqon
+```vague
 action FetchWithConditionalRetry {
   get "/data"
 
@@ -160,7 +160,7 @@ action FetchWithConditionalRetry {
 
 Reqon respects the `Retry-After` header when present:
 
-```reqon
+```vague
 get "/rate-limited-api" {
   retry: {
     maxAttempts: 5,
@@ -182,7 +182,7 @@ Reqon will wait 60 seconds before retrying, regardless of backoff settings.
 
 ### With Pagination
 
-```reqon
+```vague
 get "/items" {
   paginate: offset(offset, 100),
   until: length(response) == 0,
@@ -197,7 +197,7 @@ Each page request uses retry logic independently.
 
 ### With Rate Limiting
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -223,7 +223,7 @@ Rate limiting runs before retry; retry handles unexpected failures.
 
 For complex retry scenarios like token refresh:
 
-```reqon
+```vague
 action FetchData {
   get "/protected-data"
 
@@ -250,7 +250,7 @@ The `jump RefreshToken then retry` directive:
 
 Configure default retry at the source level:
 
-```reqon
+```vague
 source UnreliableAPI {
   auth: bearer,
   base: "https://flaky.api.com",
@@ -270,7 +270,7 @@ action Fetch {
 
 Request-level config overrides source-level:
 
-```reqon
+```vague
 action FetchWithOverride {
   get "/data" {
     retry: {
@@ -284,7 +284,7 @@ action FetchWithOverride {
 
 ### Use Exponential Backoff for APIs
 
-```reqon
+```vague
 get "/api/data" {
   retry: {
     maxAttempts: 5,
@@ -297,7 +297,7 @@ get "/api/data" {
 
 ### Handle Specific Error Codes
 
-```reqon
+```vague
 match response {
   // Transient errors - retry
   { code: 429 } -> retry { maxAttempts: 5 },
@@ -316,7 +316,7 @@ match response {
 
 ### Set Reasonable Limits
 
-```reqon
+```vague
 // Good: reasonable limits
 retry: {
   maxAttempts: 5,
@@ -340,7 +340,7 @@ retry: {
 
 Combine with match for observability:
 
-```reqon
+```vague
 action FetchWithLogging {
   get "/data" {
     retry: {
@@ -369,7 +369,7 @@ action FetchWithLogging {
 
 Ensure the response matches retry conditions:
 
-```reqon
+```vague
 // Retry only triggers on match directive
 match response {
   { error: _ } -> retry { maxAttempts: 3 },  // This triggers retry
@@ -381,7 +381,7 @@ match response {
 
 Add a maximum delay:
 
-```reqon
+```vague
 retry: {
   maxAttempts: 10,
   backoff: exponential,
@@ -394,7 +394,7 @@ retry: {
 
 Use `jump then retry`:
 
-```reqon
+```vague
 match response {
   { code: 401 } -> jump RefreshToken then retry,
   _ -> continue

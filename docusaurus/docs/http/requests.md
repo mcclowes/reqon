@@ -8,7 +8,7 @@ Reqon provides powerful HTTP request handling with built-in support for paginati
 
 ## Request Methods
 
-```reqon
+```vague
 // GET - Retrieve data
 get "/users"
 
@@ -31,7 +31,7 @@ delete "/users/123"
 
 Add query parameters to requests:
 
-```reqon
+```vague
 get "/users" {
   params: {
     limit: 100,
@@ -49,7 +49,7 @@ Generates: `GET /users?limit=100&offset=0&status=active&sort=created_at&order=de
 
 Use expressions in parameters:
 
-```reqon
+```vague
 get "/users" {
   params: {
     since: formatDate(lastSync, "YYYY-MM-DD"),
@@ -62,7 +62,7 @@ get "/users" {
 
 Send JSON body with POST/PUT/PATCH:
 
-```reqon
+```vague
 post "/users" {
   body: {
     name: "John Doe",
@@ -79,7 +79,7 @@ post "/users" {
 
 Build body from variables:
 
-```reqon
+```vague
 for user in usersToCreate {
   post "/users" {
     body: {
@@ -95,7 +95,7 @@ for user in usersToCreate {
 
 Override or add headers:
 
-```reqon
+```vague
 get "/data" {
   headers: {
     "Accept": "application/json",
@@ -111,7 +111,7 @@ get "/data" {
 
 The `response` variable contains the parsed JSON:
 
-```reqon
+```vague
 action FetchUsers {
   get "/users"
 
@@ -129,7 +129,7 @@ action FetchUsers {
 
 ### Response Structure
 
-```reqon
+```vague
 // Common API response pattern
 {
   "data": [...],
@@ -151,7 +151,7 @@ validate { assume response.meta.total > 0 }
 
 The first defined source is the default:
 
-```reqon
+```vague
 mission Example {
   source API { auth: bearer, base: "https://api.example.com" }
 
@@ -165,7 +165,7 @@ mission Example {
 
 Specify source explicitly:
 
-```reqon
+```vague
 mission MultiSource {
   source Primary { auth: bearer, base: "https://primary.api.com" }
   source Backup { auth: bearer, base: "https://backup.api.com" }
@@ -184,7 +184,7 @@ mission MultiSource {
 
 Build URLs dynamically:
 
-```reqon
+```vague
 action FetchDetails {
   for user in users {
     // String concatenation
@@ -203,7 +203,7 @@ action FetchDetails {
 
 Configure at source level:
 
-```reqon
+```vague
 source SlowAPI {
   auth: bearer,
   base: "https://slow.api.com",
@@ -213,7 +213,7 @@ source SlowAPI {
 
 Or per-request (future feature):
 
-```reqon
+```vague
 get "/slow-endpoint" {
   timeout: 120000  // 2 minutes
 }
@@ -223,7 +223,7 @@ get "/slow-endpoint" {
 
 Handle HTTP errors with match:
 
-```reqon
+```vague
 action SafeFetch {
   get "/users"
 
@@ -241,7 +241,7 @@ action SafeFetch {
 
 Chain requests with data from previous responses:
 
-```reqon
+```vague
 action FetchWithDetails {
   // First request
   get "/orders"
@@ -264,7 +264,7 @@ action FetchWithDetails {
 
 For APIs that support batch operations:
 
-```reqon
+```vague
 action BatchFetch {
   // Collect IDs
   get "/items" { params: { status: "pending" } }
@@ -284,7 +284,7 @@ action BatchFetch {
 
 ### Use Descriptive Error Handling
 
-```reqon
+```vague
 match response {
   { error: _, code: 400 } -> abort "Invalid request data",
   { error: _, code: 401 } -> abort "Authentication failed",
@@ -299,7 +299,7 @@ match response {
 
 ### Validate Before Processing
 
-```reqon
+```vague
 get "/data"
 
 validate response {
@@ -312,7 +312,7 @@ for item in response.data { }
 
 ### Log Important Requests
 
-```reqon
+```vague
 get "/important-operation"
 
 match response {

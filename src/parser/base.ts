@@ -65,7 +65,7 @@ export class ReqonParserBase {
    * Consume an identifier, allowing HTTP method tokens to be used as identifiers.
    * This is needed because 'get', 'post', etc. are valid variable/store names.
    */
-  protected consumeIdentifier(message: string): ReqonToken {
+  protected consumeIdentifier(message: string): Token {
     const token = this.peek();
     // Accept both regular identifiers and HTTP method tokens as identifiers
     if (

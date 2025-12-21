@@ -10,7 +10,7 @@ OAuth 2.0 is the industry standard for API authentication, used by most enterpri
 
 ### Mission File
 
-```reqon
+```vague
 source Xero {
   auth: oauth2,
   base: "https://api.xero.com/api.xro/2.0"
@@ -75,7 +75,7 @@ When `expiresAt` is set and token expires, Reqon automatically:
 
 Even without `expiresAt`, Reqon refreshes on 401:
 
-```reqon
+```vague
 action FetchData {
   get "/data"
   // If 401, automatic refresh attempt
@@ -86,7 +86,7 @@ action FetchData {
 
 For non-standard APIs:
 
-```reqon
+```vague
 action FetchData {
   get "/data"
 
@@ -244,7 +244,7 @@ Request specific scopes:
 
 Some APIs require extra headers:
 
-```reqon
+```vague
 source API {
   auth: oauth2,
   base: "https://api.example.com",
@@ -258,7 +258,7 @@ source API {
 
 For APIs like Xero with multiple organizations:
 
-```reqon
+```vague
 mission XeroSync {
   source Xero {
     auth: oauth2,
@@ -272,7 +272,7 @@ mission XeroSync {
 
 Or iterate over tenants:
 
-```reqon
+```vague
 action SyncAllTenants {
   get "/connections"
 

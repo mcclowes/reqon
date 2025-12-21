@@ -8,10 +8,10 @@ Reqon maintains execution state for resumable missions and audit trails.
 
 ## State Storage
 
-State is stored in `.reqon-data/`:
+State is stored in `.vague-data/`:
 
 ```
-.reqon-data/
+.vague-data/
 ├── execution/
 │   ├── CustomerSync-2024-01-20T09-00-00.json
 │   └── CustomerSync-2024-01-20T10-00-00.json
@@ -147,7 +147,7 @@ reqon status CustomerSync --execution exec_abc123
 
 ### Automatic Cleanup
 
-```reqon
+```vague
 mission CustomerSync {
   stateRetention: 7 days  // Keep 7 days of history
 }
@@ -206,7 +206,7 @@ reqon_execution_errors_total{mission="CustomerSync"}
 
 ### File-Based (Default)
 
-```reqon
+```vague
 mission CustomerSync {
   stateStore: file  // Default
 }
@@ -231,7 +231,7 @@ setStateStore({
 
 ### Enable for Long-Running Missions
 
-```reqon
+```vague
 mission LongSync {
   enableState: true
   stateRetention: 30 days
@@ -240,7 +240,7 @@ mission LongSync {
 
 ### Use Checkpoints for Large Datasets
 
-```reqon
+```vague
 action ProcessLargeDataset {
   for item in items checkpoint every 100 {
     // State saved every 100 items
@@ -262,7 +262,7 @@ reqon ./missions/ --daemon --alert-on-failure
 Check directory permissions:
 
 ```bash
-ls -la .reqon-data/
+ls -la .vague-data/
 ```
 
 ### Resume Not Working
@@ -270,7 +270,7 @@ ls -la .reqon-data/
 Verify state file exists:
 
 ```bash
-cat .reqon-data/execution/CustomerSync-*.json | jq '.status'
+cat .vague-data/execution/CustomerSync-*.json | jq '.status'
 ```
 
 ### State Too Large
@@ -278,6 +278,6 @@ cat .reqon-data/execution/CustomerSync-*.json | jq '.status'
 Reduce retention or clean up:
 
 ```bash
-du -sh .reqon-data/
+du -sh .vague-data/
 reqon cleanup --older-than 7d
 ```

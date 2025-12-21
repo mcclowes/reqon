@@ -30,7 +30,7 @@ An e-commerce company needs to:
 ### 1. API Pagination
 
 **Reqon** (2 lines):
-```reqon
+```vague
 paginate: cursor(page_info, 250, "link.next"),
 until: response.orders.length == 0,
 ```
@@ -52,7 +52,7 @@ do {
 ### 2. Rate Limiting
 
 **Reqon** (4 lines):
-```reqon
+```vague
 rateLimit: {
   strategy: "pause",
   maxWait: 120,
@@ -84,7 +84,7 @@ class ShopifyClient {
 ### 3. Schema Transformation
 
 **Reqon** (15 lines):
-```reqon
+```vague
 map order -> UnifiedOrder {
   order_id: "shopify_" + .id,
   customer_email: .customer.email,
@@ -122,7 +122,7 @@ function transformOrder(order: ShopifyOrder): UnifiedOrder {
 ### 4. Validation Rules
 
 **Reqon** (5 lines):
-```reqon
+```vague
 validate order {
   assume payment_exists == true
 } or {
@@ -165,7 +165,7 @@ export async function validateOrdersHavePayments(
 ### 5. Pipeline Orchestration with Parallel Execution
 
 **Reqon** (3 lines):
-```reqon
+```vague
 // Fetch from all three APIs in parallel, then validate
 run [SyncShopifyOrders, SyncStripePayments, SyncShipStationShipments]
   then ValidateReconciliation
@@ -204,16 +204,16 @@ export async function orderReconciliationWorkflow(): Promise<ReconciliationResul
 **Reqon**:
 ```bash
 # Run once
-reqon reconciliation.reqon --auth ./credentials.json
+reqon reconciliation.vague --auth ./credentials.json
 
 # Dry run
-reqon reconciliation.reqon --dry-run
+reqon reconciliation.vague --dry-run
 
 # Resume from checkpoint
-reqon reconciliation.reqon --resume exec-abc123
+reqon reconciliation.vague --resume exec-abc123
 
 # Schedule with cron
-0 2 * * * reqon reconciliation.reqon
+0 2 * * * reqon reconciliation.vague
 ```
 
 **Temporal**:
@@ -260,7 +260,7 @@ npx ts-node src/client/schedule.ts schedule
 ## Files
 
 ### Reqon Solution
-- `reconciliation.reqon` - **The complete solution in ~280 lines**
+- `reconciliation.vague` - **The complete solution in ~280 lines**
 
 ### Temporal Solution (11 files, ~1,500 lines)
 ```

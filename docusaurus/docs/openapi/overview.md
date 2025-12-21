@@ -17,7 +17,7 @@ Reqon integrates with OpenAPI (Swagger) specifications for type-safe API calls a
 
 ### 1. Define Source from Spec
 
-```reqon
+```vague
 source Petstore from "./petstore.yaml" {
   auth: bearer,
   validateResponses: true
@@ -26,7 +26,7 @@ source Petstore from "./petstore.yaml" {
 
 ### 2. Call Operations
 
-```reqon
+```vague
 action FetchPets {
   call Petstore.listPets { params: { limit: 100 } }
   store response -> pets { key: .id }
@@ -42,7 +42,7 @@ action FetchPets {
 
 Reqon loads and parses OpenAPI specs:
 
-```reqon
+```vague
 // Local file
 source API from "./api.yaml" { auth: bearer }
 
@@ -74,7 +74,7 @@ servers:
 
 ## Configuration Options
 
-```reqon
+```vague
 source API from "./spec.yaml" {
   auth: bearer,
   validateResponses: true,  # Validate responses against schema
@@ -86,7 +86,7 @@ source API from "./spec.yaml" {
 
 ## Example Workflow
 
-```reqon
+```vague
 mission PetstoreSync {
   source Petstore from "./petstore.yaml" {
     auth: api_key,
@@ -128,7 +128,7 @@ mission PetstoreSync {
 
 ### Traditional Approach
 
-```reqon
+```vague
 source API { auth: bearer, base: "https://api.example.com" }
 
 action Fetch {
@@ -139,7 +139,7 @@ action Fetch {
 
 ### OAS Approach
 
-```reqon
+```vague
 source API from "./spec.yaml" { auth: bearer }
 
 action Fetch {
@@ -165,7 +165,7 @@ action Fetch {
 
 ### Format Detection
 
-```reqon
+```vague
 // YAML
 source API from "./spec.yaml"
 
@@ -180,7 +180,7 @@ source API from "https://api.example.com/openapi.json"
 
 ### Fetch with Pagination
 
-```reqon
+```vague
 call API.listItems {
   params: { limit: 100 },
   paginate: cursor(cursor, 100, "nextCursor"),
@@ -190,7 +190,7 @@ call API.listItems {
 
 ### Conditional Operations
 
-```reqon
+```vague
 action SyncItem {
   call API.getItem { params: { id: itemId } }
 

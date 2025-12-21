@@ -8,7 +8,7 @@ Reqon uses the Vague expression language for data manipulation. This page covers
 
 ## Literals
 
-```reqon
+```vague
 // Numbers
 42
 3.14
@@ -35,7 +35,7 @@ null
 
 ## Property Access
 
-```reqon
+```vague
 // Dot notation
 .name
 .address.city
@@ -54,7 +54,7 @@ response.data.items
 
 ### Arithmetic
 
-```reqon
+```vague
 1 + 2       // 3
 10 - 3      // 7
 4 * 5       // 20
@@ -64,7 +64,7 @@ response.data.items
 
 ### Comparison
 
-```reqon
+```vague
 .a == .b    // equality
 .a != .b    // inequality
 .a > .b     // greater than
@@ -75,7 +75,7 @@ response.data.items
 
 ### Logical
 
-```reqon
+```vague
 .a and .b   // logical AND
 .a or .b    // logical OR
 not .a      // logical NOT
@@ -83,7 +83,7 @@ not .a      // logical NOT
 
 ### String
 
-```reqon
+```vague
 .first + " " + .last    // concatenation
 .email contains "@"     // contains check
 .name startsWith "Dr."  // prefix check
@@ -94,7 +94,7 @@ not .a      // logical NOT
 
 ### If-Then-Else
 
-```reqon
+```vague
 if .active then "Active" else "Inactive"
 
 if .age >= 18 then "Adult"
@@ -104,20 +104,20 @@ else "Child"
 
 ### Ternary Style
 
-```reqon
+```vague
 .status == "active" ? "Yes" : "No"
 ```
 
 ### Null Coalescing
 
-```reqon
+```vague
 .name or "Unknown"
 .email or .backup_email or "no-email@example.com"
 ```
 
 ## String Functions
 
-```reqon
+```vague
 // Length
 length("hello")  // 5
 
@@ -147,7 +147,7 @@ concat("Hello", " ", "World")  // "Hello World"
 
 ## Array Functions
 
-```reqon
+```vague
 // Length
 length([1, 2, 3])  // 3
 
@@ -186,7 +186,7 @@ findIndex(items, .id == "123")  // index of first match
 
 ## Object Functions
 
-```reqon
+```vague
 // Get keys/values
 keys({ a: 1, b: 2 })     // ["a", "b"]
 values({ a: 1, b: 2 })   // [1, 2]
@@ -203,7 +203,7 @@ merge({ a: 1 }, { b: 2 })          // { a: 1, b: 2 }
 
 ## Numeric Functions
 
-```reqon
+```vague
 // Rounding
 round(3.7)        // 4
 round(3.14159, 2) // 3.14
@@ -224,7 +224,7 @@ toString(42)      // "42"
 
 ## Date Functions
 
-```reqon
+```vague
 // Current time
 now()
 
@@ -256,7 +256,7 @@ isAfter(date1, date2)
 
 ## Type Functions
 
-```reqon
+```vague
 // Type checking
 .value is string
 .value is number
@@ -274,7 +274,7 @@ toArray("a")        // ["a"]
 
 ## Environment Variables
 
-```reqon
+```vague
 env("API_KEY")
 env("BASE_URL")
 env("DEBUG") == "true"
@@ -282,7 +282,7 @@ env("DEBUG") == "true"
 
 ## Pattern Matching in Expressions
 
-```reqon
+```vague
 match .status {
   "active" => "Active User",
   "pending" => "Pending Approval",
@@ -295,7 +295,7 @@ match .status {
 
 ### Data Transformation
 
-```reqon
+```vague
 map user -> Output {
   fullName: concat(.firstName, " ", .lastName),
   email: lowercase(.email),
@@ -311,7 +311,7 @@ map user -> Output {
 
 ### Aggregation
 
-```reqon
+```vague
 map orders -> Summary {
   totalOrders: length(orders),
   totalRevenue: sum(orders.map(.total)),
@@ -324,7 +324,7 @@ map orders -> Summary {
 
 ### Conditional Logic
 
-```reqon
+```vague
 map order -> PricedOrder {
   ...order,
   discount: match .customerTier {
@@ -347,7 +347,7 @@ map order -> PricedOrder {
 
 ### Validation Conditions
 
-```reqon
+```vague
 validate order {
   assume .id is string,
   assume length(.items) > 0,

@@ -19,23 +19,23 @@ This directory contains examples demonstrating Reqon's features for declarative 
 Organize large missions into folders with separate action files:
 ```
 github-sync/
-├── mission.reqon       # Sources, stores, schemas, pipeline
-├── fetch-issues.reqon  # Action file
-├── fetch-prs.reqon     # Action file
-└── normalize.reqon     # Action file
+├── mission.vague       # Sources, stores, schemas, pipeline
+├── fetch-issues.vague  # Action file
+├── fetch-prs.vague     # Action file
+└── normalize.vague     # Action file
 ```
 See: [github-sync](./github-sync/)
 
 ### Parallel Execution
 Run multiple actions concurrently:
-```reqon
+```vague
 run [FetchOrders, FetchPayments, FetchShipments] then Reconcile
 ```
 See: [github-sync](./github-sync/), [temporal-comparison](./temporal-comparison/)
 
 ### Schema Overloading with Match Steps
 Handle different API response types declaratively:
-```reqon
+```vague
 match response {
   SuccessSchema -> { store response -> cache },
   RateLimitError -> retry { maxAttempts: 5 },
@@ -60,7 +60,7 @@ Six directives for controlling execution flow:
 See: [error-handling](./error-handling/)
 
 ### Authentication Types
-```reqon
+```vague
 source API { auth: none }           # Public API
 source API { auth: bearer }         # Bearer token
 source API { auth: oauth2 }         # OAuth2
@@ -69,7 +69,7 @@ source API { auth: api_key }        # API key
 ```
 
 ### Pagination Strategies
-```reqon
+```vague
 paginate: offset(page, 100)                    # Offset pagination
 paginate: page(page, 100)                      # Page number pagination
 paginate: cursor(cursor, 100, "nextCursor")   # Cursor pagination
@@ -82,16 +82,16 @@ paginate: cursor(cursor, 100, "nextCursor")   # Cursor pagination
 npm run build
 
 # Run any example
-node dist/cli.js examples/<example>/<file>.reqon --verbose
+node dist/cli.js examples/<example>/<file>.vague --verbose
 
 # Run multi-file mission (folder)
 node dist/cli.js examples/github-sync --verbose
 
 # Dry run (no actual API calls)
-node dist/cli.js examples/xero/invoices.reqon --dry-run
+node dist/cli.js examples/xero/invoices.vague --dry-run
 
 # With credentials
-node dist/cli.js examples/xero/invoices.reqon --auth credentials.json
+node dist/cli.js examples/xero/invoices.vague --auth credentials.json
 ```
 
 ## Credentials Format

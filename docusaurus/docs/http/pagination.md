@@ -12,7 +12,7 @@ Reqon provides built-in support for the three most common pagination strategies:
 
 Uses an offset value that increments by page size:
 
-```reqon
+```vague
 get "/users" {
   paginate: offset(offset, 100),
   until: length(response.data) == 0
@@ -33,7 +33,7 @@ Parameters:
 
 Uses a page number starting from 1:
 
-```reqon
+```vague
 get "/users" {
   paginate: page(page, 50),
   until: response.meta.hasNext == false
@@ -54,7 +54,7 @@ Parameters:
 
 Uses a cursor token from the previous response:
 
-```reqon
+```vague
 get "/users" {
   paginate: cursor(cursor, 100, "meta.nextCursor"),
   until: response.meta.nextCursor == null
@@ -78,7 +78,7 @@ The `until` option specifies when to stop paginating:
 
 ### Empty Response
 
-```reqon
+```vague
 get "/items" {
   paginate: offset(skip, 100),
   until: length(response) == 0
@@ -87,7 +87,7 @@ get "/items" {
 
 ### Empty Data Array
 
-```reqon
+```vague
 get "/items" {
   paginate: offset(skip, 100),
   until: length(response.data) == 0
@@ -96,7 +96,7 @@ get "/items" {
 
 ### Boolean Flag
 
-```reqon
+```vague
 get "/items" {
   paginate: page(p, 50),
   until: response.hasMore == false
@@ -111,7 +111,7 @@ get "/items" {
 
 ### Null Cursor
 
-```reqon
+```vague
 get "/items" {
   paginate: cursor(after, 100, "cursor.next"),
   until: response.cursor.next == null
@@ -120,7 +120,7 @@ get "/items" {
 
 ### Maximum Pages
 
-```reqon
+```vague
 get "/items" {
   paginate: page(p, 100),
   until: length(response.items) == 0 or p > 10
@@ -129,7 +129,7 @@ get "/items" {
 
 ### Item Count Threshold
 
-```reqon
+```vague
 get "/items" {
   paginate: offset(skip, 100),
   until: length(response) < 100  // Less than full page
@@ -140,7 +140,7 @@ get "/items" {
 
 ### With Query Parameters
 
-```reqon
+```vague
 get "/users" {
   params: {
     status: "active",
@@ -153,7 +153,7 @@ get "/users" {
 
 ### With Retry
 
-```reqon
+```vague
 get "/users" {
   paginate: cursor(cursor, 100, "nextCursor"),
   until: response.nextCursor == null,
@@ -166,7 +166,7 @@ get "/users" {
 
 ### With Incremental Sync
 
-```reqon
+```vague
 get "/users" {
   paginate: page(page, 100),
   until: response.hasMore == false,
@@ -180,7 +180,7 @@ get "/users" {
 
 All pages are accumulated in `response`:
 
-```reqon
+```vague
 action FetchAll {
   get "/items" {
     paginate: offset(offset, 100),
@@ -198,7 +198,7 @@ action FetchAll {
 
 Process each page as it arrives:
 
-```reqon
+```vague
 action ProcessPages {
   get "/items" {
     paginate: offset(offset, 100),
@@ -218,7 +218,7 @@ action ProcessPages {
 
 ### Standard REST API
 
-```reqon
+```vague
 // API: GET /api/users?limit=100&offset=0
 get "/api/users" {
   params: { limit: 100 },
@@ -229,7 +229,7 @@ get "/api/users" {
 
 ### GraphQL-Style Cursor
 
-```reqon
+```vague
 // API uses cursor-based pagination
 get "/api/items" {
   paginate: cursor(after, 50, "pageInfo.endCursor"),
@@ -241,7 +241,7 @@ get "/api/items" {
 
 For APIs using Link headers, use cursor pagination:
 
-```reqon
+```vague
 get "/api/items" {
   paginate: cursor(page, 100, "links.next"),
   until: response.links.next == null
@@ -261,7 +261,7 @@ get "/api/items" {
 
 ### Handle Partial Pages
 
-```reqon
+```vague
 get "/items" {
   paginate: offset(offset, 100),
   until: length(response.items) < 100  // Partial page = last page
@@ -270,7 +270,7 @@ get "/items" {
 
 ### Set Reasonable Page Sizes
 
-```reqon
+```vague
 // Good: reasonable page size
 get "/items" {
   paginate: offset(offset, 100),
@@ -292,7 +292,7 @@ get "/items" {
 
 ### Add Safety Limits
 
-```reqon
+```vague
 get "/items" {
   paginate: page(page, 100),
   until: length(response.items) == 0 or page > 100  // Max 100 pages
@@ -301,7 +301,7 @@ get "/items" {
 
 ### Combine with Rate Limiting
 
-```reqon
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -325,7 +325,7 @@ action FetchAll {
 
 If pagination never stops:
 
-```reqon
+```vague
 // Add a safety limit
 get "/items" {
   paginate: page(page, 100),
@@ -337,7 +337,7 @@ get "/items" {
 
 Some APIs return overlapping results. Use upsert:
 
-```reqon
+```vague
 get "/items" {
   paginate: cursor(cursor, 100, "next"),
   until: response.next == null
@@ -352,7 +352,7 @@ for item in response {
 
 If items are being missed, check your termination condition:
 
-```reqon
+```vague
 // May miss items if last page has exactly 100 items
 until: length(response.items) == 0
 

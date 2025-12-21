@@ -8,7 +8,7 @@ The memory store uses an in-memory hash map. Data is lost when the process ends.
 
 ## Configuration
 
-```reqon
+```vague
 store cache: memory("cache")
 store tempData: memory("temp-processing")
 ```
@@ -17,7 +17,7 @@ store tempData: memory("temp-processing")
 
 ### Testing
 
-```reqon
+```vague
 mission TestSync {
   store testData: memory("test")
 
@@ -30,7 +30,7 @@ mission TestSync {
 
 ### Temporary Processing
 
-```reqon
+```vague
 mission Transform {
   store raw: memory("raw")
   store processed: file("processed")
@@ -53,7 +53,7 @@ mission Transform {
 
 ### Caching
 
-```reqon
+```vague
 mission CachedLookup {
   store lookupCache: memory("lookup-cache")
 
@@ -74,7 +74,7 @@ mission CachedLookup {
 
 ### Intermediate Results
 
-```reqon
+```vague
 mission Pipeline {
   store step1: memory("step1")
   store step2: memory("step2")
@@ -130,7 +130,7 @@ Data is not persisted:
 
 ### Use for Temporary Data
 
-```reqon
+```vague
 // Good: temporary processing
 store temp: memory("temp")
 
@@ -140,7 +140,7 @@ store customers: memory("customers")  // Use file or sql instead
 
 ### Combine with Persistent Stores
 
-```reqon
+```vague
 mission Hybrid {
   store cache: memory("cache")
   store persistent: file("data")
@@ -163,7 +163,7 @@ mission Hybrid {
 
 Memory is automatically released when mission ends, but you can clear explicitly:
 
-```reqon
+```vague
 action CleanUp {
   // Clear temporary data
   clear cache

@@ -8,7 +8,7 @@ Pipelines define the execution order of actions in a mission. They support seque
 
 ## Basic Syntax
 
-```reqon
+```vague
 run ActionName
 run ActionA then ActionB
 run [ActionA, ActionB] then ActionC
@@ -18,7 +18,7 @@ run [ActionA, ActionB] then ActionC
 
 Execute actions one after another:
 
-```reqon
+```vague
 mission DataPipeline {
   action Fetch { /* ... */ }
   action Transform { /* ... */ }
@@ -38,7 +38,7 @@ Fetch → Transform → Export
 
 Execute multiple actions concurrently:
 
-```reqon
+```vague
 mission ParallelFetch {
   action FetchUsers { /* ... */ }
   action FetchOrders { /* ... */ }
@@ -60,7 +60,7 @@ Execution diagram:
 
 Combine parallel and sequential:
 
-```reqon
+```vague
 mission ComplexPipeline {
   action FetchCustomers { /* ... */ }
   action FetchProducts { /* ... */ }
@@ -81,7 +81,7 @@ Execution:
 
 ## Multiple Parallel Groups
 
-```reqon
+```vague
 mission MultiPhase {
   // Phase 1: Fetch all data sources
   action FetchA { }
@@ -105,7 +105,7 @@ mission MultiPhase {
 
 Run a single action:
 
-```reqon
+```vague
 mission SimpleSync {
   action Sync {
     get "/data"
@@ -120,7 +120,7 @@ mission SimpleSync {
 
 Actions run in order share context:
 
-```reqon
+```vague
 mission DependentActions {
   store customers: memory("customers")
   store orders: memory("orders")
@@ -146,7 +146,7 @@ mission DependentActions {
 
 Parallel actions have isolated contexts:
 
-```reqon
+```vague
 mission ParallelIsolation {
   store results: memory("results")
 
@@ -171,7 +171,7 @@ mission ParallelIsolation {
 
 Errors in sequential pipelines stop execution:
 
-```reqon
+```vague
 run Fetch then Transform then Export
 // If Transform fails, Export never runs
 ```
@@ -180,7 +180,7 @@ run Fetch then Transform then Export
 
 In parallel groups, all actions run even if one fails:
 
-```reqon
+```vague
 run [FetchA, FetchB, FetchC] then Merge
 // If FetchB fails, FetchA and FetchC still complete
 // Merge runs but FetchB data is missing
@@ -188,7 +188,7 @@ run [FetchA, FetchB, FetchC] then Merge
 
 Handle partial failures:
 
-```reqon
+```vague
 action Merge {
   // Check which data sources succeeded
   match {
@@ -210,7 +210,7 @@ action Merge {
 
 ### ETL Pipeline
 
-```reqon
+```vague
 mission ETL {
   action Extract {
     get "/source-data"
@@ -236,7 +236,7 @@ mission ETL {
 
 ### Fan-Out Fan-In
 
-```reqon
+```vague
 mission FanOutFanIn {
   action FetchMain {
     get "/items"
@@ -274,7 +274,7 @@ mission FanOutFanIn {
 
 ### Conditional Pipeline
 
-```reqon
+```vague
 mission ConditionalPipeline {
   action CheckStatus {
     get "/status"
@@ -305,7 +305,7 @@ mission ConditionalPipeline {
 
 ### Retry Pipeline
 
-```reqon
+```vague
 mission RetryPipeline {
   action FetchWithRetry {
     get "/unreliable-endpoint" {
@@ -328,7 +328,7 @@ mission RetryPipeline {
 
 ### Group Related Fetches
 
-```reqon
+```vague
 // Good: related fetches in parallel
 run [FetchOrders, FetchOrderItems, FetchOrderPayments] then ProcessOrders
 
@@ -338,7 +338,7 @@ run [FetchOrders, FetchUsers, FetchProducts] then ???
 
 ### Keep Actions Focused
 
-```reqon
+```vague
 // Good: single responsibility
 action FetchUsers { }
 action TransformUsers { }
@@ -353,7 +353,7 @@ run DoEverything
 
 ### Handle Dependencies Explicitly
 
-```reqon
+```vague
 mission ExplicitDependencies {
   action FetchParent {
     get "/parents"
@@ -375,7 +375,7 @@ mission ExplicitDependencies {
 
 ### Document Complex Pipelines
 
-```reqon
+```vague
 mission DocumentedPipeline {
   // Phase 1: Data Collection
   action FetchCustomers { }

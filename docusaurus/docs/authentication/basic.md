@@ -10,7 +10,7 @@ HTTP Basic Authentication sends username and password with each request, encoded
 
 ### Mission File
 
-```reqon
+```vague
 source API {
   auth: basic,
   base: "https://api.example.com"
@@ -65,12 +65,12 @@ The value is `base64(username:password)`.
 ```bash
 export API_USERNAME="myuser"
 export API_PASSWORD="mypass"
-reqon mission.reqon --auth credentials.json
+reqon mission.vague --auth credentials.json
 ```
 
 ### In Mission File
 
-```reqon
+```vague
 source API {
   auth: basic,
   base: "https://api.example.com",
@@ -83,7 +83,7 @@ source API {
 
 ### Legacy Systems
 
-```reqon
+```vague
 source LegacyERP {
   auth: basic,
   base: "https://erp.company.com/api"
@@ -168,7 +168,7 @@ Many APIs use Basic auth with a token as password:
 
 ## Error Handling
 
-```reqon
+```vague
 action FetchData {
   get "/data"
 
@@ -186,7 +186,7 @@ action FetchData {
 
 Basic auth credentials are only Base64 encoded (not encrypted):
 
-```reqon
+```vague
 // Good
 source API {
   auth: basic,
@@ -204,7 +204,7 @@ source API {
 
 When available, use tokens instead:
 
-```reqon
+```vague
 // Preferred: token-based
 source API {
   auth: bearer,
@@ -240,10 +240,10 @@ If using actual password (not token):
 echo '{"API": {"type": "basic", "username": "user", "password": "new-pass"}}' > credentials.json
 
 # Test
-reqon mission.reqon --dry-run --auth credentials.json
+reqon mission.vague --dry-run --auth credentials.json
 
 # Run
-reqon mission.reqon --auth credentials.json
+reqon mission.vague --auth credentials.json
 ```
 
 ## Troubleshooting

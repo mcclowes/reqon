@@ -36,14 +36,14 @@ Options:
 
 ```
 missions/
-├── sync-customers.reqon
-├── sync-orders.reqon
-└── daily-report.reqon
+├── sync-customers.vague
+├── sync-orders.vague
+└── daily-report.vague
 ```
 
-### sync-customers.reqon
+### sync-customers.vague
 
-```reqon
+```vague
 mission SyncCustomers {
   schedule: every 15 minutes
 
@@ -135,7 +135,7 @@ services:
     volumes:
       - ./missions:/app/missions
       - ./credentials.json:/app/credentials.json
-      - reqon-data:/app/.reqon-data
+      - reqon-data:/app/.vague-data
     environment:
       - NODE_ENV=production
     restart: unless-stopped
@@ -180,7 +180,7 @@ curl http://localhost:8080/health
 
 ### File-Based Health
 
-```reqon
+```vague
 mission HealthCheck {
   schedule: every 1 minute
 
@@ -288,11 +288,11 @@ sudo -u reqon reqon ./missions/ --daemon
 
 ### Persistent Storage
 
-Ensure `.reqon-data` is on persistent storage:
+Ensure `.vague-data` is on persistent storage:
 
 ```yaml
 volumes:
-  - /var/lib/reqon:/app/.reqon-data
+  - /var/lib/reqon:/app/.vague-data
 ```
 
 ### Health Monitoring
