@@ -49,59 +49,16 @@ code {
   padding: 2px 6px;
 }
 
-/* Navbar styling */
-.navbar {
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+/* Navbar styling - backdrop-filter only on desktop to avoid breaking mobile menu */
+@media (min-width: 997px) {
+  .navbar {
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
 }
 
 .navbar__title {
   font-weight: 700;
-}
-
-/* Mobile hamburger menu fix - complete override for proper stacking */
-@media (max-width: 996px) {
-  .navbar-sidebar {
-    position: fixed !important;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 300 !important;
-    width: 100vw;
-    max-width: 100%;
-    background-color: var(--ifm-background-color);
-    transform: translateX(0);
-    visibility: visible;
-    overflow-y: auto;
-  }
-
-  .navbar-sidebar--show {
-    transform: translateX(0);
-  }
-
-  .navbar-sidebar__backdrop {
-    position: fixed !important;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 299 !important;
-    background-color: rgba(0, 0, 0, 0.6);
-    opacity: 1;
-  }
-
-  /* Ensure toggle button is always accessible */
-  .navbar__toggle {
-    position: relative;
-    z-index: 10;
-    display: flex !important;
-  }
-
-  /* Prevent body scroll when menu is open */
-  html:has(.navbar-sidebar--show) {
-    overflow: hidden;
-  }
 }
 
 /* Hero section on homepage */
