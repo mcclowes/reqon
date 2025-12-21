@@ -6,7 +6,7 @@ import type {
 } from 'vague-lang';
 
 // Reqon extends Vague's statements
-export type Statement = VagueStatement | MissionDefinition | SourceDefinition | StoreDefinition | ActionDefinition;
+export type Statement = VagueStatement | MissionDefinition | SourceDefinition | StoreDefinition | ActionDefinition | TransformDefinition;
 
 export interface ReqonProgram {
   type: 'ReqonProgram';
@@ -103,6 +103,7 @@ export interface MissionDefinition {
   sources: SourceDefinition[];
   stores: StoreDefinition[];
   schemas: SchemaDefinition[];
+  transforms: TransformDefinition[];
   actions: ActionDefinition[];
   pipeline: PipelineDefinition;
 }
@@ -114,7 +115,7 @@ export interface ActionDefinition {
   steps: ActionStep[];
 }
 
-export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep | MatchStep | LetStep | WebhookStep;
+export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep | MatchStep | LetStep | ApplyStep | WebhookStep;
 
 // let myVar = expression
 export interface LetStep {
@@ -248,6 +249,42 @@ export interface MapStep {
 export interface FieldMapping {
   field: string;
   expression: Expression;
+}
+
+// Named, reusable transformation with optional overloading
+// transform ToStandard: RawItem -> StandardItem { ... }
+// transform ToUnified { (SchemaA) -> Target { ... }, (SchemaB) -> Target { ... } }
+export interface TransformDefinition {
+  type: 'TransformDefinition';
+  name: string;
+  variants: TransformVariant[];
+}
+
+export interface TransformVariant {
+  /** Source schema name, or '_' for wildcard/default */
+  sourceSchema: string | '_';
+  /** Target schema name */
+  targetSchema: string;
+  /** Optional guard condition for additional matching */
+  guard?: Expression;
+  /** Field mappings for this variant */
+  mappings: FieldMapping[];
+}
+
+// apply TransformName to expression
+// apply TransformName to expression as variableName
+export interface ApplyStep {
+  type: 'ApplyStep';
+  transform: string;
+  source: Expression;
+  /** Optional: bind result to a variable instead of response */
+  as?: string;
+}
+
+// try { expr1, expr2, expr3 } - field-level fallback chain
+export interface TryExpression {
+  type: 'TryExpression';
+  expressions: Expression[];
 }
 
 // validate response { assume .Total is decimal, ... }

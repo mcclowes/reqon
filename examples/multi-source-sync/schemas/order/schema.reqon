@@ -1,0 +1,52 @@
+// Order Schemas
+// This file defines the schema for orders from different sources
+// and the unified order format
+
+// ============================================
+// Source Schemas (what we receive from APIs)
+// ============================================
+
+schema XeroInvoice {
+  InvoiceID: string,
+  InvoiceNumber: string,
+  Contact: { ContactID: string, Name: string },
+  Total: decimal,
+  CurrencyCode: string,
+  Date: date,
+  Status: string
+}
+
+schema StripeCharge {
+  id: string,
+  amount: int,           // cents
+  currency: string,
+  created: int,          // unix timestamp
+  status: string,
+  metadata: any?
+}
+
+schema ShopifyOrder {
+  id: string,
+  order_number: string,
+  total_price: string,   // string decimal
+  currency: string,
+  created_at: string,    // ISO date
+  financial_status: string,
+  customer: { id: string, email: string? }
+}
+
+// ============================================
+// Target Schema (unified format)
+// ============================================
+
+schema UnifiedOrder {
+  id: string,
+  source: string,
+  external_id: string,
+  customer_ref: string?,
+  amount: decimal,
+  currency: string,
+  status: string,
+  created_at: date,
+  synced_at: date
+}

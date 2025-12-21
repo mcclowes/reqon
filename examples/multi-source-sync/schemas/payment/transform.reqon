@@ -1,0 +1,36 @@
+// Payment Transformations
+
+transform ToUnifiedPayment {
+  // Stripe payments
+  (StripePayment) -> UnifiedPayment {
+    id: "payment-stripe-" + .id,
+    source: "stripe",
+    order_ref: .charge,
+    amount: .amount / 100,
+    currency: .currency,
+    status: .status,
+    paid_at: fromUnix(.created)
+  }
+
+  // Xero payments
+  (XeroPayment) -> UnifiedPayment {
+    id: "payment-xero-" + .PaymentID,
+    source: "xero",
+    order_ref: .Invoice.InvoiceID,
+    amount: .Amount,
+    currency: .CurrencyCode,
+    status: "completed",
+    paid_at: .Date
+  }
+
+  // Fallback
+  (_) -> UnifiedPayment {
+    id: "payment-" + (.id ?? generateId()),
+    source: "unknown",
+    order_ref: null,
+    amount: .amount ?? 0,
+    currency: .currency ?? "USD",
+    status: "unknown",
+    paid_at: now()
+  }
+}
