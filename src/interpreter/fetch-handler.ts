@@ -2,7 +2,7 @@ import type { FetchStep, RetryConfig, PaginationConfig } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
 import { evaluate, interpolatePath } from './evaluator.js';
 import { HttpClient } from './http.js';
-import { resolveOperation, getResponseSchema, validateResponse } from '../oas/index.js';
+import { resolveOperation, getResponseSchema, validateResponse, generateMockData } from '../oas/index.js';
 import type { OASSource } from '../oas/index.js';
 import { generateCheckpointKey, formatSinceDate, type SyncStore } from '../sync/index.js';
 import { extractNestedValue } from '../utils/path.js';
@@ -70,8 +70,9 @@ export class FetchHandler {
     const fetchStartTime = Date.now();
 
     if (this.deps.dryRun) {
+      const mockData = this.generateDryRunMockData(resolved.sourceName, resolved.operationId);
       this.deps.log('(dry run - skipping actual request)');
-      return { data: { dryRun: true }, checkpointKey };
+      return { data: mockData, checkpointKey };
     }
 
     // Execute with or without pagination
@@ -362,5 +363,26 @@ export class FetchHandler {
       const errorMessages = result.errors.map((e) => `  ${e.path}: ${e.message}`).join('\n');
       this.deps.log(`Response validation warnings for ${operationId}:\n${errorMessages}`);
     }
+  }
+
+  /**
+   * Generate mock data for dry run mode.
+   * Uses OAS response schema if available, otherwise returns a simple placeholder.
+   */
+  private generateDryRunMockData(sourceName: string, operationId?: string): unknown {
+    // Try to get schema from OAS source
+    if (operationId) {
+      const oasSource = this.deps.oasSources.get(sourceName);
+      if (oasSource) {
+        const schema = getResponseSchema(oasSource, operationId);
+        if (schema) {
+          this.deps.log(`Generating mock data from OAS schema for ${operationId}`);
+          return generateMockData(schema);
+        }
+      }
+    }
+
+    // Fallback to simple placeholder
+    return { _dryRun: true, _message: 'No OAS schema available for mock generation' };
   }
 }
