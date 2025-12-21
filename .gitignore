@@ -103,5 +103,6 @@ out/
 
 # Reqon runtime data
 .reqon-data/
+.reqon-test-stores/
 output.json
 .reqon-test-progress/
