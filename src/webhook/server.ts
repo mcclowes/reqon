@@ -17,6 +17,7 @@ import type {
 } from './types.js';
 import type { WebhookStore } from './store.js';
 import { MemoryWebhookStore } from './store.js';
+import { WEBHOOK_DEFAULTS } from '../config/index.js';
 
 /**
  * Pending wait request
@@ -47,10 +48,10 @@ export class WebhookServer {
     callbacks: WebhookServerCallbacks = {}
   ) {
     this.config = {
-      port: config.port ?? 3000,
-      host: config.host ?? '0.0.0.0',
-      baseUrl: config.baseUrl ?? `http://localhost:${config.port ?? 3000}`,
-      defaultTimeout: config.defaultTimeout ?? 300000, // 5 minutes
+      port: config.port ?? WEBHOOK_DEFAULTS.PORT,
+      host: config.host ?? WEBHOOK_DEFAULTS.HOST,
+      baseUrl: config.baseUrl ?? `http://localhost:${config.port ?? WEBHOOK_DEFAULTS.PORT}`,
+      defaultTimeout: config.defaultTimeout ?? WEBHOOK_DEFAULTS.DEFAULT_TIMEOUT_MS,
       verbose: config.verbose ?? false,
     };
     this.store = store ?? new MemoryWebhookStore();
@@ -74,8 +75,8 @@ export class WebhookServer {
         this.running = true;
         this.log(`Webhook server listening on ${this.config.host}:${this.config.port}`);
 
-        // Start cleanup interval (every minute)
-        this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
+        // Start cleanup interval
+        this.cleanupInterval = setInterval(() => this.cleanup(), WEBHOOK_DEFAULTS.CLEANUP_INTERVAL_MS);
 
         resolve();
       });

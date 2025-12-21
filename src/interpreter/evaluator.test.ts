@@ -519,7 +519,7 @@ describe('evaluate', () => {
         arguments: [],
       };
 
-      expect(() => evaluate(expr, ctx)).toThrow('Unknown function: unknownFn');
+      expect(() => evaluate(expr, ctx)).toThrow('Unsupported operation: function: unknownFn');
     });
   });
 
@@ -688,7 +688,7 @@ describe('evaluate', () => {
         typeCheck: 'unknownType',
       };
 
-      expect(() => evaluate(expr as unknown as Expression, ctx)).toThrow("Unknown type for 'is' check: unknownType");
+      expect(() => evaluate(expr as unknown as Expression, ctx)).toThrow('Unsupported operation: type check: unknownType');
     });
   });
 });

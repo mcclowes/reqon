@@ -3,6 +3,7 @@ import type { StepHandler, StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
 import { childContext, setVariable, getVariable } from '../context.js';
 import type { ExecutionContext } from '../context.js';
+import { StepError } from '../../errors/index.js';
 
 export interface ForHandlerDeps extends StepHandlerDeps {
   executeStep: (step: ActionStep, actionName: string, ctx: ExecutionContext) => Promise<void>;
@@ -82,7 +83,11 @@ export class ForHandler implements StepHandler<ForStep> {
     }
 
     if (!Array.isArray(collection)) {
-      throw new Error('For loop collection must be an array');
+      throw new StepError(
+        'For loop collection must be an array',
+        'for',
+        { action: this.deps.actionName }
+      );
     }
 
     return collection;
