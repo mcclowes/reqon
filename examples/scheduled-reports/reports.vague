@@ -1,0 +1,325 @@
+// Scheduled Reports Example
+// Demonstrates: schedule directives, cron expressions, scheduling options
+// Generates daily analytics reports from multiple data sources
+
+mission DailyAnalyticsReports {
+
+  // ============================================================
+  // SCHEDULING
+  // ============================================================
+
+  // Run every day at 6:00 AM UTC
+  schedule: cron "0 6 * * *"
+
+  // Scheduling options
+  skipIfRunning: true      // Don't start new run if previous still running
+  retryOnFailure: 3        // Retry up to 3 times on failure
+  maxConcurrency: 1        // Only one instance at a time
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source Analytics {
+    auth: bearer,
+    base: "https://api.analytics.example.com/v1"
+  }
+
+  source Metrics {
+    auth: api_key,
+    base: "https://metrics.example.com/api"
+  }
+
+  source Slack {
+    auth: bearer,
+    base: "https://slack.com/api"
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  store daily_reports: sql("daily_reports")
+  store report_metrics: sql("report_metrics")
+  store alerts: memory("alerts")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema DailyReport {
+    id: string,
+    date: date,
+    total_users: int,
+    active_users: int,
+    new_signups: int,
+    revenue: decimal,
+    page_views: int,
+    avg_session_duration: decimal,
+    generated_at: date
+  }
+
+  schema MetricsSummary {
+    report_id: string,
+    metric_name: string,
+    value: decimal,
+    change_percent: decimal,
+    trend: string
+  }
+
+  schema Alert {
+    id: string,
+    severity: string,
+    message: string,
+    metric: string,
+    threshold: decimal,
+    actual: decimal
+  }
+
+  // ============================================================
+  // ACTION: Fetch User Analytics
+  // ============================================================
+
+  action FetchUserAnalytics {
+    let yesterday = now() - days(1)
+    let report_date = yesterday
+
+    get "/users/stats" {
+      source: Analytics,
+      body: {
+        "date": report_date,
+        "metrics": ["total", "active", "new"]
+      }
+    }
+
+    match response {
+      _ where .data != null -> {
+        store {
+          report_date: report_date,
+          total_users: response.data.total,
+          active_users: response.data.active,
+          new_signups: response.data.new
+        } -> report_metrics { key: "users_" + report_date }
+      },
+
+      _ -> abort "Failed to fetch user analytics"
+    }
+  }
+
+  // ============================================================
+  // ACTION: Fetch Revenue Metrics
+  // ============================================================
+
+  action FetchRevenueMetrics {
+    let yesterday = now() - days(1)
+
+    get "/revenue/daily" {
+      source: Metrics,
+      body: {
+        "date": yesterday
+      }
+    }
+
+    match response {
+      _ where .revenue != null -> {
+        store {
+          report_date: yesterday,
+          revenue: response.revenue,
+          transactions: response.transaction_count
+        } -> report_metrics { key: "revenue_" + yesterday }
+
+        // Alert if revenue drops significantly
+        let previous_day_revenue = report_metrics["revenue_" + (yesterday - days(1))].revenue
+
+        validate response {
+          assume .revenue >= previous_day_revenue * 0.7
+        } or {
+          store {
+            id: "alert_revenue_" + yesterday,
+            severity: "high",
+            message: "Revenue dropped more than 30% from previous day",
+            metric: "revenue",
+            threshold: previous_day_revenue * 0.7,
+            actual: response.revenue
+          } -> alerts { key: .id }
+        }
+      },
+
+      _ -> skip
+    }
+  }
+
+  // ============================================================
+  // ACTION: Fetch Engagement Metrics
+  // ============================================================
+
+  action FetchEngagementMetrics {
+    let yesterday = now() - days(1)
+
+    get "/engagement/summary" {
+      source: Analytics,
+      body: {
+        "start_date": yesterday,
+        "end_date": yesterday
+      }
+    }
+
+    match response {
+      _ where .page_views != null -> {
+        store {
+          report_date: yesterday,
+          page_views: response.page_views,
+          avg_session_duration: response.avg_session_seconds / 60
+        } -> report_metrics { key: "engagement_" + yesterday }
+      },
+
+      _ -> skip
+    }
+  }
+
+  // ============================================================
+  // ACTION: Compile Daily Report
+  // ============================================================
+
+  action CompileDailyReport {
+    let yesterday = now() - days(1)
+    let users = report_metrics["users_" + yesterday]
+    let revenue = report_metrics["revenue_" + yesterday]
+    let engagement = report_metrics["engagement_" + yesterday]
+
+    map {
+      users: users,
+      revenue: revenue,
+      engagement: engagement
+    } -> DailyReport {
+      id: "report_" + yesterday,
+      date: yesterday,
+      total_users: users.total_users,
+      active_users: users.active_users,
+      new_signups: users.new_signups,
+      revenue: revenue.revenue,
+      page_views: engagement.page_views,
+      avg_session_duration: engagement.avg_session_duration,
+      generated_at: now()
+    }
+
+    validate response {
+      assume .total_users > 0
+      assume .revenue >= 0
+    }
+
+    store response -> daily_reports { key: .id }
+
+    // Calculate trends compared to last week
+    let last_week_report = daily_reports["report_" + (yesterday - days(7))]
+
+    for metric in ["total_users", "active_users", "revenue", "page_views"] {
+      let current_value = match metric {
+        "total_users" => response.total_users,
+        "active_users" => response.active_users,
+        "revenue" => response.revenue,
+        "page_views" => response.page_views
+      }
+
+      let previous_value = match metric {
+        "total_users" => last_week_report.total_users,
+        "active_users" => last_week_report.active_users,
+        "revenue" => last_week_report.revenue,
+        "page_views" => last_week_report.page_views
+      }
+
+      let change = ((current_value - previous_value) / previous_value) * 100
+
+      store {
+        report_id: response.id,
+        metric_name: metric,
+        value: current_value,
+        change_percent: change,
+        trend: match change {
+          x where x > 10 => "up_strong",
+          x where x > 0 => "up",
+          x where x > -10 => "down",
+          _ => "down_strong"
+        }
+      } -> report_metrics { key: response.id + "_trend_" + metric }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Send Slack Summary
+  // ============================================================
+
+  action SendSlackSummary {
+    let yesterday = now() - days(1)
+    let report = daily_reports["report_" + yesterday]
+    let pending_alerts = alerts where .severity == "high"
+
+    post "/chat.postMessage" {
+      source: Slack,
+      body: {
+        "channel": env("SLACK_REPORTS_CHANNEL"),
+        "text": concat(
+          "*Daily Analytics Report - ", yesterday, "*\n\n",
+          ":busts_in_silhouette: *Users*\n",
+          "Total: ", report.total_users, " | Active: ", report.active_users, " | New: ", report.new_signups, "\n\n",
+          ":moneybag: *Revenue*\n",
+          "$", report.revenue, "\n\n",
+          ":chart_with_upwards_trend: *Engagement*\n",
+          "Page Views: ", report.page_views, " | Avg Session: ", report.avg_session_duration, " min\n\n",
+          match length(pending_alerts) {
+            0 => ":white_check_mark: No alerts",
+            _ => concat(":warning: ", length(pending_alerts), " alert(s) require attention")
+          }
+        )
+      }
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  // Fetch all metrics in parallel, then compile and notify
+  run [FetchUserAnalytics, FetchRevenueMetrics, FetchEngagementMetrics]
+    then CompileDailyReport
+    then SendSlackSummary
+}
+
+
+// ============================================================
+// ALTERNATIVE SCHEDULE EXAMPLES
+// ============================================================
+
+// Hourly report
+mission HourlyMetrics {
+  schedule: every 1 hour
+
+  action FetchHourlyStats {
+    // ...
+  }
+
+  run FetchHourlyStats
+}
+
+// Weekly digest on Mondays at 9am
+mission WeeklyDigest {
+  schedule: cron "0 9 * * 1"
+  skipIfRunning: true
+
+  action CompileWeeklyReport {
+    // ...
+  }
+
+  run CompileWeeklyReport
+}
+
+// Specific time execution
+mission EndOfDayReconciliation {
+  schedule: at "23:55"  // Run at 11:55 PM daily
+
+  action Reconcile {
+    // ...
+  }
+
+  run Reconcile
+}

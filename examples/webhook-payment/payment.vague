@@ -1,0 +1,241 @@
+// Webhook Payment Processing Example
+// Demonstrates: wait steps, webhook event filtering, async payment flows
+// Handles payment initiation and waits for webhook confirmation
+
+mission WebhookPaymentFlow {
+
+  // ============================================================
+  // SOURCES
+  // ============================================================
+
+  source PaymentProvider {
+    auth: bearer,
+    base: "https://api.payment-provider.com/v1"
+  }
+
+  source InternalAPI {
+    auth: bearer,
+    base: "https://api.internal.com"
+  }
+
+  // ============================================================
+  // STORES
+  // ============================================================
+
+  store pending_payments: memory("pending")
+  store completed_payments: sql("payments")
+  store failed_payments: sql("failed_payments")
+  store webhook_events: memory("webhooks")
+
+  // ============================================================
+  // SCHEMAS
+  // ============================================================
+
+  schema PaymentIntent {
+    id: string,
+    status: string,
+    amount: decimal,
+    currency: string,
+    client_secret: string
+  }
+
+  schema WebhookEvent {
+    id: string,
+    type: string,
+    data: object,
+    created: date
+  }
+
+  schema PaymentSucceeded {
+    type: string,
+    payment_id: string,
+    amount: decimal,
+    captured_at: date
+  }
+
+  schema PaymentFailed {
+    type: string,
+    payment_id: string,
+    error_code: string,
+    error_message: string
+  }
+
+  // ============================================================
+  // ACTION: Create Payment Intent
+  // ============================================================
+
+  action CreatePaymentIntent {
+    // Fetch orders that need payment
+    get "/orders/pending-payment" {
+      source: InternalAPI
+    }
+
+    for order in response.orders {
+      // Create payment intent with the provider
+      post "/payment_intents" {
+        source: PaymentProvider,
+        body: {
+          "amount": order.total * 100,  // Convert to cents
+          "currency": order.currency,
+          "metadata": {
+            "order_id": order.id,
+            "customer_id": order.customer_id
+          },
+          "capture_method": "automatic"
+        }
+      }
+
+      match response {
+        PaymentIntent -> {
+          // Store pending payment for tracking
+          store {
+            payment_id: response.id,
+            order_id: order.id,
+            amount: order.total,
+            currency: order.currency,
+            status: "pending",
+            created_at: now()
+          } -> pending_payments { key: response.id }
+        },
+
+        _ -> {
+          store {
+            order_id: order.id,
+            error: "Failed to create payment intent",
+            timestamp: now()
+          } -> failed_payments { key: order.id }
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Wait for Payment Confirmation
+  // ============================================================
+
+  action WaitForPaymentWebhook {
+    for payment in pending_payments where .status == "pending" {
+      // The wait step pauses execution until a matching webhook arrives
+      // or the timeout is reached
+      wait {
+        // Maximum time to wait for webhook (5 minutes)
+        timeout: 300000,
+
+        // Webhook endpoint path that will receive events
+        path: "/webhooks/payment",
+
+        // Expected event types that complete the wait
+        expectedEvents: ["payment_intent.succeeded", "payment_intent.payment_failed"],
+
+        // Filter to match webhook to this specific payment
+        eventFilter: .data.object.id == payment.payment_id,
+
+        // Retry on timeout (useful for slow payment methods)
+        retryOnTimeout: false,
+
+        // Store received webhooks for audit
+        storage: webhook_events
+      }
+
+      // webhook variable contains the matched event
+      match webhook {
+        // Payment succeeded
+        _ where .type == "payment_intent.succeeded" -> {
+          store {
+            payment_id: payment.payment_id,
+            order_id: payment.order_id,
+            amount: payment.amount,
+            currency: payment.currency,
+            status: "succeeded",
+            captured_at: webhook.created,
+            provider_event_id: webhook.id
+          } -> completed_payments { key: payment.payment_id, upsert: true }
+
+          // Notify internal system
+          post "/orders/{payment.order_id}/mark-paid" {
+            source: InternalAPI,
+            body: {
+              "payment_id": payment.payment_id,
+              "paid_at": webhook.created
+            }
+          }
+        },
+
+        // Payment failed
+        _ where .type == "payment_intent.payment_failed" -> {
+          store {
+            payment_id: payment.payment_id,
+            order_id: payment.order_id,
+            error_code: webhook.data.object.last_payment_error.code,
+            error_message: webhook.data.object.last_payment_error.message,
+            failed_at: webhook.created
+          } -> failed_payments { key: payment.payment_id }
+        },
+
+        // Timeout or unexpected event
+        _ -> {
+          store {
+            payment_id: payment.payment_id,
+            order_id: payment.order_id,
+            error: "Webhook timeout or unexpected event",
+            timestamp: now()
+          } -> failed_payments { key: payment.payment_id }
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // ACTION: Handle Refund Webhooks
+  // ============================================================
+
+  action ProcessRefundWebhooks {
+    // Listen for refund events on completed payments
+    for payment in completed_payments where .status == "succeeded" {
+      wait {
+        timeout: 0,  // Non-blocking check for existing webhooks
+        path: "/webhooks/payment",
+        expectedEvents: ["charge.refunded", "charge.refund.updated"],
+        eventFilter: .data.object.payment_intent == payment.payment_id,
+        retryOnTimeout: false,
+        storage: webhook_events
+      }
+
+      match webhook {
+        _ where .type == "charge.refunded" -> {
+          let refund_amount = webhook.data.object.amount_refunded / 100
+
+          store {
+            ...payment,
+            status: match refund_amount {
+              payment.amount => "refunded",
+              _ => "partially_refunded"
+            },
+            refunded_amount: refund_amount,
+            refunded_at: webhook.created
+          } -> completed_payments { key: payment.payment_id, upsert: true }
+
+          // Notify internal system of refund
+          post "/orders/{payment.order_id}/refunded" {
+            source: InternalAPI,
+            body: {
+              "payment_id": payment.payment_id,
+              "refund_amount": refund_amount
+            }
+          }
+        },
+
+        // No refund webhook - continue
+        _ -> continue
+      }
+    }
+  }
+
+  // ============================================================
+  // PIPELINE
+  // ============================================================
+
+  run CreatePaymentIntent
+    then WaitForPaymentWebhook
+    then ProcessRefundWebhooks
+}
