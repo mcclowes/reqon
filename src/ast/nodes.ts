@@ -114,7 +114,14 @@ export interface ActionDefinition {
   steps: ActionStep[];
 }
 
-export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep | MatchStep;
+export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep | MatchStep | LetStep;
+
+// let myVar = expression
+export interface LetStep {
+  type: 'LetStep';
+  name: string;
+  value: Expression;
+}
 
 // Flow control directives for match arms
 export type FlowDirective =

@@ -28,7 +28,7 @@
 - [x] **`is` type checking** - `assume .items is array` syntax
 - [x] **Parallel execution** - `run [Step1, Step2] then Step3` (bracket syntax for parallel stages)
 - [x] **Conditional actions** - `run Step1 then Step2 if condition` (already implemented in parser)
-- [ ] **Variables/let bindings** - Reusable values within missions
+- [x] **Variables/let bindings** - Reusable values within missions
 - [x] **Schema definitions** - Full Vague schema support with validation and matching
 
 ## Developer Experience

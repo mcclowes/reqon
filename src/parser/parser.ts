@@ -20,6 +20,7 @@ import type {
   MatchStep,
   MatchArm,
   FlowDirective,
+  LetStep,
   PaginationConfig,
   RetryConfig,
   FieldMapping,
@@ -620,6 +621,7 @@ export class ReqonParser extends ReqonExpressionParser {
     if (this.check(TokenType.VALIDATE)) return this.parseValidateStep();
     if (this.check(ReqonTokenType.STORE)) return this.parseStoreStep();
     if (this.check(TokenType.MATCH)) return this.parseMatchStep();
+    if (this.check(TokenType.LET)) return this.parseLetStep();
 
     throw this.error(`Expected action step, got: ${this.peek().value}`);
   }
@@ -1218,6 +1220,19 @@ export class ReqonParser extends ReqonExpressionParser {
     }
 
     return undefined;
+  }
+
+  // ============================================
+  // Let step (variable binding)
+  // ============================================
+
+  private parseLetStep(): LetStep {
+    this.consume(TokenType.LET, "Expected 'let'");
+    const name = this.consumeIdentifier('Expected variable name').value;
+    this.consume(TokenType.EQUALS, "Expected '='");
+    const value = this.parseExpression();
+
+    return { type: 'LetStep', name, value };
   }
 
   // ============================================

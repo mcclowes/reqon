@@ -10,6 +10,7 @@ import type {
   ValidateStep,
   StoreStep,
   MatchStep,
+  LetStep,
   PipelineDefinition,
   PipelineStage,
   SourceDefinition,
@@ -807,6 +808,9 @@ export class MissionExecutor {
         case 'MatchStep':
           await this.executeMatch(step, actionName);
           break;
+        case 'LetStep':
+          await this.executeLet(step);
+          break;
         default:
           throw new Error(`Unknown step type: ${(step as ActionStep).type}`);
       }
@@ -901,6 +905,12 @@ export class MissionExecutor {
     });
     await handler.execute(step);
     // Flow control signals (SkipSignal, RetrySignal, etc.) will propagate up
+  }
+
+  private async executeLet(step: LetStep): Promise<void> {
+    const value = evaluate(step.value, this.ctx);
+    setVariable(this.ctx, step.name, value);
+    this.log(`Set variable '${step.name}' = ${JSON.stringify(value)}`);
   }
 
   private log(message: string): void {
