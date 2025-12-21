@@ -48,20 +48,39 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Validate version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Error: Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - name: Get vague-lang version
+        id: vague-version
+        run: |
+          VAGUE_VERSION=$(node -p "require('../vague/package.json').version")
+          echo "version=$VAGUE_VERSION" >> $GITHUB_OUTPUT
+
       - name: Update package.json for publishing
         run: |
           # Replace local file dependency with published version for npm
-          # This assumes vague-lang is published to npm
           node -e "
             const pkg = require('./package.json');
             if (pkg.dependencies['vague-lang']?.startsWith('file:')) {
-              pkg.dependencies['vague-lang'] = '*';
+              pkg.dependencies['vague-lang'] = '^${{ steps.vague-version.outputs.version }}';
             }
             require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2));
           "
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: |
+          if [[ "$GITHUB_REF" == *"-alpha"* ]] || [[ "$GITHUB_REF" == *"-beta"* ]] || [[ "$GITHUB_REF" == *"-rc"* ]]; then
+            npm publish --provenance --access public --tag next
+          else
+            npm publish --provenance --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
