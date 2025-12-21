@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path';
 import { fromPath, parse, Scheduler, loadMission } from './index.js';
 import type { ScheduleEvent } from './scheduler/index.js';
 import { ReqonError } from './errors/index.js';
+import { loadEnv, loadCredentials } from './auth/credentials.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -19,16 +20,27 @@ Usage:
 Options:
   --dry-run        Run without making actual HTTP requests
   --verbose        Enable verbose logging
-  --auth <file>    JSON file with auth credentials
+  --auth <file>    JSON file with auth credentials (supports env var interpolation)
+  --env <file>     Path to .env file (default: .env in current directory)
   --output <path>  Export stores to JSON (file or directory)
   --daemon         Run as daemon, executing scheduled missions
   --once           Run scheduled missions once immediately, then exit
   --help, -h       Show this help message
 
+Environment Variables:
+  Credentials in --auth files support env var interpolation:
+    $VAR_NAME, \${VAR_NAME}, \${VAR_NAME:-default}
+
+  Auto-discovery from env vars (no --auth file needed):
+    REQON_{SOURCE}_TOKEN      Bearer token for source
+    REQON_{SOURCE}_TYPE       Auth type (bearer, oauth2, api_key, basic)
+    REQON_{SOURCE}_API_KEY    API key for source
+
 Examples:
   reqon sync-invoices.reqon --verbose
   reqon ./sync-invoices/ --verbose        # folder with mission.reqon + action files
   reqon sync-invoices.reqon --auth ./credentials.json
+  reqon sync-invoices.reqon --env .env.production --auth ./credentials.json
   reqon sync-invoices.reqon --output ./output.json
   reqon sync-invoices.reqon --daemon --verbose
 `);
@@ -41,12 +53,27 @@ Examples:
   const daemon = args.includes('--daemon');
   const once = args.includes('--once');
 
+  // Load .env file(s)
+  let envFile: string | undefined;
+  const envIndex = args.indexOf('--env');
+  if (envIndex !== -1 && args[envIndex + 1]) {
+    envFile = args[envIndex + 1];
+  }
+
+  const envResult = loadEnv({ envFile });
+  if (verbose && envResult.loaded) {
+    console.log(`Loaded ${envResult.count} env vars from: ${envResult.files.join(', ')}`);
+  }
+
+  // Load and resolve auth credentials
   let auth: Record<string, unknown> | undefined;
   const authIndex = args.indexOf('--auth');
   if (authIndex !== -1 && args[authIndex + 1]) {
     const authPath = resolve(args[authIndex + 1]);
     const authContent = await readFile(authPath, 'utf-8');
-    auth = JSON.parse(authContent);
+    const rawAuth = JSON.parse(authContent);
+    // Resolve env var references in the auth config
+    auth = loadCredentials(rawAuth);
   }
 
   let outputPath: string | undefined;

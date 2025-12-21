@@ -80,6 +80,18 @@ export {
   type LoadResult,
   type LoadOptions,
 } from './loader/index.js';
+export {
+  loadEnv,
+  loadCredentials,
+  resolveCredentials,
+  resolveEnvString,
+  hasEnvReference,
+  credentialsFromEnv,
+  type CredentialsConfig,
+  type LoadEnvResult,
+  type AuthCredentials,
+  type SourceCredentials,
+} from './auth/credentials.js';
 
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
