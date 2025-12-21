@@ -162,6 +162,42 @@ describe('MemoryStore', () => {
     });
   });
 
+  describe('count', () => {
+    beforeEach(async () => {
+      await store.set('1', { id: '1', name: 'Alice', status: 'active' });
+      await store.set('2', { id: '2', name: 'Bob', status: 'inactive' });
+      await store.set('3', { id: '3', name: 'Charlie', status: 'active' });
+      await store.set('4', { id: '4', name: 'Diana', status: 'active' });
+    });
+
+    it('returns total count when no filter', async () => {
+      const count = await store.count();
+      expect(count).toBe(4);
+    });
+
+    it('returns count matching where clause', async () => {
+      const count = await store.count({ where: { status: 'active' } });
+      expect(count).toBe(3);
+    });
+
+    it('returns 0 when no records match', async () => {
+      const count = await store.count({ where: { status: 'unknown' } });
+      expect(count).toBe(0);
+    });
+
+    it('ignores limit and offset for counting', async () => {
+      // limit/offset should not affect count - count returns total matching records
+      const count = await store.count({ where: { status: 'active' }, limit: 1, offset: 1 });
+      expect(count).toBe(3);
+    });
+
+    it('returns 0 for empty store', async () => {
+      await store.clear();
+      const count = await store.count();
+      expect(count).toBe(0);
+    });
+  });
+
   describe('size', () => {
     it('returns 0 for empty store', () => {
       expect(store.size()).toBe(0);

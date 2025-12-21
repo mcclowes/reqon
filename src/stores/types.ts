@@ -4,6 +4,7 @@ export interface StoreAdapter {
   update(key: string, value: Partial<Record<string, unknown>>): Promise<void>;
   delete(key: string): Promise<void>;
   list(filter?: StoreFilter): Promise<Record<string, unknown>[]>;
+  count(filter?: StoreFilter): Promise<number>;
   clear(): Promise<void>;
 }
 
