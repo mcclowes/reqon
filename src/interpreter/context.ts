@@ -7,6 +7,9 @@ export interface ExecutionContext {
   // Named stores
   stores: Map<string, StoreAdapter>;
 
+  // Store type info (for observability events)
+  storeTypes: Map<string, string>;
+
   // Named HTTP clients (sources)
   sources: Map<string, HttpClient>;
 
@@ -26,6 +29,7 @@ export interface ExecutionContext {
 export function createContext(): ExecutionContext {
   return {
     stores: new Map(),
+    storeTypes: new Map(),
     sources: new Map(),
     schemas: new Map(),
     variables: new Map(),
@@ -35,6 +39,7 @@ export function createContext(): ExecutionContext {
 export function childContext(parent: ExecutionContext): ExecutionContext {
   return {
     stores: parent.stores,
+    storeTypes: parent.storeTypes,
     sources: parent.sources,
     schemas: parent.schemas,
     variables: new Map(),

@@ -55,7 +55,7 @@ export class StoreHandler implements StepHandler<StoreStep> {
     // Emit data.store event
     this.deps.emit?.('data.store', {
       storeName: step.target,
-      storeType: 'unknown', // Would need store type info
+      storeType: this.deps.ctx.storeTypes.get(step.target) ?? 'unknown',
       operation,
       itemCount: items.length,
     });
@@ -72,7 +72,7 @@ export class StoreHandler implements StepHandler<StoreStep> {
     // Emit data.store event
     this.deps.emit?.('data.store', {
       storeName: step.target,
-      storeType: 'unknown',
+      storeType: this.deps.ctx.storeTypes.get(step.target) ?? 'unknown',
       operation: step.options.upsert ? 'upsert' : 'set',
       itemCount: 1,
       key,
