@@ -20,6 +20,9 @@ import type {
   MatchArm,
   FlowDirective,
   LetStep,
+  ApplyStep,
+  TransformDefinition,
+  TransformVariant,
   WebhookStep,
   WebhookStorageConfig,
   PaginationConfig,
@@ -60,6 +63,7 @@ export class ReqonParser extends ReqonExpressionParser {
     if (this.check(ReqonTokenType.SOURCE)) return this.parseSource();
     if (this.check(ReqonTokenType.STORE)) return this.parseStoreDefinition();
     if (this.check(ReqonTokenType.ACTION)) return this.parseAction();
+    if (this.check(ReqonTokenType.TRANSFORM)) return this.parseTransform();
 
     // Vague statements (schema, import, let, etc.)
     if (this.check(TokenType.SCHEMA)) return this.parseSchema();
@@ -82,6 +86,7 @@ export class ReqonParser extends ReqonExpressionParser {
     const sources: SourceDefinition[] = [];
     const stores: StoreDefinition[] = [];
     const schemas: SchemaDefinition[] = [];
+    const transforms: TransformDefinition[] = [];
     const actions: ActionDefinition[] = [];
     let pipeline: PipelineDefinition | undefined;
     let schedule: ScheduleDefinition | undefined;
@@ -93,6 +98,8 @@ export class ReqonParser extends ReqonExpressionParser {
         stores.push(this.parseStoreDefinition());
       } else if (this.check(TokenType.SCHEMA)) {
         schemas.push(this.parseSchema());
+      } else if (this.check(ReqonTokenType.TRANSFORM)) {
+        transforms.push(this.parseTransform());
       } else if (this.check(ReqonTokenType.ACTION)) {
         actions.push(this.parseAction());
       } else if (this.check(ReqonTokenType.RUN)) {
@@ -115,9 +122,10 @@ export class ReqonParser extends ReqonExpressionParser {
     const definedStores = new Set(stores.map((s) => s.name));
     const definedActions = new Set(actions.map((a) => a.name));
     const definedSources = new Set(sources.map((s) => s.name));
+    const definedTransforms = new Set(transforms.map((t) => t.name));
 
     // Validate all references
-    this.validateActionReferences(actions, definedStores, definedSources, definedActions);
+    this.validateActionReferences(actions, definedStores, definedSources, definedActions, definedTransforms);
     this.validatePipelineReferences(pipeline, definedActions);
 
     return {
@@ -127,19 +135,21 @@ export class ReqonParser extends ReqonExpressionParser {
       sources,
       stores,
       schemas,
+      transforms,
       actions,
       pipeline,
     };
   }
 
   /**
-   * Validate that all store, source, and action references in actions exist
+   * Validate that all store, source, action, and transform references in actions exist
    */
   private validateActionReferences(
     actions: ActionDefinition[],
     definedStores: Set<string>,
     definedSources: Set<string>,
-    definedActions: Set<string>
+    definedActions: Set<string>,
+    definedTransforms: Set<string>
   ): void {
     for (const action of actions) {
       this.validateStepsReferences(
@@ -147,19 +157,21 @@ export class ReqonParser extends ReqonExpressionParser {
         definedStores,
         definedSources,
         definedActions,
+        definedTransforms,
         action.name
       );
     }
   }
 
   /**
-   * Recursively validate store, source, and action references in action steps
+   * Recursively validate store, source, action, and transform references in action steps
    */
   private validateStepsReferences(
     steps: ActionStep[],
     definedStores: Set<string>,
     definedSources: Set<string>,
     definedActions: Set<string>,
+    definedTransforms: Set<string>,
     actionName: string
   ): void {
     for (const step of steps) {
@@ -185,6 +197,14 @@ export class ReqonParser extends ReqonExpressionParser {
               `Available sources: ${[...definedSources].join(', ') || 'none'}`
           );
         }
+      } else if (step.type === 'ApplyStep') {
+        // Validate transform reference
+        if (!definedTransforms.has(step.transform)) {
+          throw this.error(
+            `Transform '${step.transform}' is not defined. ` +
+              `Available transforms: ${[...definedTransforms].join(', ') || 'none'}`
+          );
+        }
       } else if (step.type === 'ForStep') {
         // Recursively validate nested steps
         this.validateStepsReferences(
@@ -192,6 +212,7 @@ export class ReqonParser extends ReqonExpressionParser {
           definedStores,
           definedSources,
           definedActions,
+          definedTransforms,
           actionName
         );
       } else if (step.type === 'MatchStep') {
@@ -203,6 +224,7 @@ export class ReqonParser extends ReqonExpressionParser {
               definedStores,
               definedSources,
               definedActions,
+              definedTransforms,
               actionName
             );
           }
@@ -619,6 +641,7 @@ export class ReqonParser extends ReqonExpressionParser {
     if (this.checkHttpMethod()) return this.parseHttpMethodStep();
     if (this.check(ReqonTokenType.FOR)) return this.parseForStep();
     if (this.check(ReqonTokenType.MAP)) return this.parseMapStep();
+    if (this.check(ReqonTokenType.APPLY)) return this.parseApplyStep();
     if (this.check(TokenType.VALIDATE)) return this.parseValidateStep();
     if (this.check(ReqonTokenType.STORE)) return this.parseStoreStep();
     if (this.check(TokenType.MATCH)) return this.parseMatchStep();
@@ -1023,6 +1046,149 @@ export class ReqonParser extends ReqonExpressionParser {
     this.consume(TokenType.RBRACE, "Expected '}'");
 
     return { type: 'MapStep', source, targetSchema, mappings };
+  }
+
+  // ============================================
+  // Transform definition
+  // ============================================
+
+  /**
+   * Parse a transform definition with optional overloading.
+   *
+   * Syntax options:
+   * 1. Simple transform (single variant):
+   *    transform ToStandard: SourceSchema -> TargetSchema { ... }
+   *
+   * 2. Simple transform (inferred source):
+   *    transform ToStandard -> TargetSchema { ... }
+   *
+   * 3. Overloaded transform (multiple variants):
+   *    transform ToUnified {
+   *      (SchemaA) -> Target { ... }
+   *      (SchemaB) -> Target { ... }
+   *      (_) -> Target { ... }  // default/wildcard
+   *    }
+   */
+  private parseTransform(): TransformDefinition {
+    this.consume(ReqonTokenType.TRANSFORM, "Expected 'transform'");
+    const name = this.consume(TokenType.IDENTIFIER, 'Expected transform name').value;
+
+    const variants: TransformVariant[] = [];
+
+    // Check for simple syntax: transform Name: Source -> Target { ... }
+    // or: transform Name -> Target { ... }
+    if (this.match(TokenType.COLON)) {
+      // Simple syntax with explicit source schema
+      const sourceSchema = this.consume(TokenType.IDENTIFIER, 'Expected source schema').value;
+      this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
+      const targetSchema = this.consume(TokenType.IDENTIFIER, 'Expected target schema').value;
+      const mappings = this.parseFieldMappings();
+      variants.push({ sourceSchema, targetSchema, mappings });
+    } else if (this.match(ReqonTokenType.RIGHT_ARROW)) {
+      // Simple syntax without explicit source (inferred at runtime)
+      const targetSchema = this.consume(TokenType.IDENTIFIER, 'Expected target schema').value;
+      const mappings = this.parseFieldMappings();
+      variants.push({ sourceSchema: '_', targetSchema, mappings });
+    } else {
+      // Overloaded syntax: multiple variants
+      this.consume(TokenType.LBRACE, "Expected '{' for transform variants");
+
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        const variant = this.parseTransformVariant();
+        variants.push(variant);
+        this.match(TokenType.COMMA);
+      }
+
+      this.consume(TokenType.RBRACE, "Expected '}'");
+    }
+
+    if (variants.length === 0) {
+      throw this.error('Transform must have at least one variant');
+    }
+
+    // Validate: all variants must have the same target schema
+    const targetSchemas = new Set(variants.map((v) => v.targetSchema));
+    if (targetSchemas.size > 1) {
+      throw this.error(
+        `All transform variants must have the same target schema. Found: ${[...targetSchemas].join(', ')}`
+      );
+    }
+
+    return { type: 'TransformDefinition', name, variants };
+  }
+
+  /**
+   * Parse a single transform variant: (SchemaName) -> Target { ... }
+   * Or with guard: (SchemaName) where condition -> Target { ... }
+   */
+  private parseTransformVariant(): TransformVariant {
+    this.consume(TokenType.LPAREN, "Expected '(' for variant source schema");
+
+    // Source schema: identifier or '_' for wildcard
+    let sourceSchema: string | '_';
+    if (this.check(TokenType.IDENTIFIER)) {
+      sourceSchema = this.advance().value;
+    } else if (this.peek().value === '_') {
+      this.advance();
+      sourceSchema = '_';
+    } else {
+      throw this.error('Expected schema name or _ for wildcard');
+    }
+
+    this.consume(TokenType.RPAREN, "Expected ')'");
+
+    // Optional guard condition: where condition
+    let guard: Expression | undefined;
+    if (this.match(TokenType.WHERE)) {
+      guard = this.parseExpression();
+    }
+
+    this.consume(ReqonTokenType.RIGHT_ARROW, "Expected '->'");
+    const targetSchema = this.consume(TokenType.IDENTIFIER, 'Expected target schema').value;
+    const mappings = this.parseFieldMappings();
+
+    return { sourceSchema, targetSchema, guard, mappings };
+  }
+
+  /**
+   * Parse field mappings: { field: expression, ... }
+   */
+  private parseFieldMappings(): FieldMapping[] {
+    this.consume(TokenType.LBRACE, "Expected '{'");
+    const mappings: FieldMapping[] = [];
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      const field = this.consumeIdentifier('Expected field name').value;
+      this.consume(TokenType.COLON, "Expected ':'");
+      const expression = this.parseExpression();
+      mappings.push({ field, expression });
+      this.match(TokenType.COMMA);
+    }
+
+    this.consume(TokenType.RBRACE, "Expected '}'");
+    return mappings;
+  }
+
+  // ============================================
+  // Apply step
+  // ============================================
+
+  /**
+   * Parse apply step: apply TransformName to expression [as variableName]
+   */
+  private parseApplyStep(): ApplyStep {
+    this.consume(ReqonTokenType.APPLY, "Expected 'apply'");
+    const transform = this.consume(TokenType.IDENTIFIER, 'Expected transform name').value;
+    this.consume(ReqonTokenType.TO, "Expected 'to'");
+    const source = this.parseExpression();
+
+    // Optional: as variableName
+    let as: string | undefined;
+    if (this.match(ReqonTokenType.AS)) {
+      as = this.consume(TokenType.IDENTIFIER, 'Expected variable name').value;
+    }
+
+    return { type: 'ApplyStep', transform, source, as };
   }
 
   // ============================================

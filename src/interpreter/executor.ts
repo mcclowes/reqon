@@ -11,6 +11,8 @@ import type {
   StoreStep,
   MatchStep,
   LetStep,
+  ApplyStep,
+  TransformDefinition,
   WebhookStep,
   PipelineDefinition,
   PipelineStage,
@@ -51,6 +53,7 @@ import {
   ValidateHandler,
   StoreHandler,
   MatchHandler,
+  ApplyHandler,
   WebhookHandler,
   SkipSignal,
   AbortError,
@@ -188,6 +191,7 @@ export class MissionExecutor {
   private actionsRun: string[] = [];
   private oasSources: Map<string, OASSource> = new Map();
   private sourceConfigs: Map<string, SourceDefinition> = new Map();
+  private transforms: Map<string, TransformDefinition> = new Map();
   private rateLimiter: RateLimiter;
   private circuitBreaker: CircuitBreaker;
   private executionStore?: ExecutionStore;
@@ -503,6 +507,12 @@ export class MissionExecutor {
     for (const schema of mission.schemas) {
       this.ctx.schemas.set(schema.name, schema);
       this.log(`Registered schema: ${schema.name}`);
+    }
+
+    // Initialize transforms
+    for (const transform of mission.transforms) {
+      this.transforms.set(transform.name, transform);
+      this.log(`Registered transform: ${transform.name}`);
     }
 
     // Build action lookup
@@ -931,6 +941,9 @@ export class MissionExecutor {
         case 'LetStep':
           await this.executeLet(step);
           break;
+        case 'ApplyStep':
+          await this.executeApply(step);
+          break;
         case 'WebhookStep':
           await this.executeWebhook(step);
           break;
@@ -1066,6 +1079,20 @@ export class MissionExecutor {
     this.log(`Set variable '${step.name}' = ${JSON.stringify(value)}`);
   }
 
+  private async executeApply(step: ApplyStep): Promise<void> {
+    const transform = this.transforms.get(step.transform);
+    if (!transform) {
+      throw new Error(`Transform '${step.transform}' not found`);
+    }
+
+    const handler = new ApplyHandler({
+      ctx: this.ctx,
+      log: (msg) => this.log(msg),
+      transform,
+    });
+    await handler.execute(step);
+  }
+
   private async executeWebhook(step: WebhookStep): Promise<void> {
     if (!this.config.webhookServer) {
       throw new Error(
@@ -1080,7 +1107,6 @@ export class MissionExecutor {
       log: (msg) => this.log(msg),
       emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
-
     await handler.execute(step);
   }
 

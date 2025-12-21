@@ -1,0 +1,75 @@
+// Order Transformations
+// ============================================
+// Overloaded transform that handles orders from multiple sources
+// Each variant matches a different source schema and maps to UnifiedOrder
+// ============================================
+
+transform ToUnifiedOrder {
+  // Variant 1: Xero Invoices
+  (XeroInvoice) -> UnifiedOrder {
+    id: "order-xero-" + .InvoiceID,
+    source: "xero",
+    external_id: .InvoiceID,
+    customer_ref: .Contact.ContactID,
+    amount: .Total,
+    currency: .CurrencyCode,
+    status: match .Status {
+      "AUTHORISED" => "confirmed",
+      "PAID" => "paid",
+      "VOIDED" => "cancelled",
+      _ => "pending"
+    },
+    created_at: .Date,
+    synced_at: now()
+  }
+
+  // Variant 2: Stripe Charges
+  (StripeCharge) -> UnifiedOrder {
+    id: "order-stripe-" + .id,
+    source: "stripe",
+    external_id: .id,
+    customer_ref: .metadata.customer_id ?? null,
+    amount: .amount / 100,              // Convert cents to dollars
+    currency: .currency,
+    status: match .status {
+      "succeeded" => "paid",
+      "pending" => "pending",
+      "failed" => "failed",
+      _ => "unknown"
+    },
+    created_at: fromUnix(.created),
+    synced_at: now()
+  }
+
+  // Variant 3: Shopify Orders
+  (ShopifyOrder) -> UnifiedOrder {
+    id: "order-shopify-" + .id,
+    source: "shopify",
+    external_id: .id,
+    customer_ref: .customer.id,
+    amount: parseDecimal(.total_price),  // Parse string to decimal
+    currency: .currency,
+    status: match .financial_status {
+      "paid" => "paid",
+      "pending" => "pending",
+      "refunded" => "refunded",
+      "partially_refunded" => "partial_refund",
+      _ => "unknown"
+    },
+    created_at: parseDate(.created_at),
+    synced_at: now()
+  }
+
+  // Fallback variant for unknown sources
+  (_) -> UnifiedOrder {
+    id: "order-unknown-" + (.id ?? .external_id ?? generateId()),
+    source: "unknown",
+    external_id: .id ?? .external_id ?? "",
+    customer_ref: null,
+    amount: .amount ?? .total ?? 0,
+    currency: .currency ?? "USD",
+    status: "unknown",
+    created_at: .created_at ?? .date ?? now(),
+    synced_at: now()
+  }
+}

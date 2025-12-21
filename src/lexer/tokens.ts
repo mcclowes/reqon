@@ -72,6 +72,13 @@ export enum ReqonTokenType {
   // Type checking
   IS = 'IS',
 
+  // Transforms
+  TRANSFORM = 'TRANSFORM',
+  APPLY = 'APPLY',
+  TO = 'TO',
+  AS = 'AS',
+  TRY = 'TRY',
+
   // Webhook support
   WAIT = 'WAIT',
   TIMEOUT = 'TIMEOUT',
@@ -159,6 +166,13 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
 
   // Type checking
   is: ReqonTokenType.IS,
+
+  // Transforms
+  transform: ReqonTokenType.TRANSFORM,
+  apply: ReqonTokenType.APPLY,
+  to: ReqonTokenType.TO,
+  as: ReqonTokenType.AS,
+  try: ReqonTokenType.TRY,
 
   // Webhook support
   wait: ReqonTokenType.WAIT,
