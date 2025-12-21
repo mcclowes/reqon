@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout vague
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: mcclowes/vague
           path: vague
@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download vague build
         uses: actions/download-artifact@v4
@@ -92,7 +92,7 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download vague build
         uses: actions/download-artifact@v4
@@ -127,7 +127,7 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download vague build
         uses: actions/download-artifact@v4
@@ -154,7 +154,7 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download vague build
         uses: actions/download-artifact@v4
@@ -182,7 +182,7 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download vague build
         uses: actions/download-artifact@v4

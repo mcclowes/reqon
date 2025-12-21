@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Checkout vague dependency
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: mcclowes/vague
           path: ../vague
