@@ -38,12 +38,17 @@ const config: Config = {
         theme: {
           customCss: './src/css/custom.css',
         },
+        sitemap: {
+          changefreq: 'weekly',
+          priority: 0.5,
+          filename: 'sitemap.xml',
+        },
       } satisfies Preset.Options,
     ],
   ],
 
   themeConfig: {
-    image: 'img/reqon-social-card.png',
+    image: 'img/docusaurus-social-card.jpg',
     colorMode: {
       defaultMode: 'light',
       respectPrefersColorScheme: true,
@@ -141,7 +146,6 @@ const config: Config = {
       darkTheme: prismThemes.dracula,
       additionalLanguages: ['bash', 'json', 'yaml'],
     },
-    algolia: undefined,
   } satisfies Preset.ThemeConfig,
 };
 
