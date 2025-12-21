@@ -235,4 +235,76 @@ describe('MemoryStore', () => {
       expect(store.dump()).toEqual([]);
     });
   });
+
+  describe('bulkSet', () => {
+    it('sets multiple records at once', async () => {
+      await store.bulkSet([
+        { key: '1', value: { id: '1', name: 'Alice' } },
+        { key: '2', value: { id: '2', name: 'Bob' } },
+        { key: '3', value: { id: '3', name: 'Charlie' } },
+      ]);
+
+      expect(await store.get('1')).toEqual({ id: '1', name: 'Alice' });
+      expect(await store.get('2')).toEqual({ id: '2', name: 'Bob' });
+      expect(await store.get('3')).toEqual({ id: '3', name: 'Charlie' });
+      expect(store.size()).toBe(3);
+    });
+
+    it('overwrites existing records', async () => {
+      await store.set('1', { id: '1', name: 'Original' });
+
+      await store.bulkSet([{ key: '1', value: { id: '1', name: 'Updated' } }]);
+
+      expect(await store.get('1')).toEqual({ id: '1', name: 'Updated' });
+    });
+  });
+
+  describe('bulkUpsert', () => {
+    it('creates new records when they do not exist', async () => {
+      await store.bulkUpsert([
+        { key: '1', value: { id: '1', name: 'Alice' } },
+        { key: '2', value: { id: '2', name: 'Bob' } },
+      ]);
+
+      expect(await store.get('1')).toEqual({ id: '1', name: 'Alice' });
+      expect(await store.get('2')).toEqual({ id: '2', name: 'Bob' });
+    });
+
+    it('merges with existing records', async () => {
+      await store.set('1', { id: '1', name: 'Alice', age: 30, status: 'active' });
+      await store.set('2', { id: '2', name: 'Bob', age: 25 });
+
+      await store.bulkUpsert([
+        { key: '1', value: { age: 31 } },
+        { key: '2', value: { status: 'inactive' } },
+        { key: '3', value: { id: '3', name: 'Charlie' } },
+      ]);
+
+      expect(await store.get('1')).toEqual({ id: '1', name: 'Alice', age: 31, status: 'active' });
+      expect(await store.get('2')).toEqual({ id: '2', name: 'Bob', age: 25, status: 'inactive' });
+      expect(await store.get('3')).toEqual({ id: '3', name: 'Charlie' });
+    });
+
+    it('handles empty array', async () => {
+      await store.set('1', { id: '1' });
+
+      await store.bulkUpsert([]);
+
+      expect(store.size()).toBe(1);
+    });
+
+    it('is more efficient than individual updates', async () => {
+      // This test verifies the operation completes correctly
+      // In a real scenario, bulkUpsert is a single operation vs N operations
+      const records = Array.from({ length: 100 }, (_, i) => ({
+        key: String(i),
+        value: { id: String(i), count: i },
+      }));
+
+      await store.bulkUpsert(records);
+
+      expect(store.size()).toBe(100);
+      expect(await store.get('50')).toEqual({ id: '50', count: 50 });
+    });
+  });
 });

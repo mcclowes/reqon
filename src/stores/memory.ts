@@ -23,6 +23,17 @@ export class MemoryStore implements StoreAdapter {
     }
   }
 
+  async bulkUpsert(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void> {
+    for (const { key, value } of records) {
+      const existing = this.data.get(key);
+      if (existing) {
+        this.data.set(key, { ...existing, ...value });
+      } else {
+        this.data.set(key, { ...value });
+      }
+    }
+  }
+
   async update(key: string, value: Partial<Record<string, unknown>>): Promise<void> {
     const existing = this.data.get(key);
     if (existing) {

@@ -368,9 +368,12 @@ describe('StoreHandler', () => {
       ]);
     });
 
-    it('falls back to individual operations for upserts', async () => {
+    it('uses bulkUpsert for arrays when upsert is true', async () => {
       const bulkSetSpy = vi.spyOn(store, 'bulkSet');
-      const updateSpy = vi.spyOn(store, 'update');
+      const bulkUpsertSpy = vi.spyOn(store, 'bulkUpsert');
+
+      // Pre-populate with one record to test merging
+      await store.set('1', { id: '1', name: 'Original', count: 10 });
 
       deps.ctx.response = [
         { id: '1', name: 'A' },
@@ -391,6 +394,52 @@ describe('StoreHandler', () => {
 
       // bulkSet should not be called when upsert is true
       expect(bulkSetSpy).not.toHaveBeenCalled();
+      // bulkUpsert should be called
+      expect(bulkUpsertSpy).toHaveBeenCalledTimes(1);
+      expect(bulkUpsertSpy).toHaveBeenCalledWith([
+        { key: '1', value: { id: '1', name: 'A' } },
+        { key: '2', value: { id: '2', name: 'B' } },
+      ]);
+
+      // Verify the upsert behavior: existing record is merged, new record is created
+      expect(await store.get('1')).toEqual({ id: '1', name: 'A', count: 10 });
+      expect(await store.get('2')).toEqual({ id: '2', name: 'B' });
+    });
+
+    it('falls back to individual updates when bulkUpsert is not available', async () => {
+      // Create a store without bulkUpsert
+      const limitedStore = {
+        get: store.get.bind(store),
+        set: store.set.bind(store),
+        update: store.update.bind(store),
+        delete: store.delete.bind(store),
+        list: store.list.bind(store),
+        count: store.count.bind(store),
+        clear: store.clear.bind(store),
+        bulkSet: store.bulkSet.bind(store),
+        // No bulkUpsert
+      };
+      deps.ctx.stores.set('testStore', limitedStore);
+
+      const updateSpy = vi.spyOn(limitedStore, 'update');
+
+      deps.ctx.response = [
+        { id: '1', name: 'A' },
+        { id: '2', name: 'B' },
+      ];
+
+      const step: StoreStep = {
+        type: 'StoreStep',
+        target: 'testStore',
+        source: { type: 'Identifier', name: 'response' } as Expression,
+        options: {
+          upsert: true,
+        },
+      };
+
+      const handler = new StoreHandler(deps);
+      await handler.execute(step);
+
       // Individual update calls should be made
       expect(updateSpy).toHaveBeenCalledTimes(2);
     });
