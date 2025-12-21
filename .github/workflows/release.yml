@@ -40,7 +40,7 @@ jobs:
         working-directory: ../vague
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Run tests
         run: npm run test:run
