@@ -106,3 +106,5 @@ out/
 .reqon-test-stores/
 output.json
 .reqon-test-progress/
+.test-reqon-data/
+.test-scheduler*/
