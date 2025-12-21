@@ -1,6 +1,8 @@
 export interface StoreAdapter {
   get(key: string): Promise<Record<string, unknown> | null>;
   set(key: string, value: Record<string, unknown>): Promise<void>;
+  /** Bulk set multiple records at once - more efficient than individual sets */
+  bulkSet?(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void>;
   update(key: string, value: Partial<Record<string, unknown>>): Promise<void>;
   delete(key: string): Promise<void>;
   list(filter?: StoreFilter): Promise<Record<string, unknown>[]>;

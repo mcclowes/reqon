@@ -30,22 +30,50 @@ export interface PaginationStrategy {
   extractResults(response: unknown, ctx: PaginationContext): PageResult;
 }
 
+/** Cache for discovered array field keys to avoid repeated lookups */
+const arrayFieldCache: Map<string, string | null> = new Map();
+
 /**
  * Extract items array from response and determine if more pages exist
  * Shared utility for offset and page-based pagination strategies
+ * Caches the discovered array field for subsequent pages
  */
 function extractItemsFromResponse(
   response: unknown,
-  pageSize: number
+  pageSize: number,
+  cacheKey?: string
 ): { items: unknown[]; hasMore: boolean } {
   if (!response || typeof response !== 'object') {
     return { items: [], hasMore: false };
   }
 
   const data = response as Record<string, unknown>;
+
+  // Check cache first if we have a cache key
+  if (cacheKey) {
+    const cachedField = arrayFieldCache.get(cacheKey);
+    if (cachedField !== undefined) {
+      if (cachedField === null) {
+        return { items: [], hasMore: false };
+      }
+      const items = data[cachedField] as unknown[];
+      if (Array.isArray(items)) {
+        return {
+          items,
+          hasMore: items.length >= pageSize,
+        };
+      }
+    }
+  }
+
+  // Search for array field
   for (const key of Object.keys(data)) {
     if (Array.isArray(data[key])) {
       const items = data[key] as unknown[];
+      // Cache the discovered field
+      if (cacheKey) {
+        arrayFieldCache.set(cacheKey, key);
+      }
       return {
         items,
         hasMore: items.length >= pageSize,
@@ -53,14 +81,28 @@ function extractItemsFromResponse(
     }
   }
 
+  // Cache negative result
+  if (cacheKey) {
+    arrayFieldCache.set(cacheKey, null);
+  }
+
   return { items: [], hasMore: false };
+}
+
+/** Clear the array field cache (useful for testing) */
+export function clearPaginationCache(): void {
+  arrayFieldCache.clear();
 }
 
 /**
  * Offset-based pagination (e.g., offset=100, offset=200)
  */
 export class OffsetPaginationStrategy implements PaginationStrategy {
-  constructor(private config: PaginationConfig) {}
+  private cacheKey: string;
+
+  constructor(private config: PaginationConfig) {
+    this.cacheKey = `offset:${config.param}`;
+  }
 
   buildQuery(ctx: PaginationContext): Record<string, string> {
     return {
@@ -69,7 +111,7 @@ export class OffsetPaginationStrategy implements PaginationStrategy {
   }
 
   extractResults(response: unknown, ctx: PaginationContext): PageResult {
-    return extractItemsFromResponse(response, ctx.pageSize);
+    return extractItemsFromResponse(response, ctx.pageSize, this.cacheKey);
   }
 }
 
@@ -77,7 +119,11 @@ export class OffsetPaginationStrategy implements PaginationStrategy {
  * Page number pagination (e.g., page=1, page=2)
  */
 export class PageNumberPaginationStrategy implements PaginationStrategy {
-  constructor(private config: PaginationConfig) {}
+  private cacheKey: string;
+
+  constructor(private config: PaginationConfig) {
+    this.cacheKey = `page:${config.param}`;
+  }
 
   buildQuery(ctx: PaginationContext): Record<string, string> {
     return {
@@ -86,7 +132,7 @@ export class PageNumberPaginationStrategy implements PaginationStrategy {
   }
 
   extractResults(response: unknown, ctx: PaginationContext): PageResult {
-    return extractItemsFromResponse(response, ctx.pageSize);
+    return extractItemsFromResponse(response, ctx.pageSize, this.cacheKey);
   }
 }
 
@@ -94,7 +140,12 @@ export class PageNumberPaginationStrategy implements PaginationStrategy {
  * Cursor-based pagination (e.g., cursor=abc123)
  */
 export class CursorPaginationStrategy implements PaginationStrategy {
-  constructor(private config: PaginationConfig) {}
+  private cacheKey: string;
+  private cachedArrayField: string | null = null;
+
+  constructor(private config: PaginationConfig) {
+    this.cacheKey = `cursor:${config.param}`;
+  }
 
   buildQuery(ctx: PaginationContext): Record<string, string> {
     if (ctx.cursor) {
@@ -110,12 +161,17 @@ export class CursorPaginationStrategy implements PaginationStrategy {
 
     const data = response as Record<string, unknown>;
 
-    // Extract items
+    // Extract items - use cached field if available
     let items: unknown[] = [];
-    for (const key of Object.keys(data)) {
-      if (Array.isArray(data[key])) {
-        items = data[key] as unknown[];
-        break;
+    if (this.cachedArrayField !== null && Array.isArray(data[this.cachedArrayField])) {
+      items = data[this.cachedArrayField] as unknown[];
+    } else {
+      for (const key of Object.keys(data)) {
+        if (Array.isArray(data[key])) {
+          items = data[key] as unknown[];
+          this.cachedArrayField = key;
+          break;
+        }
       }
     }
 

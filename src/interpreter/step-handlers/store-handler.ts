@@ -1,5 +1,6 @@
 import type { StoreStep } from '../../ast/nodes.js';
 import type { StepHandler, StepHandlerDeps } from './types.js';
+import type { StoreAdapter } from '../../stores/types.js';
 import { evaluate } from '../evaluator.js';
 
 /**
@@ -17,32 +18,47 @@ export class StoreHandler implements StepHandler<StoreStep> {
     const source = evaluate(step.source, this.deps.ctx);
 
     if (Array.isArray(source)) {
-      await this.storeMany(step, source);
+      await this.storeMany(step, store, source);
     } else {
-      await this.storeOne(step, source as Record<string, unknown>);
+      await this.storeOne(step, store, source as Record<string, unknown>);
     }
   }
 
-  private async storeMany(step: StoreStep, items: unknown[]): Promise<void> {
-    const store = this.deps.ctx.stores.get(step.target)!;
+  private async storeMany(step: StoreStep, store: StoreAdapter, items: unknown[]): Promise<void> {
+    // Use bulk operation if available and not doing upserts (which need individual handling)
+    if (store.bulkSet && !step.options.upsert) {
+      const records: Array<{ key: string; value: Record<string, unknown> }> = [];
+      for (const item of items) {
+        const record = item as Record<string, unknown>;
+        const key = step.options.key
+          ? String(evaluate(step.options.key, this.deps.ctx, record))
+          : String(record.id ?? Math.random());
 
-    for (const item of items) {
-      const record = item as Record<string, unknown>;
-      await this.storeRecord(step, store, record);
+        if (step.options.partial !== undefined) {
+          record._partial = step.options.partial;
+        }
+        records.push({ key, value: record });
+      }
+      await store.bulkSet(records);
+    } else {
+      // Fall back to individual operations for upserts or stores without bulkSet
+      for (const item of items) {
+        const record = item as Record<string, unknown>;
+        await this.storeRecord(step, store, record);
+      }
     }
 
     this.deps.log(`Stored ${items.length} items to ${step.target}`);
   }
 
-  private async storeOne(step: StoreStep, record: Record<string, unknown>): Promise<void> {
-    const store = this.deps.ctx.stores.get(step.target)!;
+  private async storeOne(step: StoreStep, store: StoreAdapter, record: Record<string, unknown>): Promise<void> {
     await this.storeRecord(step, store, record);
     this.deps.log(`Stored item to ${step.target}`);
   }
 
   private async storeRecord(
     step: StoreStep,
-    store: { set: (key: string, value: Record<string, unknown>) => Promise<void>; update: (key: string, value: Partial<Record<string, unknown>>) => Promise<void> },
+    store: StoreAdapter,
     record: Record<string, unknown>
   ): Promise<void> {
     const key = step.options.key

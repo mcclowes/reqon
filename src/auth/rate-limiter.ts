@@ -62,12 +62,16 @@ export class RateLimitError extends Error {
  * Adaptive rate limiter that learns from response headers
  * Supports pause, throttle, and fail strategies
  */
+/** Number of responses between cleanup checks */
+const CLEANUP_CHECK_INTERVAL = 100;
+
 export class AdaptiveRateLimiter implements RateLimiter {
   private state: Map<string, RateLimitState> = new Map();
   private configs: Map<string, RateLimitConfig> = new Map();
   private callbacks: RateLimitCallbacks = {};
   private lastCleanup: number = Date.now();
   private maxStaleAgeMs: number;
+  private responsesSinceCleanup: number = 0;
 
   constructor(
     private defaultConfig: Partial<RateLimitConfig> = {},
@@ -323,8 +327,12 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     this.state.set(key, state);
 
-    // Periodically clean up stale entries
-    this.cleanup();
+    // Periodically clean up stale entries (every N responses)
+    this.responsesSinceCleanup++;
+    if (this.responsesSinceCleanup >= CLEANUP_CHECK_INTERVAL) {
+      this.responsesSinceCleanup = 0;
+      this.cleanup();
+    }
   }
 
   getStatus(source: string, endpoint?: string): RateLimitStatus {
