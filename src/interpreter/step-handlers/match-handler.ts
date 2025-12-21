@@ -12,9 +12,6 @@ import {
   QueueSignal,
 } from '../signals.js';
 
-// Re-export signals for backwards compatibility
-export { NoMatchError, AbortError, SkipSignal, RetrySignal, JumpSignal, QueueSignal };
-
 /**
  * Result of executing a match step
  */

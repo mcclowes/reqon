@@ -1,7 +1,12 @@
-import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import type { SyncCheckpoint } from './state.js';
 import { EPOCH } from './state.js';
+import {
+  ensureParentDirectory,
+  writeJsonFile,
+  readJsonFile,
+  restoreDates,
+} from '../utils/file.js';
 
 /**
  * Sync store interface - persists sync checkpoints
@@ -41,31 +46,19 @@ export class FileSyncStore implements SyncStore {
   }
 
   private async init(): Promise<void> {
-    await this.ensureDirectory();
+    await ensureParentDirectory(this.filePath);
     await this.load();
   }
 
-  private async ensureDirectory(): Promise<void> {
-    const dir = dirname(this.filePath);
-    try {
-      await access(dir);
-    } catch {
-      await mkdir(dir, { recursive: true });
-    }
-  }
-
   private async load(): Promise<void> {
-    try {
-      const content = await readFile(this.filePath, 'utf-8');
-      const data = JSON.parse(content) as Record<string, SyncCheckpoint>;
-
+    const data = await readJsonFile<Record<string, SyncCheckpoint>>(this.filePath);
+    if (data) {
       for (const [key, checkpoint] of Object.entries(data)) {
         // Restore Date objects
-        checkpoint.syncedAt = new Date(checkpoint.syncedAt);
+        restoreDates(checkpoint as unknown as Record<string, unknown>, ['syncedAt']);
         this.checkpoints.set(key, checkpoint);
       }
-    } catch {
-      // Start fresh if file doesn't exist or is corrupted
+    } else {
       this.checkpoints = new Map();
     }
   }
@@ -75,7 +68,7 @@ export class FileSyncStore implements SyncStore {
     for (const [key, checkpoint] of this.checkpoints) {
       data[key] = checkpoint;
     }
-    await writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+    await writeJsonFile(this.filePath, data);
   }
 
   async getLastSync(key: string): Promise<Date> {

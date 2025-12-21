@@ -26,8 +26,10 @@ describe('FileStore', () => {
     expect(existsSync(join(TEST_DIR, 'test-store.json'))).toBe(true);
   });
 
-  it('should create .gitignore in data directory', () => {
-    new FileStore('test-store', { baseDir: TEST_DIR });
+  it('should create .gitignore in data directory', async () => {
+    const store = new FileStore('test-store', { baseDir: TEST_DIR });
+    // Trigger initialization by calling any store method
+    await store.get('nonexistent');
 
     const gitignorePath = join(TEST_DIR, '.gitignore');
     expect(existsSync(gitignorePath)).toBe(true);
@@ -168,7 +170,7 @@ describe('FileStore', () => {
       require('fs').writeFileSync(filePath, JSON.stringify(content));
 
       // Reload and check
-      store.reload();
+      await store.reload();
       const record = await store.get('1');
       expect(record?.name).toBe('Modified');
     });

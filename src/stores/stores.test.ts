@@ -23,7 +23,9 @@ describe('FileStore', () => {
     }
   });
 
-  it('creates data directory and .gitignore', () => {
+  it('creates data directory and .gitignore', async () => {
+    // Trigger initialization by calling any store method
+    await store.get('nonexistent');
     expect(existsSync(TEST_DIR)).toBe(true);
     expect(existsSync(`${TEST_DIR}/.gitignore`)).toBe(true);
   });
