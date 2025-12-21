@@ -1,0 +1,402 @@
+---
+sidebar_position: 3
+---
+
+# Retry Strategies
+
+Reqon provides built-in retry handling for transient failures with configurable backoff strategies.
+
+## Basic Retry Configuration
+
+```reqon
+get "/data" {
+  retry: {
+    maxAttempts: 3,
+    backoff: exponential,
+    initialDelay: 1000,
+    maxDelay: 30000
+  }
+}
+```
+
+## Retry Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `maxAttempts` | Maximum number of retry attempts | 3 |
+| `backoff` | Backoff strategy | `exponential` |
+| `initialDelay` | First retry delay (ms) | 1000 |
+| `maxDelay` | Maximum delay between retries (ms) | 30000 |
+
+## Backoff Strategies
+
+### Exponential Backoff
+
+Doubles the delay after each attempt:
+
+```reqon
+get "/data" {
+  retry: {
+    maxAttempts: 5,
+    backoff: exponential,
+    initialDelay: 1000
+  }
+}
+```
+
+Timing:
+- Attempt 1: immediate
+- Attempt 2: wait 1000ms
+- Attempt 3: wait 2000ms
+- Attempt 4: wait 4000ms
+- Attempt 5: wait 8000ms
+
+### Linear Backoff
+
+Adds a fixed delay each time:
+
+```reqon
+get "/data" {
+  retry: {
+    maxAttempts: 5,
+    backoff: linear,
+    initialDelay: 2000
+  }
+}
+```
+
+Timing:
+- Attempt 1: immediate
+- Attempt 2: wait 2000ms
+- Attempt 3: wait 4000ms
+- Attempt 4: wait 6000ms
+- Attempt 5: wait 8000ms
+
+### Constant Backoff
+
+Same delay every time:
+
+```reqon
+get "/data" {
+  retry: {
+    maxAttempts: 5,
+    backoff: constant,
+    initialDelay: 5000
+  }
+}
+```
+
+Timing:
+- Attempt 1: immediate
+- Attempt 2: wait 5000ms
+- Attempt 3: wait 5000ms
+- Attempt 4: wait 5000ms
+- Attempt 5: wait 5000ms
+
+## Maximum Delay
+
+Cap the maximum delay:
+
+```reqon
+get "/data" {
+  retry: {
+    maxAttempts: 10,
+    backoff: exponential,
+    initialDelay: 1000,
+    maxDelay: 30000  // Cap at 30 seconds
+  }
+}
+```
+
+Without maxDelay, exponential backoff would reach:
+- Attempt 8: 128 seconds
+- Attempt 9: 256 seconds
+- Attempt 10: 512 seconds
+
+With `maxDelay: 30000`, all delays are capped at 30 seconds.
+
+## Conditional Retry
+
+Use `match` for conditional retry logic:
+
+```reqon
+action FetchWithConditionalRetry {
+  get "/data"
+
+  match response {
+    // Retry on rate limit
+    { error: _, code: 429 } -> retry {
+      maxAttempts: 5,
+      backoff: exponential,
+      initialDelay: 60000  // Start with 1 minute
+    },
+
+    // Retry on server errors
+    { error: _, code: 500 } -> retry {
+      maxAttempts: 3,
+      backoff: exponential,
+      initialDelay: 5000
+    },
+
+    // Retry on timeout
+    { error: "timeout" } -> retry {
+      maxAttempts: 3,
+      backoff: constant,
+      initialDelay: 10000
+    },
+
+    // Don't retry client errors
+    { error: _, code: 400 } -> abort "Bad request",
+    { error: _, code: 401 } -> abort "Unauthorized",
+    { error: _, code: 404 } -> skip,
+
+    // Success
+    _ -> continue
+  }
+}
+```
+
+## Retry After Header
+
+Reqon respects the `Retry-After` header when present:
+
+```reqon
+get "/rate-limited-api" {
+  retry: {
+    maxAttempts: 5,
+    backoff: exponential,
+    initialDelay: 1000
+  }
+}
+```
+
+If the API returns:
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+```
+
+Reqon will wait 60 seconds before retrying, regardless of backoff settings.
+
+## Combining with Other Features
+
+### With Pagination
+
+```reqon
+get "/items" {
+  paginate: offset(offset, 100),
+  until: length(response) == 0,
+  retry: {
+    maxAttempts: 3,
+    backoff: exponential
+  }
+}
+```
+
+Each page request uses retry logic independently.
+
+### With Rate Limiting
+
+```reqon
+source API {
+  auth: bearer,
+  base: "https://api.example.com",
+  rateLimit: {
+    requestsPerMinute: 60,
+    strategy: "pause"
+  }
+}
+
+action Fetch {
+  get "/items" {
+    retry: {
+      maxAttempts: 3,
+      backoff: exponential
+    }
+  }
+}
+```
+
+Rate limiting runs before retry; retry handles unexpected failures.
+
+## Jump and Retry
+
+For complex retry scenarios like token refresh:
+
+```reqon
+action FetchData {
+  get "/protected-data"
+
+  match response {
+    { error: _, code: 401 } -> jump RefreshToken then retry,
+    _ -> store response -> data { key: .id }
+  }
+}
+
+action RefreshToken {
+  post "/auth/refresh" {
+    body: { refreshToken: env("REFRESH_TOKEN") }
+  }
+
+  // Token is automatically used in subsequent requests
+}
+```
+
+The `jump RefreshToken then retry` directive:
+1. Executes the `RefreshToken` action
+2. Retries the original request with the new token
+
+## Per-Source Retry Configuration
+
+Configure default retry at the source level:
+
+```reqon
+source UnreliableAPI {
+  auth: bearer,
+  base: "https://flaky.api.com",
+  retry: {
+    maxAttempts: 5,
+    backoff: exponential,
+    initialDelay: 2000,
+    maxDelay: 60000
+  }
+}
+
+action Fetch {
+  // Uses source-level retry config
+  get "/data"
+}
+```
+
+Request-level config overrides source-level:
+
+```reqon
+action FetchWithOverride {
+  get "/data" {
+    retry: {
+      maxAttempts: 10  // Override just maxAttempts
+    }
+  }
+}
+```
+
+## Best Practices
+
+### Use Exponential Backoff for APIs
+
+```reqon
+get "/api/data" {
+  retry: {
+    maxAttempts: 5,
+    backoff: exponential,
+    initialDelay: 1000,
+    maxDelay: 30000
+  }
+}
+```
+
+### Handle Specific Error Codes
+
+```reqon
+match response {
+  // Transient errors - retry
+  { code: 429 } -> retry { maxAttempts: 5 },
+  { code: 503 } -> retry { maxAttempts: 3 },
+  { code: 504 } -> retry { maxAttempts: 3 },
+
+  // Permanent errors - don't retry
+  { code: 400 } -> abort "Bad request",
+  { code: 401 } -> abort "Unauthorized",
+  { code: 403 } -> abort "Forbidden",
+  { code: 404 } -> skip,
+
+  _ -> continue
+}
+```
+
+### Set Reasonable Limits
+
+```reqon
+// Good: reasonable limits
+retry: {
+  maxAttempts: 5,
+  maxDelay: 60000
+}
+
+// Risky: too aggressive
+retry: {
+  maxAttempts: 100,
+  maxDelay: 1000  // 1 second
+}
+
+// Risky: too long
+retry: {
+  maxAttempts: 20,
+  initialDelay: 60000  // 1 minute start
+}
+```
+
+### Log Retry Attempts
+
+Combine with match for observability:
+
+```reqon
+action FetchWithLogging {
+  get "/data" {
+    retry: {
+      maxAttempts: 3,
+      backoff: exponential
+    }
+  }
+
+  match response {
+    { error: e } -> {
+      store {
+        endpoint: "/data",
+        error: e,
+        timestamp: now()
+      } -> retryLogs
+      abort e
+    },
+    _ -> continue
+  }
+}
+```
+
+## Troubleshooting
+
+### Retry Not Working
+
+Ensure the response matches retry conditions:
+
+```reqon
+// Retry only triggers on match directive
+match response {
+  { error: _ } -> retry { maxAttempts: 3 },  // This triggers retry
+  _ -> continue
+}
+```
+
+### Too Many Retries
+
+Add a maximum delay:
+
+```reqon
+retry: {
+  maxAttempts: 10,
+  backoff: exponential,
+  initialDelay: 1000,
+  maxDelay: 30000  // Cap delays
+}
+```
+
+### Retry After Token Refresh
+
+Use `jump then retry`:
+
+```reqon
+match response {
+  { code: 401 } -> jump RefreshToken then retry,
+  _ -> continue
+}
+```
