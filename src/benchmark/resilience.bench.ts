@@ -97,44 +97,28 @@ export async function runResilienceBenchmarks(): Promise<void> {
     });
   });
 
-  // Handle response with rate limit headers
-  const headersWithRateLimit = new Headers({
-    'X-RateLimit-Limit': '100',
-    'X-RateLimit-Remaining': '50',
-    'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 3600),
-  });
-
-  await rlSuite.addAsync('handleResponse-with-headers', async () => {
+  // Record response with rate limit info
+  await rlSuite.addAsync('recordResponse-with-headers', async () => {
     const rl = new AdaptiveRateLimiter();
-    await rl.handleResponse('api', '/endpoint', {
-      status: 200,
-      ok: true,
-      headers: headersWithRateLimit,
-    } as Response);
+    rl.recordResponse('api', {
+      remaining: 50,
+      limit: 100,
+      resetAt: new Date(Date.now() + 3600000),
+    }, '/endpoint');
   });
 
-  // Handle response without headers
-  await rlSuite.addAsync('handleResponse-no-headers', async () => {
+  // Record response without rate limit info
+  await rlSuite.addAsync('recordResponse-no-headers', async () => {
     const rl = new AdaptiveRateLimiter();
-    await rl.handleResponse('api', '/endpoint', {
-      status: 200,
-      ok: true,
-      headers: new Headers(),
-    } as Response);
+    rl.recordResponse('api', {}, '/endpoint');
   });
 
-  // Handle 429 response
-  const headers429 = new Headers({
-    'Retry-After': '60',
-  });
-
-  await rlSuite.addAsync('handleResponse-429', async () => {
+  // Record 429 response with retry-after
+  await rlSuite.addAsync('recordResponse-429', async () => {
     const rl = new AdaptiveRateLimiter();
-    await rl.handleResponse('api', '/endpoint', {
-      status: 429,
-      ok: false,
-      headers: headers429,
-    } as Response);
+    rl.recordResponse('api', {
+      retryAfter: 60,
+    }, '/endpoint');
   });
 
   // getStatus operation
@@ -153,20 +137,14 @@ export async function runResilienceBenchmarks(): Promise<void> {
   // Simulate realistic request pattern
   await rlSuite.addAsync('realistic-request-pattern', async () => {
     const rl = new AdaptiveRateLimiter();
-    const headers = new Headers({
-      'X-RateLimit-Limit': '100',
-      'X-RateLimit-Remaining': '95',
-      'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 60),
-    });
 
     for (let i = 0; i < 20; i++) {
       await rl.canProceed('api', '/data');
-      headers.set('X-RateLimit-Remaining', String(95 - i));
-      await rl.handleResponse('api', '/data', {
-        status: 200,
-        ok: true,
-        headers,
-      } as Response);
+      rl.recordResponse('api', {
+        remaining: 95 - i,
+        limit: 100,
+        resetAt: new Date(Date.now() + 60000),
+      }, '/data');
     }
   }, { iterations: 100 });
 
@@ -197,13 +175,9 @@ export async function runResilienceBenchmarks(): Promise<void> {
       const success = Math.random() > 0.1;
       if (success) {
         cb.recordSuccess('api', '/data');
-        await rl.handleResponse('api', '/data', {
-          status: 200,
-          ok: true,
-          headers: new Headers({
-            'X-RateLimit-Remaining': '50',
-          }),
-        } as Response);
+        rl.recordResponse('api', {
+          remaining: 50,
+        }, '/data');
       } else {
         cb.recordFailure('api', '/data');
       }

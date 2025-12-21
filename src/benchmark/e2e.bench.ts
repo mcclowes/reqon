@@ -265,8 +265,7 @@ export async function runE2EBenchmarks(): Promise<void> {
       dryRun: true,
       verbose: false,
       stores: {},
-      sources: {},
-      env: { API_KEY: 'test' },
+      auth: { api: { type: 'bearer', token: 'test' } },
     });
   });
 
