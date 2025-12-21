@@ -368,6 +368,110 @@ describe('ReqonParser', () => {
     }
   });
 
+  it('parses let statements in actions', () => {
+    const source = `
+      mission TestLet {
+        source API {
+          auth: bearer,
+          base: "https://api.example.com"
+        }
+
+        store items: memory("items")
+
+        action ProcessItems {
+          let baseUrl = "https://api.example.com"
+          let pageSize = 50
+          let config = { enabled: true }
+
+          get "/items"
+
+          let itemCount = length(response.items)
+
+          store response -> items {
+            key: .id
+          }
+        }
+
+        run ProcessItems
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0];
+
+    if (mission.type === 'MissionDefinition') {
+      const action = mission.actions[0];
+      expect(action.steps).toHaveLength(5);
+
+      const letStep1 = action.steps[0];
+      expect(letStep1.type).toBe('LetStep');
+      if (letStep1.type === 'LetStep') {
+        expect(letStep1.name).toBe('baseUrl');
+      }
+
+      const letStep2 = action.steps[1];
+      expect(letStep2.type).toBe('LetStep');
+      if (letStep2.type === 'LetStep') {
+        expect(letStep2.name).toBe('pageSize');
+      }
+
+      const letStep3 = action.steps[2];
+      expect(letStep3.type).toBe('LetStep');
+      if (letStep3.type === 'LetStep') {
+        expect(letStep3.name).toBe('config');
+      }
+
+      const fetchStep = action.steps[3];
+      expect(fetchStep.type).toBe('FetchStep');
+
+      const letStep4 = action.steps[4];
+      expect(letStep4.type).toBe('LetStep');
+      if (letStep4.type === 'LetStep') {
+        expect(letStep4.name).toBe('itemCount');
+      }
+    }
+  });
+
+  it('parses let statements in for loops', () => {
+    const source = `
+      mission TestLetInLoop {
+        source API {
+          auth: bearer,
+          base: "https://api.example.com"
+        }
+
+        store items: memory("items")
+
+        action ProcessItems {
+          for item in items {
+            let itemId = item.id
+            get "/items/{itemId}"
+          }
+        }
+
+        run ProcessItems
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0];
+
+    if (mission.type === 'MissionDefinition') {
+      const action = mission.actions[0];
+      const forStep = action.steps[0];
+
+      if (forStep.type === 'ForStep') {
+        expect(forStep.steps).toHaveLength(2);
+
+        const letStep = forStep.steps[0];
+        expect(letStep.type).toBe('LetStep');
+        if (letStep.type === 'LetStep') {
+          expect(letStep.name).toBe('itemId');
+        }
+      }
+    }
+  });
+
   // ============================================
   // Parse-time validation tests
   // ============================================
