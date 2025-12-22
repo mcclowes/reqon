@@ -3,6 +3,7 @@ import type { ExecutionContext } from './context.js';
 import { getVariable } from './context.js';
 import type { IsExpression, ObjectLiteralExpression } from '../parser/expressions.js';
 import { isRecord } from '../utils/type-guards.js';
+import { EvaluatorError, UnsupportedOperationError } from '../errors/index.js';
 
 /**
  * Evaluate a Reqon/Vague expression within an execution context.
@@ -126,7 +127,7 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
         case '>=':
           return (left as number) >= (right as number);
         default:
-          throw new Error(`Unknown operator: ${expr.operator}`);
+          throw new UnsupportedOperationError(`operator: ${expr.operator}`, 'binary expression');
       }
     }
 
@@ -204,7 +205,7 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
         case 'env':
           return process.env[args[0] as string] ?? '';
         default:
-          throw new Error(`Unknown function: ${expr.callee}`);
+          throw new UnsupportedOperationError(`function: ${expr.callee}`, 'call expression');
       }
     }
 
@@ -226,7 +227,10 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
     }
 
     default:
-      throw new Error(`Cannot evaluate expression type: ${(expr as Expression).type}`);
+      throw new EvaluatorError(
+        `Cannot evaluate expression type: ${(expr as Expression).type}`,
+        { expression: (expr as Expression).type }
+      );
   }
 }
 
@@ -302,7 +306,7 @@ const TYPE_CHECKERS: Map<string, (value: unknown) => boolean> = new Map([
 function checkType(value: unknown, typeName: string): boolean {
   const checker = TYPE_CHECKERS.get(typeName.toLowerCase());
   if (!checker) {
-    throw new Error(`Unknown type for 'is' check: ${typeName}`);
+    throw new UnsupportedOperationError(`type check: ${typeName}`, "'is' expression");
   }
   return checker(value);
 }

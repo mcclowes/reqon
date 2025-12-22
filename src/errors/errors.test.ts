@@ -5,6 +5,11 @@ import {
   LexerError,
   RuntimeError,
   ValidationError,
+  StepError,
+  FetchError,
+  StoreError,
+  EvaluatorError,
+  UnsupportedOperationError,
   formatErrors,
   getSourceLine,
   getSourceContext,
@@ -121,6 +126,90 @@ describe('Error classes', () => {
       );
 
       expect(error.severity).toBe('warning');
+    });
+  });
+
+  describe('StepError', () => {
+    it('should create error with step type', () => {
+      const error = new StepError('Step failed', 'fetch');
+      expect(error.message).toBe('Step failed');
+      expect(error.stepType).toBe('fetch');
+      expect(error.name).toBe('StepError');
+    });
+
+    it('should include action context', () => {
+      const error = new StepError('Step failed', 'map', { action: 'TransformData' });
+      expect(error.action).toBe('TransformData');
+    });
+
+    it('should include cause', () => {
+      const cause = new Error('Root cause');
+      const error = new StepError('Step failed', 'validate', { cause });
+      expect(error.cause).toBe(cause);
+    });
+  });
+
+  describe('FetchError', () => {
+    it('should create error with HTTP details', () => {
+      const error = new FetchError('Request failed', {
+        url: 'https://api.example.com/data',
+        method: 'GET',
+        statusCode: 404,
+      });
+      expect(error.url).toBe('https://api.example.com/data');
+      expect(error.method).toBe('GET');
+      expect(error.statusCode).toBe(404);
+      expect(error.name).toBe('FetchError');
+    });
+
+    it('should work without options', () => {
+      const error = new FetchError('Request failed');
+      expect(error.message).toBe('Request failed');
+      expect(error.url).toBeUndefined();
+    });
+  });
+
+  describe('StoreError', () => {
+    it('should create error with store details', () => {
+      const error = new StoreError('Store operation failed', 'users', 'set');
+      expect(error.storeName).toBe('users');
+      expect(error.operation).toBe('set');
+      expect(error.name).toBe('StoreError');
+    });
+
+    it('should include cause', () => {
+      const cause = new Error('IO error');
+      const error = new StoreError('Store operation failed', 'data', 'get', cause);
+      expect(error.cause).toBe(cause);
+    });
+  });
+
+  describe('EvaluatorError', () => {
+    it('should create error with expression', () => {
+      const error = new EvaluatorError('Evaluation failed', { expression: 'x + y' });
+      expect(error.expression).toBe('x + y');
+      expect(error.name).toBe('EvaluatorError');
+    });
+
+    it('should work without expression', () => {
+      const error = new EvaluatorError('Evaluation failed');
+      expect(error.message).toBe('Evaluation failed');
+      expect(error.expression).toBeUndefined();
+    });
+  });
+
+  describe('UnsupportedOperationError', () => {
+    it('should create error with operation', () => {
+      const error = new UnsupportedOperationError('operator: %%');
+      expect(error.operation).toBe('operator: %%');
+      expect(error.message).toContain('operator: %%');
+      expect(error.name).toBe('UnsupportedOperationError');
+    });
+
+    it('should include context', () => {
+      const error = new UnsupportedOperationError('operator: %%', 'binary expression');
+      expect(error.context).toBe('binary expression');
+      expect(error.message).toContain('binary expression');
     });
   });
 });

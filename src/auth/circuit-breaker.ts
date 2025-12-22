@@ -10,6 +10,8 @@
  * - HALF_OPEN: Testing if service recovered, limited requests allowed
  */
 
+import { CIRCUIT_BREAKER_DEFAULTS } from '../config/index.js';
+
 export type CircuitState = 'closed' | 'open' | 'half_open';
 
 export interface CircuitBreakerConfig {
@@ -67,12 +69,12 @@ interface CircuitEntry {
 }
 
 const DEFAULT_CONFIG: Required<CircuitBreakerConfig> = {
-  failureThreshold: 5,
-  resetTimeout: 30000,
-  successThreshold: 2,
-  failureWindow: 60000,
-  failureStatusCodes: [500, 501, 502, 503, 504],
-  countNetworkErrors: true,
+  failureThreshold: CIRCUIT_BREAKER_DEFAULTS.FAILURE_THRESHOLD,
+  resetTimeout: CIRCUIT_BREAKER_DEFAULTS.RESET_TIMEOUT_MS,
+  successThreshold: CIRCUIT_BREAKER_DEFAULTS.SUCCESS_THRESHOLD,
+  failureWindow: CIRCUIT_BREAKER_DEFAULTS.FAILURE_WINDOW_MS,
+  failureStatusCodes: [...CIRCUIT_BREAKER_DEFAULTS.FAILURE_STATUS_CODES],
+  countNetworkErrors: CIRCUIT_BREAKER_DEFAULTS.COUNT_NETWORK_ERRORS,
 };
 
 /**

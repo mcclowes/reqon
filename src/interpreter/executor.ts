@@ -212,24 +212,24 @@ export class MissionExecutor {
     const callbacks: RateLimitCallbacks = config.rateLimitCallbacks ?? {};
     if (config.verbose && !callbacks.onRateLimited) {
       callbacks.onRateLimited = (event) => {
-        console.log(
-          `[Reqon] Rate limited on ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+        this.log(
+          `Rate limited on ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
             `waiting ${event.waitSeconds}s (strategy: ${event.strategy})`
         );
       };
     }
     if (config.verbose && !callbacks.onResumed) {
       callbacks.onResumed = (event) => {
-        console.log(
-          `[Reqon] Rate limit cleared for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} ` +
+        this.log(
+          `Rate limit cleared for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} ` +
             `(waited ${event.waitedSeconds}s)`
         );
       };
     }
     if (config.verbose && !callbacks.onWaiting) {
       callbacks.onWaiting = (event) => {
-        console.log(
-          `[Reqon] Still waiting for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+        this.log(
+          `Still waiting for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
             `${event.waitSeconds}s remaining (elapsed: ${event.elapsedSeconds}s)`
         );
       };
@@ -240,32 +240,32 @@ export class MissionExecutor {
     const cbCallbacks: CircuitBreakerCallbacks = config.circuitBreakerCallbacks ?? {};
     if (config.verbose && !cbCallbacks.onOpen) {
       cbCallbacks.onOpen = (event) => {
-        console.log(
-          `[Reqon] Circuit breaker OPEN for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+        this.log(
+          `Circuit breaker OPEN for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
             `${event.failures} failures (${event.reason ?? 'threshold exceeded'})`
         );
       };
     }
     if (config.verbose && !cbCallbacks.onHalfOpen) {
       cbCallbacks.onHalfOpen = (event) => {
-        console.log(
-          `[Reqon] Circuit breaker HALF-OPEN for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+        this.log(
+          `Circuit breaker HALF-OPEN for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
             `testing recovery`
         );
       };
     }
     if (config.verbose && !cbCallbacks.onClose) {
       cbCallbacks.onClose = (event) => {
-        console.log(
-          `[Reqon] Circuit breaker CLOSED for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+        this.log(
+          `Circuit breaker CLOSED for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
             `recovery successful`
         );
       };
     }
     if (config.verbose && !cbCallbacks.onRejected) {
       cbCallbacks.onRejected = (event) => {
-        console.log(
-          `[Reqon] Request REJECTED by circuit breaker for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
+        this.log(
+          `Request REJECTED by circuit breaker for ${event.source}${event.endpoint ? `:${event.endpoint}` : ''} - ` +
             `retry in ${Math.ceil(event.nextAttemptIn / 1000)}s`
         );
       };

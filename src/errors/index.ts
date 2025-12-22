@@ -184,6 +184,105 @@ export class ValidationError extends ReqonError {
   }
 }
 
+// ============================================
+// Runtime Error Types (no source location required)
+// ============================================
+
+/**
+ * Error during step execution
+ */
+export class StepError extends Error {
+  readonly stepType: string;
+  readonly action?: string;
+  readonly cause?: Error;
+
+  constructor(
+    message: string,
+    stepType: string,
+    options?: { action?: string; cause?: Error }
+  ) {
+    super(message);
+    this.name = 'StepError';
+    this.stepType = stepType;
+    this.action = options?.action;
+    this.cause = options?.cause;
+  }
+}
+
+/**
+ * Error during HTTP fetch operations
+ */
+export class FetchError extends Error {
+  readonly url?: string;
+  readonly method?: string;
+  readonly statusCode?: number;
+  readonly cause?: Error;
+
+  constructor(
+    message: string,
+    options?: { url?: string; method?: string; statusCode?: number; cause?: Error }
+  ) {
+    super(message);
+    this.name = 'FetchError';
+    this.url = options?.url;
+    this.method = options?.method;
+    this.statusCode = options?.statusCode;
+    this.cause = options?.cause;
+  }
+}
+
+/**
+ * Error during store operations
+ */
+export class StoreError extends Error {
+  readonly storeName: string;
+  readonly operation: 'get' | 'set' | 'delete' | 'query' | 'init';
+  readonly cause?: Error;
+
+  constructor(
+    message: string,
+    storeName: string,
+    operation: 'get' | 'set' | 'delete' | 'query' | 'init',
+    cause?: Error
+  ) {
+    super(message);
+    this.name = 'StoreError';
+    this.storeName = storeName;
+    this.operation = operation;
+    this.cause = cause;
+  }
+}
+
+/**
+ * Error during expression evaluation
+ */
+export class EvaluatorError extends Error {
+  readonly expression?: string;
+  readonly cause?: Error;
+
+  constructor(message: string, options?: { expression?: string; cause?: Error }) {
+    super(message);
+    this.name = 'EvaluatorError';
+    this.expression = options?.expression;
+    this.cause = options?.cause;
+  }
+}
+
+/**
+ * Error for unsupported operations
+ */
+export class UnsupportedOperationError extends Error {
+  readonly operation: string;
+  readonly context?: string;
+
+  constructor(operation: string, context?: string) {
+    super(`Unsupported operation: ${operation}${context ? ` (${context})` : ''}`);
+    this.name = 'UnsupportedOperationError';
+    this.operation = operation;
+    this.context = context;
+  }
+}
+
 /**
  * Format multiple errors for display
  */

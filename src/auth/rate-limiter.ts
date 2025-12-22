@@ -7,6 +7,7 @@ import type {
   RateLimitEvent,
 } from './types.js';
 import { sleep } from '../utils/async.js';
+import { RATE_LIMIT_DEFAULTS } from '../config/index.js';
 
 interface RateLimitState {
   remaining?: number;
@@ -16,18 +17,11 @@ interface RateLimitState {
   lastRequestAt?: Date;
 }
 
-/** Max age for stale entries (default: 1 hour) */
-const DEFAULT_MAX_STALE_AGE_MS = 60 * 60 * 1000;
-/** Cleanup interval (default: 5 minutes) */
-const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
-/** Max number of entries before forced cleanup */
-const MAX_ENTRIES_BEFORE_CLEANUP = 1000;
-
 const DEFAULT_CONFIG: Required<RateLimitConfig> = {
-  strategy: 'pause',
-  maxWait: 300,
-  notifyAt: 10,
-  fallbackRpm: 60,
+  strategy: RATE_LIMIT_DEFAULTS.STRATEGY,
+  maxWait: RATE_LIMIT_DEFAULTS.MAX_WAIT_SECONDS,
+  notifyAt: RATE_LIMIT_DEFAULTS.NOTIFY_AT_SECONDS,
+  fallbackRpm: RATE_LIMIT_DEFAULTS.FALLBACK_RPM,
 };
 
 /**
@@ -62,9 +56,6 @@ export class RateLimitError extends Error {
  * Adaptive rate limiter that learns from response headers
  * Supports pause, throttle, and fail strategies
  */
-/** Number of responses between cleanup checks */
-const CLEANUP_CHECK_INTERVAL = 100;
-
 export class AdaptiveRateLimiter implements RateLimiter {
   private state: Map<string, RateLimitState> = new Map();
   private configs: Map<string, RateLimitConfig> = new Map();
@@ -77,7 +68,7 @@ export class AdaptiveRateLimiter implements RateLimiter {
     private defaultConfig: Partial<RateLimitConfig> = {},
     options: { maxStaleAgeMs?: number } = {}
   ) {
-    this.maxStaleAgeMs = options.maxStaleAgeMs ?? DEFAULT_MAX_STALE_AGE_MS;
+    this.maxStaleAgeMs = options.maxStaleAgeMs ?? RATE_LIMIT_DEFAULTS.MAX_STALE_AGE_MS;
   }
 
   /**
@@ -88,8 +79,8 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     // Skip if cleanup was done recently and we're under the entry limit
     if (
-      now - this.lastCleanup < CLEANUP_INTERVAL_MS &&
-      this.state.size < MAX_ENTRIES_BEFORE_CLEANUP
+      now - this.lastCleanup < RATE_LIMIT_DEFAULTS.CLEANUP_INTERVAL_MS &&
+      this.state.size < RATE_LIMIT_DEFAULTS.MAX_ENTRIES_BEFORE_CLEANUP
     ) {
       return;
     }
@@ -329,7 +320,7 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     // Periodically clean up stale entries (every N responses)
     this.responsesSinceCleanup++;
-    if (this.responsesSinceCleanup >= CLEANUP_CHECK_INTERVAL) {
+    if (this.responsesSinceCleanup >= RATE_LIMIT_DEFAULTS.CLEANUP_CHECK_INTERVAL) {
       this.responsesSinceCleanup = 0;
       this.cleanup();
     }
