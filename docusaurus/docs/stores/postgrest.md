@@ -8,14 +8,14 @@ The PostgREST store adapter connects to PostgreSQL via PostgREST or Supabase, en
 
 ## Configuration
 
-### Mission File
+### Mission file
 
 ```vague
 store items: sql("items")
 store users: sql("users")
 ```
 
-### Store Configuration
+### Store configuration
 
 Create `stores.json`:
 
@@ -35,15 +35,15 @@ Run with:
 reqon mission.vague --store-config ./stores.json
 ```
 
-## Supabase Setup
+## Supabase setup
 
-### 1. Create Supabase Project
+### 1. Create Supabase project
 
 1. Go to [supabase.com](https://supabase.com)
 2. Create a new project
 3. Note your project URL and anon key
 
-### 2. Create Tables
+### 2. Create tables
 
 ```sql
 CREATE TABLE items (
@@ -74,9 +74,9 @@ CREATE TABLE users (
 }
 ```
 
-## Self-Hosted PostgREST
+## Self-hosted PostgREST
 
-### Docker Setup
+### Docker setup
 
 ```yaml
 # docker-compose.yml
@@ -140,7 +140,7 @@ for item in items where .status == "active" { }
 delete items[item.id]
 ```
 
-## Query Mapping
+## Query mapping
 
 Reqon where clauses map to PostgREST queries:
 
@@ -155,7 +155,7 @@ Reqon where clauses map to PostgREST queries:
 
 ## Authentication
 
-### Anon Key
+### Anon key
 
 ```json
 {
@@ -167,7 +167,7 @@ Reqon where clauses map to PostgREST queries:
 }
 ```
 
-### Service Role Key
+### Service role key
 
 For full access:
 
@@ -181,7 +181,7 @@ For full access:
 }
 ```
 
-### Row Level Security
+### Row level security
 
 With RLS enabled:
 
@@ -198,9 +198,9 @@ With RLS enabled:
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Table Design
+### Table design
 
 ```sql
 CREATE TABLE items (
@@ -221,7 +221,7 @@ CREATE INDEX items_status_idx ON items(status);
 CREATE INDEX items_created_idx ON items(created_at);
 ```
 
-### Upsert with Timestamps
+### Upsert with timestamps
 
 ```sql
 -- Add trigger for updated_at
@@ -239,7 +239,7 @@ CREATE TRIGGER items_updated
   EXECUTE FUNCTION update_updated_at();
 ```
 
-### Connection Pooling
+### Connection pooling
 
 For high-volume usage:
 
@@ -254,7 +254,7 @@ For high-volume usage:
 }
 ```
 
-## Error Handling
+## Error handling
 
 ```vague
 action SafeStore {
@@ -276,7 +276,7 @@ action SafeStore {
 
 ## Monitoring
 
-### Query Logs
+### Query logs
 
 Enable in Supabase Dashboard or PostgREST config.
 
@@ -307,7 +307,7 @@ Check RLS policies:
 CREATE POLICY "Allow all" ON items FOR ALL USING (true);
 ```
 
-### Connection Issues
+### Connection issues
 
 Verify URL and credentials:
 

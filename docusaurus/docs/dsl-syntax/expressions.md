@@ -33,7 +33,7 @@ null
 { key: "value", nested: { a: 1 } }
 ```
 
-## Property Access
+## Property access
 
 ```vague
 // Dot notation
@@ -90,9 +90,9 @@ not .a      // logical NOT
 .file endsWith ".pdf"   // suffix check
 ```
 
-## Conditional Expressions
+## Conditional expressions
 
-### If-Then-Else
+### If-then-else
 
 ```vague
 if .active then "Active" else "Inactive"
@@ -102,20 +102,20 @@ else if .age >= 13 then "Teen"
 else "Child"
 ```
 
-### Ternary Style
+### Ternary style
 
 ```vague
 .status == "active" ? "Yes" : "No"
 ```
 
-### Null Coalescing
+### Null coalescing
 
 ```vague
 .name or "Unknown"
 .email or .backup_email or "no-email@example.com"
 ```
 
-## String Functions
+## String functions
 
 ```vague
 // Length
@@ -145,7 +145,7 @@ replace("hello", "l", "L")  // "heLLo"
 concat("Hello", " ", "World")  // "Hello World"
 ```
 
-## Array Functions
+## Array functions
 
 ```vague
 // Length
@@ -184,7 +184,7 @@ find(items, .id == "123")   // first match
 findIndex(items, .id == "123")  // index of first match
 ```
 
-## Object Functions
+## Object functions
 
 ```vague
 // Get keys/values
@@ -201,7 +201,7 @@ omit({ a: 1, b: 2 }, ["b"])        // { a: 1 }
 merge({ a: 1 }, { b: 2 })          // { a: 1, b: 2 }
 ```
 
-## Numeric Functions
+## Numeric functions
 
 ```vague
 // Rounding
@@ -222,7 +222,7 @@ toNumber("42")    // 42
 toString(42)      // "42"
 ```
 
-## Date Functions
+## Date functions
 
 ```vague
 // Current time
@@ -254,7 +254,7 @@ isBefore(date1, date2)
 isAfter(date1, date2)
 ```
 
-## Type Functions
+## Type functions
 
 ```vague
 // Type checking
@@ -272,7 +272,7 @@ toBoolean(1)        // true
 toArray("a")        // ["a"]
 ```
 
-## Environment Variables
+## Environment variables
 
 ```vague
 env("API_KEY")
@@ -280,7 +280,7 @@ env("BASE_URL")
 env("DEBUG") == "true"
 ```
 
-## Pattern Matching in Expressions
+## Pattern matching in expressions
 
 ```vague
 match .status {
@@ -291,9 +291,9 @@ match .status {
 }
 ```
 
-## Complex Expression Examples
+## Complex expression examples
 
-### Data Transformation
+### Data transformation
 
 ```vague
 map user -> Output {
@@ -322,7 +322,7 @@ map orders -> Summary {
 }
 ```
 
-### Conditional Logic
+### Conditional logic
 
 ```vague
 map order -> PricedOrder {
@@ -345,7 +345,7 @@ map order -> PricedOrder {
 }
 ```
 
-### Validation Conditions
+### Validation conditions
 
 ```vague
 validate order {

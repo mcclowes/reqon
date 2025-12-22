@@ -2,11 +2,11 @@
 sidebar_position: 5
 ---
 
-# Custom Store Adapters
+# Custom store adapters
 
 Create custom store adapters to connect Reqon to any storage backend.
 
-## Store Interface
+## Store interface
 
 Implement this TypeScript interface:
 
@@ -44,9 +44,9 @@ interface WhereClause {
 }
 ```
 
-## Basic Example
+## Basic example
 
-### Redis Adapter
+### Redis adapter
 
 ```typescript
 import { createClient } from 'redis';
@@ -147,7 +147,7 @@ export class RedisStoreAdapter implements StoreAdapter {
 }
 ```
 
-## MongoDB Adapter
+## MongoDB adapter
 
 ```typescript
 import { MongoClient, Db, Collection } from 'mongodb';
@@ -237,7 +237,7 @@ export class MongoStoreAdapter implements StoreAdapter {
 }
 ```
 
-## Registering Custom Adapters
+## Registering custom adapters
 
 ```typescript
 import { execute, registerStoreAdapter } from 'reqon';
@@ -271,9 +271,9 @@ await execute(`
 });
 ```
 
-## Best Practices
+## Best practices
 
-### Connection Management
+### Connection management
 
 ```typescript
 class MyAdapter implements StoreAdapter {
@@ -293,7 +293,7 @@ class MyAdapter implements StoreAdapter {
 }
 ```
 
-### Error Handling
+### Error handling
 
 ```typescript
 async set(key: string, value: Record<string, unknown>) {
@@ -305,7 +305,7 @@ async set(key: string, value: Record<string, unknown>) {
 }
 ```
 
-### Connection Pooling
+### Connection pooling
 
 ```typescript
 class PooledAdapter implements StoreAdapter {
@@ -326,7 +326,7 @@ class PooledAdapter implements StoreAdapter {
 }
 ```
 
-### Batch Operations
+### Batch operations
 
 ```typescript
 async setMany(items: Array<{ key: string; value: unknown }>) {
@@ -335,7 +335,7 @@ async setMany(items: Array<{ key: string; value: unknown }>) {
 }
 ```
 
-## Testing Adapters
+## Testing adapters
 
 ```typescript
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';

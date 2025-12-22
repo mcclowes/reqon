@@ -2,11 +2,11 @@
 sidebar_position: 2
 ---
 
-# For Loops
+# For loops
 
 For loops iterate over collections, allowing you to process each item individually.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 for item in collection {
@@ -14,7 +14,7 @@ for item in collection {
 }
 ```
 
-## Iterating Over Response Data
+## Iterating over response data
 
 ```vague
 action ProcessUsers {
@@ -26,7 +26,7 @@ action ProcessUsers {
 }
 ```
 
-## Iterating Over Store Data
+## Iterating over store data
 
 ```vague
 action ProcessStoredData {
@@ -37,7 +37,7 @@ action ProcessStoredData {
 }
 ```
 
-## Filtering with Where
+## Filtering with where
 
 Add conditions to filter items:
 
@@ -52,7 +52,7 @@ action ProcessActiveUsers {
 }
 ```
 
-### Multiple Conditions
+### Multiple conditions
 
 ```vague
 action ProcessPremiumActiveUsers {
@@ -62,7 +62,7 @@ action ProcessPremiumActiveUsers {
 }
 ```
 
-### Comparison Operators
+### Comparison operators
 
 ```vague
 // Equality
@@ -84,7 +84,7 @@ for item in items where .email contains "@example.com" { }
 for item in items where .tags is array { }
 ```
 
-### Complex Conditions
+### Complex conditions
 
 ```vague
 for order in orders where (.status == "pending" or .status == "processing") and .total > 100 {
@@ -92,7 +92,7 @@ for order in orders where (.status == "pending" or .status == "processing") and 
 }
 ```
 
-## Nested Loops
+## Nested loops
 
 ```vague
 action ProcessOrderItems {
@@ -110,7 +110,7 @@ action ProcessOrderItems {
 }
 ```
 
-## Variable Scope
+## Variable scope
 
 Loop variables are scoped to their block:
 
@@ -136,7 +136,7 @@ action ScopedVariables {
 }
 ```
 
-## Accessing Loop Item Properties
+## Accessing loop item properties
 
 Use dot notation to access properties:
 
@@ -158,7 +158,7 @@ for user in users {
 }
 ```
 
-## Iterating Over Paginated Results
+## Iterating over paginated results
 
 Combine pagination with iteration:
 
@@ -199,7 +199,7 @@ action ProcessPagesSequentially {
 }
 ```
 
-## Breaking Out of Loops
+## Breaking out of loops
 
 Use `skip` in match to skip to the next iteration:
 
@@ -216,7 +216,7 @@ for user in users {
 }
 ```
 
-## Error Handling in Loops
+## Error handling in loops
 
 Handle errors per-item:
 
@@ -237,9 +237,9 @@ for user in users {
 }
 ```
 
-## Performance Considerations
+## Performance considerations
 
-### Batch Operations
+### Batch operations
 
 Instead of individual requests:
 
@@ -259,7 +259,7 @@ post "/users/batch" {
 }
 ```
 
-### Parallel Processing
+### Parallel processing
 
 For independent operations, consider parallel actions:
 
@@ -267,7 +267,7 @@ For independent operations, consider parallel actions:
 run [FetchOrders, FetchProducts, FetchCustomers] then MergeData
 ```
 
-## Complete Example
+## Complete example
 
 ```vague
 mission OrderProcessing {

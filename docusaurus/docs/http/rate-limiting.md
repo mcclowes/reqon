@@ -6,7 +6,7 @@ sidebar_position: 5
 
 Reqon provides adaptive rate limiting that learns from API responses and respects rate limit headers.
 
-## Source-Level Configuration
+## Source-level configuration
 
 ```vague
 source API {
@@ -19,7 +19,7 @@ source API {
 }
 ```
 
-## Rate Limit Options
+## Rate limit options
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -29,7 +29,7 @@ source API {
 
 ## Strategies
 
-### Pause Strategy
+### Pause strategy
 
 Wait when rate limit is reached:
 
@@ -49,7 +49,7 @@ When limit is reached:
 2. Waits until rate limit window resets
 3. Continues with next request
 
-### Throttle Strategy
+### Throttle strategy
 
 Slow down requests proactively:
 
@@ -66,7 +66,7 @@ source API {
 
 Automatically spaces requests to stay within limits.
 
-### Fail Strategy
+### Fail strategy
 
 Throw error when limit is reached:
 
@@ -94,7 +94,7 @@ action FetchWithRateLimitHandling {
 }
 ```
 
-## Response Header Support
+## Response header support
 
 Reqon automatically reads standard rate limit headers:
 
@@ -105,7 +105,7 @@ Reqon automatically reads standard rate limit headers:
 | `X-RateLimit-Reset` | When the window resets |
 | `Retry-After` | Seconds to wait before retrying |
 
-### Header Parsing
+### Header parsing
 
 ```http
 HTTP/1.1 429 Too Many Requests
@@ -120,7 +120,7 @@ Reqon will automatically:
 2. Update internal limit tracking
 3. Retry the request
 
-## Adaptive Rate Limiting
+## Adaptive rate limiting
 
 Reqon learns from API responses:
 
@@ -141,7 +141,7 @@ With `adaptive: true`:
 - Adjusts request pacing dynamically
 - Backs off before hitting limits
 
-## Per-Endpoint Rate Limits
+## Per-endpoint rate limits
 
 Some APIs have different limits per endpoint:
 
@@ -167,7 +167,7 @@ mission APISync {
 }
 ```
 
-## Combining with Pagination
+## Combining with pagination
 
 ```vague
 get "/items" {
@@ -178,7 +178,7 @@ get "/items" {
 
 Rate limiting applies to each page request, not just the action.
 
-## Combining with Retry
+## Combining with retry
 
 ```vague
 source API {
@@ -206,7 +206,7 @@ Order of operations:
 3. Request is made
 4. If fails, retry logic kicks in
 
-## Handling 429 Responses
+## Handling 429 responses
 
 Even with rate limiting, you might hit limits. Handle gracefully:
 
@@ -225,7 +225,7 @@ action RobustFetch {
 }
 ```
 
-## Multiple Sources with Different Limits
+## Multiple sources with different limits
 
 ```vague
 mission MultiSourceSync {
@@ -249,7 +249,7 @@ mission MultiSourceSync {
 }
 ```
 
-## Monitoring Rate Limits
+## Monitoring rate limits
 
 Track rate limit status:
 
@@ -272,9 +272,9 @@ action MonitoredFetch {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Start Conservative
+### Start conservative
 
 ```vague
 // Good: start below the actual limit
@@ -288,7 +288,7 @@ source API {
 }
 ```
 
-### Use Pause for Critical Syncs
+### Use pause for critical syncs
 
 ```vague
 source API {
@@ -299,7 +299,7 @@ source API {
 }
 ```
 
-### Use Throttle for Background Jobs
+### Use throttle for background jobs
 
 ```vague
 source API {
@@ -310,7 +310,7 @@ source API {
 }
 ```
 
-### Set Reasonable maxWait
+### Set reasonable maxWait
 
 ```vague
 source API {
@@ -322,7 +322,7 @@ source API {
 }
 ```
 
-### Combine with Circuit Breaker
+### Combine with circuit breaker
 
 ```vague
 source API {
@@ -341,7 +341,7 @@ source API {
 
 ## Troubleshooting
 
-### Still Hitting Rate Limits
+### Still hitting rate limits
 
 Lower your configured limit:
 
@@ -354,7 +354,7 @@ source API {
 }
 ```
 
-### Requests Too Slow
+### Requests too slow
 
 Check if throttle strategy is too aggressive:
 
@@ -368,7 +368,7 @@ source API {
 }
 ```
 
-### Inconsistent API Limits
+### Inconsistent API limits
 
 Use adaptive mode:
 

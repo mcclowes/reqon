@@ -2,7 +2,7 @@
 sidebar_position: 2
 ---
 
-# Cron Expressions
+# Cron expressions
 
 Reqon supports full cron expression syntax for precise scheduling.
 
@@ -12,7 +12,7 @@ Reqon supports full cron expression syntax for precise scheduling.
 schedule: cron "minute hour day month weekday"
 ```
 
-## Field Reference
+## Field reference
 
 | Field | Values | Special Characters |
 |-------|--------|-------------------|
@@ -22,7 +22,7 @@ schedule: cron "minute hour day month weekday"
 | Month | 1-12 | * , - / |
 | Day of Week | 0-6 (0=Sunday) | * , - / |
 
-## Special Characters
+## Special characters
 
 | Character | Meaning | Example |
 |-----------|---------|---------|
@@ -31,22 +31,22 @@ schedule: cron "minute hour day month weekday"
 | `-` | Range | `0 9-17 * * *` = 9am to 5pm |
 | `/` | Step | `*/15 * * * *` = every 15 minutes |
 
-## Common Patterns
+## Common patterns
 
-### Every Minute
+### Every minute
 
 ```vague
 schedule: cron "* * * * *"
 ```
 
-### Every Hour
+### Every hour
 
 ```vague
 // At minute 0
 schedule: cron "0 * * * *"
 ```
 
-### Every N Minutes
+### Every N minutes
 
 ```vague
 // Every 5 minutes
@@ -59,7 +59,7 @@ schedule: cron "*/15 * * * *"
 schedule: cron "*/30 * * * *"
 ```
 
-### Every N Hours
+### Every N hours
 
 ```vague
 // Every 2 hours
@@ -88,7 +88,7 @@ schedule: cron "0 9 * * *"
 schedule: cron "0 23 * * *"
 ```
 
-### Multiple Times Per Day
+### Multiple times per day
 
 ```vague
 // At 9am and 5pm
@@ -111,7 +111,7 @@ schedule: cron "0 9 * * 1"
 schedule: cron "0 17 * * 5"
 ```
 
-### Weekdays Only
+### Weekdays only
 
 ```vague
 // Weekdays at 9am
@@ -121,7 +121,7 @@ schedule: cron "0 9 * * 1-5"
 schedule: cron "0 9-17 * * 1-5"
 ```
 
-### Weekends Only
+### Weekends only
 
 ```vague
 // Weekends at noon
@@ -161,41 +161,41 @@ schedule: cron "0 0 1 1 *"
 schedule: cron "0 9 1-7 1 1"
 ```
 
-## Complex Examples
+## Complex examples
 
-### Business Hours Only
+### Business hours only
 
 ```vague
 // Every 30 minutes, 9am-5pm, weekdays
 schedule: cron "*/30 9-17 * * 1-5"
 ```
 
-### Night Batch Jobs
+### Night batch jobs
 
 ```vague
 // At 2am every day
 schedule: cron "0 2 * * *"
 ```
 
-### Multiple Specific Times
+### Multiple specific times
 
 ```vague
 // 8am, 12pm, 6pm every day
 schedule: cron "0 8,12,18 * * *"
 ```
 
-### End of Month (Approximation)
+### End of month (approximation)
 
 ```vague
 // 28th of every month
 schedule: cron "0 0 28 * *"
 ```
 
-## Timezone Handling
+## Timezone handling
 
 Cron expressions use the system timezone by default.
 
-### Specify Timezone
+### Specify timezone
 
 ```vague
 mission TimezoneSync {
@@ -213,16 +213,16 @@ mission UTCSync {
 }
 ```
 
-## Testing Cron Expressions
+## Testing cron expressions
 
-### Dry Run
+### Dry run
 
 ```bash
 reqon ./mission.vague --dry-run
 # Shows: Next run at: 2024-01-20 09:00:00
 ```
 
-### Validate Expression
+### Validate expression
 
 ```bash
 reqon --validate-cron "0 9 * * *"
@@ -235,9 +235,9 @@ reqon --validate-cron "0 9 * * *"
 #   2024-01-24 09:00:00
 ```
 
-## Best Practices
+## Best practices
 
-### Avoid Midnight
+### Avoid midnight
 
 Many systems run jobs at midnight, causing load spikes:
 
@@ -246,7 +246,7 @@ Many systems run jobs at midnight, causing load spikes:
 schedule: cron "0 3 * * *"  // 3am
 ```
 
-### Spread Load
+### Spread load
 
 Stagger related jobs:
 
@@ -264,7 +264,7 @@ mission SyncProducts {
 }
 ```
 
-### Consider Execution Time
+### Consider execution time
 
 Account for job duration:
 
@@ -278,7 +278,7 @@ skipIfRunning: true
 
 ## Troubleshooting
 
-### Wrong Times
+### Wrong times
 
 Check timezone settings:
 
@@ -287,7 +287,7 @@ date  # System time
 TZ=UTC date  # UTC time
 ```
 
-### Missed Runs
+### Missed runs
 
 If daemon was down, jobs don't backfill. Consider:
 
@@ -295,7 +295,7 @@ If daemon was down, jobs don't backfill. Consider:
 retryOnFailure: { maxAttempts: 3 }
 ```
 
-### Expression Errors
+### Expression errors
 
 Validate syntax:
 

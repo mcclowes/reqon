@@ -2,11 +2,11 @@
 sidebar_position: 5
 ---
 
-# Match (Pattern Matching)
+# Match (pattern matching)
 
 Match steps route data based on its structure. They're essential for error handling, conditional processing, and flow control.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 match target {
@@ -16,7 +16,7 @@ match target {
 }
 ```
 
-## Schema Matching
+## Schema matching
 
 Match against defined schemas:
 
@@ -42,7 +42,7 @@ action HandleResponse {
 }
 ```
 
-## Object Pattern Matching
+## Object pattern matching
 
 Match based on object structure:
 
@@ -56,7 +56,7 @@ match response {
 }
 ```
 
-### Binding Variables
+### Binding variables
 
 Capture values from patterns:
 
@@ -70,7 +70,7 @@ match response {
 }
 ```
 
-## Conditional Matching
+## Conditional matching
 
 Add conditions with `where`:
 
@@ -86,7 +86,7 @@ match order {
 }
 ```
 
-## Flow Control Directives
+## Flow control directives
 
 Match arms can use these directives:
 
@@ -189,7 +189,7 @@ action RefreshToken {
 }
 ```
 
-## Matching Arrays
+## Matching arrays
 
 ```vague
 match response.items {
@@ -199,7 +199,7 @@ match response.items {
 }
 ```
 
-## Matching with Nested Steps
+## Matching with nested steps
 
 Execute multiple steps in a match arm:
 
@@ -220,7 +220,7 @@ match response {
 }
 ```
 
-## Type Matching
+## Type matching
 
 ```vague
 match value {
@@ -232,7 +232,7 @@ match value {
 }
 ```
 
-## HTTP Status Code Handling
+## HTTP status code handling
 
 ```vague
 schema Success { data: any }
@@ -253,7 +253,7 @@ action FetchWithErrorHandling {
 }
 ```
 
-## Pattern Matching Order
+## Pattern matching order
 
 Patterns are matched in order; first match wins:
 
@@ -268,7 +268,7 @@ match value {
 }
 ```
 
-## Exhaustive Matching
+## Exhaustive matching
 
 Always include a catch-all pattern:
 
@@ -288,7 +288,7 @@ match response {
 }
 ```
 
-## Complete Example
+## Complete example
 
 ```vague
 mission RobustDataSync {

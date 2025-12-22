@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Observability Overview
+# Observability overview
 
 Reqon provides comprehensive observability features for monitoring and debugging mission execution. The observability system includes:
 
@@ -34,9 +34,9 @@ Reqon provides comprehensive observability features for monitoring and debugging
     └─────────┘     └─────────┘     └─────────┘
 ```
 
-## Quick Start
+## Quick start
 
-### Basic Logging
+### Basic logging
 
 ```typescript
 import { execute, createStructuredLogger, ConsoleOutput } from 'reqon';
@@ -52,7 +52,7 @@ const result = await execute(source, {
 });
 ```
 
-### Event Listeners
+### Event listeners
 
 ```typescript
 import { execute, createEmitter } from 'reqon';
@@ -72,7 +72,7 @@ const result = await execute(source, {
 });
 ```
 
-### OpenTelemetry Export
+### OpenTelemetry export
 
 ```typescript
 import { execute, OTLPExporter, createOTelListener } from 'reqon';
@@ -88,7 +88,7 @@ const result = await execute(source, {
 });
 ```
 
-## Event Types
+## Event types
 
 Reqon emits events for every significant operation:
 
@@ -105,9 +105,9 @@ Reqon emits events for every significant operation:
 | **State** | `checkpoint.save`, `checkpoint.resume`, `sync.checkpoint` |
 | **Resilience** | `ratelimit.hit`, `circuitbreaker.state` |
 
-## Output Formats
+## Output formats
 
-### Console Output
+### Console output
 
 Human-readable logs for development:
 
@@ -119,7 +119,7 @@ Human-readable logs for development:
 [Reqon] INFO  mission.complete mission="SyncCustomers" duration=1234ms
 ```
 
-### JSON Lines
+### JSON lines
 
 Machine-readable logs for log aggregation:
 
@@ -140,9 +140,9 @@ Export spans to observability platforms:
 - Datadog
 - Honeycomb
 
-## Use Cases
+## Use cases
 
-### Debugging Pipelines
+### Debugging pipelines
 
 ```typescript
 const emitter = createEmitter();
@@ -158,7 +158,7 @@ emitter.on('data.validate', (event) => {
 });
 ```
 
-### Performance Monitoring
+### Performance monitoring
 
 ```typescript
 const metrics = {
@@ -177,7 +177,7 @@ emitter.on('fetch.error', () => {
 });
 ```
 
-### Audit Logging
+### Audit logging
 
 ```typescript
 emitter.on('data.store', (event) => {
@@ -192,7 +192,7 @@ emitter.on('data.store', (event) => {
 
 ## Configuration
 
-### Log Levels
+### Log levels
 
 | Level | Description |
 |-------|-------------|
@@ -201,7 +201,7 @@ emitter.on('data.store', (event) => {
 | `warn` | Warning conditions |
 | `error` | Error conditions |
 
-### Environment Variables
+### Environment variables
 
 | Variable | Description |
 |----------|-------------|
@@ -209,7 +209,7 @@ emitter.on('data.store', (event) => {
 | `REQON_OTEL_ENDPOINT` | OTLP exporter endpoint |
 | `REQON_OTEL_SERVICE` | Service name for traces |
 
-## Next Steps
+## Next steps
 
 - [Structured Logging](./structured-logging) - Deep dive into logging APIs
 - [OpenTelemetry](./opentelemetry) - Distributed tracing setup

@@ -36,11 +36,11 @@ mission SyncCustomers {
 
 ## Why Reqon?
 
-### Declarative by Design
+### Declarative by design
 
 Traditional data pipelines require writing boilerplate code for HTTP requests, pagination, retries, error handling, and more. Reqon abstracts these concerns into a clean DSL, letting you focus on your business logic.
 
-### Built-in Best Practices
+### Built-in best practices
 
 - **Automatic pagination** - Handle offset, page number, or cursor-based pagination
 - **Retry with backoff** - Exponential, linear, or constant backoff strategies
@@ -48,7 +48,7 @@ Traditional data pipelines require writing boilerplate code for HTTP requests, p
 - **Circuit breaker** - Prevents cascading failures
 - **Incremental sync** - Only fetch changes since last run
 
-### Extensible Architecture
+### Extensible architecture
 
 Reqon is built on [Vague](https://github.com/mcclowes/vague), a general-purpose expression DSL. This means you get powerful expression syntax for transformations and validations, while Reqon adds the execution semantics for data pipelines.
 
@@ -75,7 +75,7 @@ Reqon is built on [Vague](https://github.com/mcclowes/vague), a general-purpose 
 
 For expression syntax, pattern matching, and schema definitions, refer to the [Vague documentation](https://github.com/mcclowes/vague).
 
-## Key Concepts
+## Key concepts
 
 | Concept | Description |
 |---------|-------------|
@@ -85,7 +85,7 @@ For expression syntax, pattern matching, and schema definitions, refer to the [V
 | **Action** | A sequence of steps that process data |
 | **Step** | A single operation (fetch, map, validate, store, etc.) |
 
-## Next Steps
+## Next steps
 
 - [Getting Started](./getting-started) - Install Reqon and run your first mission
 - [Core Concepts](./category/core-concepts) - Learn about missions, actions, and more

@@ -4,7 +4,7 @@ description: Install Reqon and run your first data pipeline in minutes. Learn th
 keywords: [reqon, installation, getting started, tutorial, first mission]
 ---
 
-# Getting Started
+# Getting started
 
 This guide will help you install Reqon and run your first data pipeline.
 
@@ -25,7 +25,7 @@ Or if you prefer yarn:
 yarn add reqon
 ```
 
-## Your First Mission
+## Your first mission
 
 Create a file called `hello.vague`:
 
@@ -56,7 +56,7 @@ mission HelloWorld {
 }
 ```
 
-## Running Your Mission
+## Running your mission
 
 ### Using the CLI
 
@@ -92,7 +92,7 @@ const result = await execute(`
 console.log(`Fetched ${result.stores.get('posts')?.list().length} posts`);
 ```
 
-## Understanding the Output
+## Understanding the output
 
 When you run a mission, Reqon provides detailed execution information:
 
@@ -104,7 +104,7 @@ When you run a mission, Reqon provides detailed execution information:
 [Reqon] Mission completed in 234ms
 ```
 
-## Mission Structure
+## Mission structure
 
 Every Reqon mission follows this structure:
 
@@ -129,7 +129,7 @@ mission MissionName {
 }
 ```
 
-## Adding Transformations
+## Adding transformations
 
 Use `map` to transform data:
 
@@ -149,7 +149,7 @@ action TransformPosts {
 }
 ```
 
-## Adding Validation
+## Adding validation
 
 Use `validate` to check constraints:
 
@@ -168,7 +168,7 @@ action ValidatedFetch {
 }
 ```
 
-## Handling Pagination
+## Handling pagination
 
 Most APIs require pagination. Reqon makes this easy:
 
@@ -183,7 +183,7 @@ action FetchAllPosts {
 }
 ```
 
-## Error Handling
+## Error handling
 
 Use `match` for pattern-based error handling:
 
@@ -199,7 +199,7 @@ action RobustFetch {
 }
 ```
 
-## Next Steps
+## Next steps
 
 Now that you've run your first mission, explore these topics:
 
@@ -208,13 +208,13 @@ Now that you've run your first mission, explore these topics:
 - [Authentication](./category/authentication) - Connect to authenticated APIs
 - [Examples](./examples) - See more complex examples
 
-## Common Issues
+## Common issues
 
 :::tip
 Use `--dry-run` to validate your mission syntax without making actual API calls.
 :::
 
-### "Source not found" Error
+### "Source not found" error
 
 Make sure you've defined the source before using it in an action:
 
@@ -230,7 +230,7 @@ mission Example {
 }
 ```
 
-### "Store not found" Error
+### "Store not found" error
 
 Ensure stores are defined at the mission level:
 
@@ -247,7 +247,7 @@ mission Example {
 }
 ```
 
-### Network Errors
+### Network errors
 
 Add retry configuration for unreliable networks:
 

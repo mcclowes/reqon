@@ -12,7 +12,7 @@ Interval scheduling runs missions at fixed time intervals.
 schedule: every N units
 ```
 
-## Time Units
+## Time units
 
 | Unit | Examples |
 |------|----------|
@@ -80,7 +80,7 @@ schedule: every 1 week
 schedule: every 2 weeks
 ```
 
-## Interval vs Cron
+## Interval vs cron
 
 ### Interval
 
@@ -93,7 +93,7 @@ schedule: every 6 hours
 // Runs at: start, start+6h, start+12h, ...
 ```
 
-### Cron
+### cron
 
 - Runs at specific times
 - More control
@@ -104,13 +104,13 @@ schedule: cron "0 */6 * * *"
 // Runs at: 0:00, 6:00, 12:00, 18:00
 ```
 
-## Start Time
+## Start time
 
 Intervals start from:
 1. Daemon start time (for new missions)
 2. Last run time (for existing missions)
 
-### First Run Behavior
+### First run behavior
 
 ```vague
 mission ImmediateStart {
@@ -124,9 +124,9 @@ mission DelayedStart {
 }
 ```
 
-## Combining with Options
+## Combining with options
 
-### With Retry
+### With retry
 
 ```vague
 mission RobustSync {
@@ -139,7 +139,7 @@ mission RobustSync {
 }
 ```
 
-### With Concurrency Control
+### With concurrency control
 
 ```vague
 mission ControlledSync {
@@ -148,7 +148,7 @@ mission ControlledSync {
 }
 ```
 
-### With Timeout
+### With timeout
 
 ```vague
 mission TimedSync {
@@ -157,9 +157,9 @@ mission TimedSync {
 }
 ```
 
-## Use Cases
+## Use cases
 
-### Real-Time Sync
+### Real-time sync
 
 ```vague
 mission RealtimeSync {
@@ -172,7 +172,7 @@ mission RealtimeSync {
 }
 ```
 
-### Hourly Updates
+### Hourly updates
 
 ```vague
 mission HourlySync {
@@ -185,7 +185,7 @@ mission HourlySync {
 }
 ```
 
-### Daily Reports
+### Daily reports
 
 ```vague
 mission DailyReport {
@@ -198,7 +198,7 @@ mission DailyReport {
 }
 ```
 
-### Weekly Cleanup
+### Weekly cleanup
 
 ```vague
 mission WeeklyCleanup {
@@ -212,9 +212,9 @@ mission WeeklyCleanup {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Choose Appropriate Intervals
+### Choose appropriate intervals
 
 | Data Type | Recommended Interval |
 |-----------|---------------------|
@@ -224,7 +224,7 @@ mission WeeklyCleanup {
 | Reports | Daily |
 | Cleanup jobs | Weekly |
 
-### Account for Execution Time
+### Account for execution time
 
 ```vague
 // If sync takes 10 minutes
@@ -247,7 +247,7 @@ mission SafeSync {
 }
 ```
 
-### Add Jitter for Distributed Systems
+### Add jitter for distributed systems
 
 ```vague
 mission JitteredSync {
@@ -258,7 +258,7 @@ mission JitteredSync {
 
 ## Troubleshooting
 
-### Runs Too Frequently
+### Runs too frequently
 
 Check interval unit:
 
@@ -270,7 +270,7 @@ schedule: every 30 seconds
 schedule: every 30 minutes
 ```
 
-### Runs Overlapping
+### Runs overlapping
 
 Add skipIfRunning:
 
@@ -279,7 +279,7 @@ schedule: every 5 minutes
 skipIfRunning: true
 ```
 
-### Missed Runs
+### Missed runs
 
 Intervals don't backfill. If daemon was down for 2 hours with 30-minute interval, you won't get 4 runs.
 

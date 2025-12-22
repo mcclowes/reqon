@@ -2,11 +2,11 @@
 sidebar_position: 3
 ---
 
-# Dead Letter Queues
+# Dead letter queues
 
 Dead letter queues (DLQ) store failed items for later processing. They prevent data loss when errors occur and allow for manual or automated retry.
 
-## Basic Usage
+## Basic usage
 
 ```vague
 mission DataSync {
@@ -36,7 +36,7 @@ mission DataSync {
 }
 ```
 
-## Queue Directive Syntax
+## Queue directive syntax
 
 ```vague
 queue storeName {
@@ -45,7 +45,7 @@ queue storeName {
 }
 ```
 
-### With Key
+### With key
 
 ```vague
 queue dlq {
@@ -54,7 +54,7 @@ queue dlq {
 }
 ```
 
-### Without Key (Auto-Generated)
+### Without key (auto-generated)
 
 ```vague
 queue dlq {
@@ -62,9 +62,9 @@ queue dlq {
 }
 ```
 
-## What to Include
+## What to include
 
-### Minimum Information
+### Minimum information
 
 ```vague
 queue dlq {
@@ -76,7 +76,7 @@ queue dlq {
 }
 ```
 
-### Full Context
+### Full context
 
 ```vague
 queue dlq {
@@ -107,9 +107,9 @@ queue dlq {
 }
 ```
 
-## DLQ Patterns
+## DLQ patterns
 
-### Simple Error Queue
+### Simple error queue
 
 ```vague
 mission Simple {
@@ -128,7 +128,7 @@ mission Simple {
 }
 ```
 
-### Categorized Queues
+### Categorized queues
 
 ```vague
 mission Categorized {
@@ -162,7 +162,7 @@ mission Categorized {
 }
 ```
 
-### DLQ with Retry Counter
+### DLQ with retry counter
 
 ```vague
 for item in items {
@@ -194,7 +194,7 @@ for item in items {
 
 ## Processing DLQ
 
-### Manual Review
+### Manual review
 
 Export and review:
 
@@ -203,7 +203,7 @@ reqon mission.vague --output ./exports/
 # Review exports/dead-letter-queue.json
 ```
 
-### Automated Retry
+### Automated retry
 
 Create a retry mission:
 
@@ -248,7 +248,7 @@ mission RetryFailed {
 }
 ```
 
-### Scheduled Retry
+### Scheduled retry
 
 ```vague
 mission ScheduledRetry {
@@ -267,7 +267,7 @@ mission ScheduledRetry {
 }
 ```
 
-## DLQ with Notifications
+## DLQ with notifications
 
 ```vague
 action NotifyOnFailure {
@@ -300,9 +300,9 @@ action NotifyOnFailure {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Include Enough Context
+### Include enough context
 
 ```vague
 queue dlq {
@@ -327,7 +327,7 @@ queue dlq {
 }
 ```
 
-### Separate Retryable vs Permanent
+### Separate retryable vs permanent
 
 ```vague
 // Retryable: server errors, rate limits
@@ -337,7 +337,7 @@ queue retryQueue { item: { ... } }
 queue permanentQueue { item: { ... } }
 ```
 
-### Set Retention Policies
+### Set retention policies
 
 Periodically clean old entries:
 
@@ -350,7 +350,7 @@ action CleanOldEntries {
 }
 ```
 
-### Monitor Queue Size
+### Monitor queue size
 
 ```vague
 action MonitorDLQ {
@@ -370,13 +370,13 @@ action MonitorDLQ {
 
 ## Troubleshooting
 
-### Queue Growing Too Fast
+### Queue growing too fast
 
 1. Check for systemic issues
 2. Review error patterns
 3. Fix root cause before retrying
 
-### Items Never Succeed
+### Items never succeed
 
 Mark as permanent failure:
 
@@ -390,7 +390,7 @@ match item {
 }
 ```
 
-### Duplicate Processing
+### Duplicate processing
 
 Use idempotent operations:
 

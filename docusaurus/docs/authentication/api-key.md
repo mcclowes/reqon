@@ -8,7 +8,7 @@ API key authentication sends a key in either a header or query parameter. Many S
 
 ## Configuration
 
-### Mission File
+### Mission file
 
 ```vague
 source API {
@@ -17,7 +17,7 @@ source API {
 }
 ```
 
-### Credentials File
+### Credentials file
 
 ```json
 {
@@ -29,7 +29,7 @@ source API {
 }
 ```
 
-## Credential Options
+## Credential options
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -41,9 +41,9 @@ source API {
 
 *One of `header` or `query` is required.
 
-## Header-Based API Key
+## Header-based API key
 
-### Standard Header
+### Standard header
 
 ```json
 {
@@ -61,7 +61,7 @@ GET /api/data HTTP/1.1
 X-API-Key: your-api-key
 ```
 
-### Authorization Header with Prefix
+### Authorization header with prefix
 
 ```json
 {
@@ -80,7 +80,7 @@ GET /api/data HTTP/1.1
 Authorization: ApiKey your-api-key
 ```
 
-### Bearer-Style API Key
+### Bearer-style API key
 
 Some APIs use bearer format for API keys:
 
@@ -101,7 +101,7 @@ GET /api/data HTTP/1.1
 Authorization: Bearer sk_live_xxxxx
 ```
 
-## Query Parameter API Key
+## Query parameter API key
 
 ```json
 {
@@ -118,7 +118,7 @@ Request:
 GET /api/data?api_key=your-api-key HTTP/1.1
 ```
 
-## Common API Examples
+## Common API examples
 
 ### SendGrid
 
@@ -183,9 +183,9 @@ GET /api/data?api_key=your-api-key HTTP/1.1
 }
 ```
 
-## Environment Variables
+## Environment variables
 
-### In Credentials
+### In credentials
 
 ```json
 {
@@ -197,7 +197,7 @@ GET /api/data?api_key=your-api-key HTTP/1.1
 }
 ```
 
-### In Mission
+### In mission
 
 ```vague
 source API {
@@ -208,7 +208,7 @@ source API {
 }
 ```
 
-## Multiple API Keys
+## Multiple API keys
 
 For APIs requiring multiple keys:
 
@@ -238,15 +238,15 @@ Or use custom header addition:
 }
 ```
 
-## Key Rotation
+## Key rotation
 
-### Manual Rotation
+### Manual rotation
 
 1. Generate new key in provider dashboard
 2. Update credentials file
 3. Run mission
 
-### Zero-Downtime Rotation
+### Zero-downtime rotation
 
 Some APIs support multiple active keys:
 
@@ -265,7 +265,7 @@ Some APIs support multiple active keys:
 3. Verify new key works
 4. Revoke old key
 
-## Error Handling
+## Error handling
 
 ```vague
 action FetchData {
@@ -281,9 +281,9 @@ action FetchData {
 }
 ```
 
-## Security Best Practices
+## Security best practices
 
-### Never Expose in URLs (When Possible)
+### Never expose in URLs (when possible)
 
 Prefer header over query:
 
@@ -303,25 +303,25 @@ Prefer header over query:
 }
 ```
 
-### Use Environment Variables
+### Use environment variables
 
 ```bash
 export API_KEY="your-key"
 ```
 
-### Restrict Key Permissions
+### Restrict key permissions
 
 Use keys with minimal required permissions.
 
 ## Troubleshooting
 
-### "Invalid API Key"
+### "Invalid API key"
 
 1. Check key is correct
 2. Check for extra whitespace
 3. Verify key hasn't been revoked
 
-### "Header Not Recognized"
+### "Header not recognized"
 
 Check the exact header name the API expects:
 
@@ -330,7 +330,7 @@ Check the exact header name the API expects:
 "header": "X-API-Key"  // Not "x-api-key"
 ```
 
-### Key Being Sent Wrong
+### Key being sent wrong
 
 Debug by checking what's being sent:
 

@@ -6,7 +6,7 @@ sidebar_position: 3
 
 A **Source** defines an API endpoint that your mission connects to. Sources configure authentication, base URLs, rate limiting, and other HTTP client options.
 
-## Basic Syntax
+## Basic syntax
 
 ```vague
 source SourceName {
@@ -15,7 +15,7 @@ source SourceName {
 }
 ```
 
-## Authentication Types
+## Authentication types
 
 | Type | Description |
 |------|-------------|
@@ -25,7 +25,7 @@ source SourceName {
 | `api_key` | API key in header or query |
 | `oauth2` | OAuth 2.0 with token refresh |
 
-### No Authentication
+### No authentication
 
 ```vague
 source PublicAPI {
@@ -34,7 +34,7 @@ source PublicAPI {
 }
 ```
 
-### Bearer Token
+### Bearer token
 
 ```vague
 source GitHub {
@@ -86,7 +86,7 @@ Or in query parameter:
 }
 ```
 
-### Basic Authentication
+### Basic authentication
 
 ```vague
 source LegacyAPI {
@@ -130,7 +130,7 @@ source Xero {
 
 Reqon automatically refreshes tokens when they expire.
 
-## OpenAPI Spec Sources
+## OpenAPI spec sources
 
 Load source configuration from an OpenAPI specification:
 
@@ -148,9 +148,9 @@ Benefits:
 
 See [OpenAPI Integration](../category/openapi-integration) for details.
 
-## Source Options
+## Source options
 
-### Custom Headers
+### Custom headers
 
 ```vague
 source CustomAPI {
@@ -163,7 +163,7 @@ source CustomAPI {
 }
 ```
 
-### Rate Limiting
+### Rate limiting
 
 ```vague
 source RateLimitedAPI {
@@ -181,7 +181,7 @@ Strategies:
 - `throttle` - Slow down requests
 - `fail` - Throw error when limit reached
 
-### Circuit Breaker
+### Circuit breaker
 
 Prevent cascading failures:
 
@@ -209,7 +209,7 @@ source SlowAPI {
 }
 ```
 
-## Using Sources
+## Using sources
 
 Sources are automatically selected when making requests:
 
@@ -230,7 +230,7 @@ mission MultiSource {
 }
 ```
 
-### Default Source
+### Default source
 
 The first defined source is the default:
 
@@ -244,7 +244,7 @@ mission Example {
 }
 ```
 
-### Named Source Reference
+### Named source reference
 
 Prefix requests with source name:
 
@@ -255,7 +255,7 @@ action FetchFromMultiple {
 }
 ```
 
-## Source Variables
+## Source variables
 
 Use environment variables in source definitions:
 
@@ -266,7 +266,7 @@ source API {
 }
 ```
 
-## Multiple Environments
+## Multiple environments
 
 Pattern for handling different environments:
 
@@ -283,9 +283,9 @@ mission Sync {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Use Descriptive Names
+### Use descriptive names
 
 ```vague
 // Good
@@ -298,7 +298,7 @@ source API1 { }
 source Source { }
 ```
 
-### Configure Appropriate Timeouts
+### Configure appropriate timeouts
 
 ```vague
 // For fast APIs
@@ -312,7 +312,7 @@ source BulkExportAPI {
 }
 ```
 
-### Always Use Rate Limiting for Production
+### Always use rate limiting for production
 
 ```vague
 source ProductionAPI {
@@ -325,7 +325,7 @@ source ProductionAPI {
 }
 ```
 
-### Enable Circuit Breakers for Unreliable Sources
+### Enable circuit breakers for unreliable sources
 
 ```vague
 source ThirdPartyAPI {

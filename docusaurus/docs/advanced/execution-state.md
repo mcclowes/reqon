@@ -2,11 +2,11 @@
 sidebar_position: 2
 ---
 
-# Execution State
+# Execution state
 
 Reqon maintains execution state for resumable missions and audit trails.
 
-## State Storage
+## State storage
 
 State is stored in `.vague-data/`:
 
@@ -19,7 +19,7 @@ State is stored in `.vague-data/`:
 └── stores/
 ```
 
-## Execution Record
+## Execution record
 
 Each execution creates a record:
 
@@ -42,7 +42,7 @@ Each execution creates a record:
 }
 ```
 
-## State Fields
+## State fields
 
 | Field | Description |
 |-------|-------------|
@@ -57,7 +57,7 @@ Each execution creates a record:
 
 ## Checkpoints
 
-### Sync Checkpoints
+### Sync checkpoints
 
 Track incremental sync progress:
 
@@ -74,7 +74,7 @@ Track incremental sync progress:
 }
 ```
 
-### Action Checkpoints
+### Action checkpoints
 
 Track progress within long-running actions:
 
@@ -87,9 +87,9 @@ Track progress within long-running actions:
 }
 ```
 
-## Resumable Execution
+## Resumable execution
 
-### Automatic Resume
+### Automatic resume
 
 If a mission is interrupted, Reqon can resume:
 
@@ -97,7 +97,7 @@ If a mission is interrupted, Reqon can resume:
 reqon ./missions/ --resume
 ```
 
-### Resume Point Detection
+### Resume point detection
 
 ```json
 {
@@ -113,7 +113,7 @@ reqon ./missions/ --resume
 
 Resume starts from `item 523` in `TransformCustomers`.
 
-## Accessing State
+## Accessing state
 
 ### Programmatically
 
@@ -143,9 +143,9 @@ reqon history CustomerSync --limit 10
 reqon status CustomerSync --execution exec_abc123
 ```
 
-## State Cleanup
+## State cleanup
 
-### Automatic Cleanup
+### Automatic cleanup
 
 ```vague
 mission CustomerSync {
@@ -153,7 +153,7 @@ mission CustomerSync {
 }
 ```
 
-### Manual Cleanup
+### Manual cleanup
 
 ```bash
 # Clear old state
@@ -165,7 +165,7 @@ reqon cleanup CustomerSync --all
 
 ## Monitoring
 
-### Execution Callbacks
+### Execution callbacks
 
 ```typescript
 import { execute } from 'reqon';
@@ -188,7 +188,7 @@ const result = await execute(source, {
 });
 ```
 
-### Metrics Export
+### Metrics export
 
 ```bash
 reqon ./missions/ --daemon --metrics-port 9090
@@ -202,9 +202,9 @@ reqon_execution_items_processed{mission="CustomerSync"}
 reqon_execution_errors_total{mission="CustomerSync"}
 ```
 
-## State Persistence
+## State persistence
 
-### File-Based (Default)
+### File-based (default)
 
 ```vague
 mission CustomerSync {
@@ -212,7 +212,7 @@ mission CustomerSync {
 }
 ```
 
-### Custom State Store
+### Custom state store
 
 ```typescript
 import { execute, setStateStore } from 'reqon';
@@ -227,9 +227,9 @@ setStateStore({
 });
 ```
 
-## Best Practices
+## Best practices
 
-### Enable for Long-Running Missions
+### Enable for long-running missions
 
 ```vague
 mission LongSync {
@@ -238,7 +238,7 @@ mission LongSync {
 }
 ```
 
-### Use Checkpoints for Large Datasets
+### Use checkpoints for large datasets
 
 ```vague
 action ProcessLargeDataset {
@@ -248,7 +248,7 @@ action ProcessLargeDataset {
 }
 ```
 
-### Monitor Execution Health
+### Monitor execution health
 
 ```bash
 # Set up alerting for failed executions
@@ -257,7 +257,7 @@ reqon ./missions/ --daemon --alert-on-failure
 
 ## Troubleshooting
 
-### State Not Persisting
+### State not persisting
 
 Check directory permissions:
 
@@ -265,7 +265,7 @@ Check directory permissions:
 ls -la .vague-data/
 ```
 
-### Resume Not Working
+### Resume not working
 
 Verify state file exists:
 
@@ -273,7 +273,7 @@ Verify state file exists:
 cat .vague-data/execution/CustomerSync-*.json | jq '.status'
 ```
 
-### State Too Large
+### State too large
 
 Reduce retention or clean up:
 

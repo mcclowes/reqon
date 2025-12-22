@@ -6,7 +6,7 @@ sidebar_position: 4
 
 Extend Reqon with custom functions, store adapters, and integrations.
 
-## Custom Functions
+## Custom functions
 
 Register custom functions for use in expressions:
 
@@ -33,7 +33,7 @@ await execute(`
 `);
 ```
 
-### Function Types
+### Function types
 
 ```typescript
 // Simple function
@@ -51,7 +51,7 @@ registerFunction('sum', (...args: number[]) => {
 });
 ```
 
-### Using Custom Functions
+### Using custom functions
 
 ```vague
 map order -> Output {
@@ -61,7 +61,7 @@ map order -> Output {
 }
 ```
 
-## Custom Store Adapters
+## Custom store adapters
 
 See [Custom Adapters](../stores/custom-adapters) for full documentation.
 
@@ -82,7 +82,7 @@ registerStoreAdapter('mystore', (name, config) => {
 });
 ```
 
-## Custom Auth Providers
+## Custom auth providers
 
 ```typescript
 import { registerAuthProvider, AuthProvider } from 'reqon';
@@ -121,7 +121,7 @@ source API {
 }
 ```
 
-## Custom Step Handlers
+## Custom step handlers
 
 Add custom step types:
 
@@ -151,7 +151,7 @@ action WithNotification {
 }
 ```
 
-## Vague Plugin Integration
+## Vague plugin integration
 
 Reqon extends Vague (the underlying DSL layer) via its plugin system. This allows Reqon keywords to be recognized by Vague's lexer.
 
@@ -167,7 +167,7 @@ import { registerReqonPlugin } from 'reqon';
 registerReqonPlugin();
 ```
 
-### Plugin Structure
+### Plugin structure
 
 The Reqon plugin adds keywords to Vague:
 
@@ -180,7 +180,7 @@ console.log(reqonPlugin.keywords); // Array of Reqon keywords
 
 ## Plugins
 
-### Creating a Plugin
+### Creating a plugin
 
 ```typescript
 import { Plugin, Reqon } from 'reqon';
@@ -210,7 +210,7 @@ const myPlugin: Plugin = {
 export default myPlugin;
 ```
 
-### Using a Plugin
+### Using a plugin
 
 ```typescript
 import { Reqon } from 'reqon';
@@ -222,9 +222,9 @@ reqon.use(myPlugin);
 await reqon.execute(source);
 ```
 
-## Execution Hooks
+## Execution hooks
 
-### Available Hooks
+### Available hooks
 
 ```typescript
 reqon.hooks.beforeParse.tap('plugin', (source) => {
@@ -264,7 +264,7 @@ reqon.hooks.onError.tap('plugin', (error, context) => {
 });
 ```
 
-### Hook Examples
+### Hook examples
 
 ```typescript
 // Logging hook
@@ -287,7 +287,7 @@ reqon.hooks.onError.tap('notify', (error, context) => {
 });
 ```
 
-## Custom Pagination Strategies
+## Custom pagination strategies
 
 ```typescript
 import { registerPaginationStrategy, PaginationStrategy } from 'reqon';
@@ -328,7 +328,7 @@ get "/items" {
 
 ## Programmatic API
 
-### Full Control
+### Full control
 
 ```typescript
 import { Reqon, parse, createContext } from 'reqon';
@@ -353,7 +353,7 @@ const result = await reqon.executeMission(ast.missions[0], ctx, {
 });
 ```
 
-### AST Manipulation
+### AST manipulation
 
 ```typescript
 import { parse, transform } from 'reqon';
@@ -375,9 +375,9 @@ const transformed = transform(ast, {
 });
 ```
 
-## Best Practices
+## Best practices
 
-### Namespace Functions
+### Namespace functions
 
 ```typescript
 // Good: namespaced
@@ -387,7 +387,7 @@ registerFunction('myPlugin_formatDate', () => {});
 registerFunction('format', () => {});
 ```
 
-### Document Extensions
+### Document extensions
 
 ```typescript
 /**
@@ -400,7 +400,7 @@ registerFunction('format', () => {});
 registerFunction('formatPhone', (phone, country) => {});
 ```
 
-### Test Thoroughly
+### Test thoroughly
 
 ```typescript
 describe('formatPhone', () => {

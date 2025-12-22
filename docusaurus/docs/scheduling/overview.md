@@ -2,11 +2,11 @@
 sidebar_position: 1
 ---
 
-# Scheduling Overview
+# Scheduling overview
 
 Reqon supports scheduling missions to run automatically at specified intervals or times.
 
-## Schedule Types
+## Schedule types
 
 | Type | Syntax | Example |
 |------|--------|---------|
@@ -14,7 +14,7 @@ Reqon supports scheduling missions to run automatically at specified intervals o
 | Cron | `cron "expression"` | `cron "0 */6 * * *"` |
 | One-time | `at "datetime"` | `at "2024-01-20 09:00 UTC"` |
 
-## Quick Start
+## Quick start
 
 ```vague
 mission DailySync {
@@ -32,9 +32,9 @@ mission DailySync {
 }
 ```
 
-## Running Scheduled Missions
+## Running scheduled missions
 
-### Daemon Mode
+### Daemon mode
 
 Run continuously:
 
@@ -42,7 +42,7 @@ Run continuously:
 reqon ./missions/ --daemon
 ```
 
-### One-Shot Mode
+### One-shot mode
 
 Run once and exit:
 
@@ -50,7 +50,7 @@ Run once and exit:
 reqon ./missions/ --once
 ```
 
-## Interval Scheduling
+## Interval scheduling
 
 ```vague
 // Every N minutes
@@ -66,7 +66,7 @@ schedule: every 1 day
 schedule: every 1 week
 ```
 
-## Cron Scheduling
+## Cron scheduling
 
 Full cron expression support:
 
@@ -87,7 +87,7 @@ schedule: cron "0 9 * * 1-5"
 schedule: cron "0 6 1 * *"
 ```
 
-## One-Time Scheduling
+## One-time scheduling
 
 ```vague
 // Specific datetime
@@ -97,7 +97,7 @@ schedule: at "2024-12-25 00:00 UTC"
 schedule: at "2024-01-20T09:00:00Z"
 ```
 
-## Schedule Options
+## Schedule options
 
 ```vague
 mission ConfiguredSync {
@@ -117,7 +117,7 @@ mission ConfiguredSync {
 }
 ```
 
-## Multiple Missions
+## Multiple missions
 
 Each mission has its own schedule:
 
@@ -138,9 +138,9 @@ mission WeeklyCleanup {
 }
 ```
 
-## Execution Context
+## Execution context
 
-### Last Run Time
+### Last run time
 
 Access when mission last ran:
 
@@ -152,7 +152,7 @@ action IncrementalSync {
 }
 ```
 
-### Scheduled vs Manual
+### Scheduled vs manual
 
 Detect if running on schedule:
 
@@ -165,9 +165,9 @@ action FlexibleSync {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Use Incremental Sync
+### Use incremental sync
 
 ```vague
 mission EfficientSync {
@@ -180,7 +180,7 @@ mission EfficientSync {
 }
 ```
 
-### Add Error Handling
+### Add error handling
 
 ```vague
 mission RobustSync {
@@ -202,7 +202,7 @@ mission RobustSync {
 }
 ```
 
-### Monitor Execution
+### Monitor execution
 
 ```vague
 mission MonitoredSync {
@@ -224,7 +224,7 @@ mission MonitoredSync {
 }
 ```
 
-## Next Steps
+## Next steps
 
 - [Cron Expressions](./cron) - Detailed cron syntax
 - [Intervals](./intervals) - Interval scheduling

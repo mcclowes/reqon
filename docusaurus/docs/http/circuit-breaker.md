@@ -6,7 +6,7 @@ sidebar_position: 6
 
 The circuit breaker pattern prevents cascading failures when an API is experiencing problems. Reqon includes a built-in circuit breaker for robust error handling.
 
-## How It Works
+## How it works
 
 ```
      ┌────────────────────────────────────────┐
@@ -55,9 +55,9 @@ source API {
 | `successThreshold` | Successes needed to close circuit | 2 |
 | `failureWindow` | Window for counting failures (ms) | 60000 |
 
-## States Explained
+## States explained
 
-### Closed State
+### Closed state
 
 Normal operation:
 
@@ -72,7 +72,7 @@ get "/data"  // Success - counter resets
 
 Failures are counted within the `failureWindow`. Successes reset the counter.
 
-### Open State
+### Open state
 
 When `failureThreshold` is reached:
 
@@ -84,7 +84,7 @@ get "/data"  // Immediately fails - no actual request made
 
 All requests fail fast without calling the API.
 
-### Half-Open State
+### Half-open state
 
 After `resetTimeout`:
 
@@ -100,7 +100,7 @@ get "/data"  // Sent - need 2 successes total
 // Circuit goes back to OPEN
 ```
 
-## Error Handling with Circuit Breaker
+## Error handling with circuit breaker
 
 ```vague
 action FetchWithCircuitBreaker {
@@ -121,7 +121,7 @@ action FetchWithCircuitBreaker {
 }
 ```
 
-## Combining with Retry
+## Combining with retry
 
 ```vague
 source API {
@@ -156,7 +156,7 @@ Order of operations:
 4. Each failure counts toward circuit breaker
 5. After max retries, may trip circuit
 
-## Combining with Rate Limiting
+## Combining with rate limiting
 
 ```vague
 source API {
@@ -177,7 +177,7 @@ Both work together:
 - Rate limiter controls request pacing
 - Circuit breaker handles API failures
 
-## Per-Source Circuit Breakers
+## Per-source circuit breakers
 
 Each source has its own circuit breaker:
 
@@ -208,7 +208,7 @@ mission MultiSourceSync {
 }
 ```
 
-## Monitoring Circuit State
+## Monitoring circuit state
 
 ```vague
 action MonitoredFetch {
@@ -242,9 +242,9 @@ action MonitoredFetch {
 }
 ```
 
-## Fallback Patterns
+## Fallback patterns
 
-### Fallback to Cache
+### Fallback to cache
 
 ```vague
 action FetchWithFallback {
@@ -270,7 +270,7 @@ action FetchWithFallback {
 }
 ```
 
-### Fallback to Secondary Source
+### Fallback to secondary source
 
 ```vague
 mission FallbackSync {
@@ -293,9 +293,9 @@ mission FallbackSync {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Configure Based on API Behavior
+### Configure based on API behavior
 
 ```vague
 // For stable APIs
@@ -317,7 +317,7 @@ circuitBreaker: {
 }
 ```
 
-### Use with Error Handling
+### Use with error handling
 
 ```vague
 action RobustFetch {
@@ -334,7 +334,7 @@ action RobustFetch {
 }
 ```
 
-### Set Appropriate Timeouts
+### Set appropriate timeouts
 
 ```vague
 // For fast recovery APIs
@@ -348,7 +348,7 @@ circuitBreaker: {
 }
 ```
 
-### Consider Failure Window
+### Consider failure window
 
 ```vague
 // For burst-tolerant scenarios
@@ -366,7 +366,7 @@ circuitBreaker: {
 
 ## Troubleshooting
 
-### Circuit Trips Too Often
+### Circuit trips too often
 
 Increase threshold or window:
 
@@ -377,7 +377,7 @@ circuitBreaker: {
 }
 ```
 
-### Circuit Stays Open Too Long
+### Circuit stays open too long
 
 Decrease reset timeout:
 
@@ -387,7 +387,7 @@ circuitBreaker: {
 }
 ```
 
-### False Positives
+### False positives
 
 Ensure only real failures count:
 

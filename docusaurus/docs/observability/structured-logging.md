@@ -2,11 +2,11 @@
 sidebar_position: 2
 ---
 
-# Structured Logging
+# Structured logging
 
 Reqon's structured logging system provides context-rich logs with hierarchical spans, multiple output formats, and integration with the event system.
 
-## Creating a Logger
+## Creating a logger
 
 ```typescript
 import { createStructuredLogger } from 'reqon';
@@ -22,7 +22,7 @@ const logger = createStructuredLogger({
 });
 ```
 
-## Log Levels
+## Log levels
 
 ```typescript
 logger.debug('Detailed debugging info', { key: 'value' });
@@ -31,7 +31,7 @@ logger.warn('Warning condition', { threshold: 100 });
 logger.error('Error occurred', { error: err.message });
 ```
 
-### Level Filtering
+### Level filtering
 
 ```typescript
 const logger = createStructuredLogger({ level: 'warn' });
@@ -47,7 +47,7 @@ logger.setLevel('debug');
 
 ## Context
 
-### Adding Context
+### Adding context
 
 ```typescript
 logger.info('Processing item', {
@@ -62,7 +62,7 @@ Output:
 [MyApp] INFO  Processing item itemId="123" itemType="order" size=42
 ```
 
-### Child Loggers
+### Child loggers
 
 Create child loggers with inherited context:
 
@@ -78,7 +78,7 @@ stepLogger.info('Fetching page');
 // [App] INFO Fetching page action="FetchCustomers" step=1
 ```
 
-## Timing Spans
+## Timing spans
 
 Track operation duration with spans:
 
@@ -94,7 +94,7 @@ try {
 }
 ```
 
-### Nested Spans
+### Nested spans
 
 ```typescript
 const missionSpan = logger.span('mission');
@@ -110,7 +110,7 @@ processSpan.end();
 missionSpan.end();
 ```
 
-## Output Handlers
+## Output handlers
 
 ### ConsoleOutput
 
@@ -175,7 +175,7 @@ const output = new EventOutput(emitter);
 logger.addOutput(output);
 ```
 
-## Multiple Outputs
+## Multiple outputs
 
 Configure multiple outputs simultaneously:
 
@@ -196,7 +196,7 @@ logger.addOutput(new ConsoleOutput({ prefix: 'App' }));
 logger.addOutput(new JsonLinesOutput(logStream));
 ```
 
-## Log Entry Structure
+## Log entry structure
 
 ```typescript
 interface LogEntry {
@@ -210,9 +210,9 @@ interface LogEntry {
 }
 ```
 
-## Best Practices
+## Best practices
 
-### Use Consistent Context Keys
+### Use consistent context keys
 
 ```typescript
 // Good: consistent naming
@@ -224,7 +224,7 @@ logger.info('Fetching', { user_id: user.id });
 logger.info('Processing', { uid: user.id });
 ```
 
-### Log at Appropriate Levels
+### Log at appropriate levels
 
 ```typescript
 // DEBUG: Detailed information for debugging
@@ -240,7 +240,7 @@ logger.warn('Rate limited, waiting', { retryAfter: 60 });
 logger.error('Failed to connect', { error: err.message });
 ```
 
-### Include Actionable Context
+### Include actionable context
 
 ```typescript
 // Good: includes context for debugging
@@ -255,7 +255,7 @@ logger.error('Failed to store item', {
 logger.error('Failed');
 ```
 
-### Use Spans for Performance
+### Use spans for performance
 
 ```typescript
 const span = logger.span('syncCustomers');
@@ -272,7 +272,7 @@ if (duration > 5000) {
 }
 ```
 
-## Integration with Execution
+## Integration with execution
 
 ```typescript
 import { execute, createStructuredLogger, createEmitter } from 'reqon';
