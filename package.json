@@ -7,7 +7,8 @@
   "types": "dist/index.d.ts",
   "bin": {
     "reqon": "dist/cli.js",
-    "reqon-mcp": "dist/mcp/server.js"
+    "reqon-mcp": "dist/mcp/server.js",
+    "reqon-ai-review": "dist/ai-review/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -26,6 +27,8 @@
     "bench:store": "npx tsx src/benchmark/index.ts --suite store",
     "bench:resilience": "npx tsx src/benchmark/index.ts --suite resilience",
     "bench:e2e": "npx tsx src/benchmark/index.ts --suite e2e",
+    "ai-review": "npx tsx src/ai-review/cli.ts",
+    "ai-review:save": "npx tsx src/ai-review/cli.ts --save --verbose",
     "prerelease": "npm run test:run && npm run build",
     "release": "node scripts/release.js",
     "release:dry-run": "npm publish --dry-run",
