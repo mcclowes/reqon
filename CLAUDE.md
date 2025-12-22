@@ -39,6 +39,7 @@ src/
 ├── sync/          # Incremental sync checkpointing
 ├── utils/         # Shared utilities (sleep, path traversal, logger, file)
 ├── webhook/       # Webhook server for async callbacks (wait step)
+├── ai-review/     # AI-powered Vague documentation review
 ├── index.ts       # Main exports
 ├── plugin.ts      # Vague plugin integration
 └── cli.ts         # CLI entry point
@@ -51,6 +52,7 @@ npm run build      # Compile TypeScript
 npm run test       # Run tests in watch mode
 npm run test:run   # Run tests once
 npm run dev        # Watch mode compilation
+npm run ai-review  # Run AI documentation review (requires ANTHROPIC_API_KEY)
 ```
 
 ## DSL Syntax

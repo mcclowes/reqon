@@ -148,6 +148,22 @@ export {
 } from './observability/index.js';
 export { MCP_SERVER_VERSION } from './mcp/index.js';
 
+// AI Documentation Review
+export {
+  DocumentationAnalyzer,
+  AnthropicClient,
+  VagueDocFetcher,
+  ReviewReporter,
+  fetchReqonContext,
+  type AIReviewConfig,
+  type VagueDocumentation,
+  type ReqonContext,
+  type ReviewResult,
+  type ReviewReport,
+  type ReviewFinding,
+  type SuggestedAction,
+} from './ai-review/index.js';
+
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { ReqonLexer } from './lexer/index.js';
