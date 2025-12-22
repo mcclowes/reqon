@@ -25,10 +25,14 @@ src/
 │   ├── fetch-handler.ts # HTTP fetch with sync checkpoints
 │   ├── pagination.ts    # Pagination strategies (offset, page, cursor)
 │   ├── http.ts          # HTTP client with retry/backoff
-│   └── step-handlers/   # Individual step type handlers (for, map, validate, store, match, webhook)
+│   ├── schema-matcher.ts # Schema matching logic
+│   ├── signals.ts       # Execution signals (abort, skip, etc.)
+│   └── step-handlers/   # Individual step type handlers (for, map, validate, store, match, webhook, apply)
 ├── lexer/         # Reqon keywords (uses Vague's lexer via plugin)
 ├── loader/        # Mission loader (single file or folder with action files)
-├── oas/           # OpenAPI spec integration
+├── mcp/           # Model Context Protocol integration
+├── oas/           # OpenAPI spec integration (loader, validator)
+├── observability/ # Structured events, logging, OpenTelemetry integration
 ├── parser/        # Parser for mission/action/fetch/store syntax
 ├── scheduler/     # Cron/interval scheduling for missions
 ├── stores/        # Store adapters (memory, file, postgrest; sql/nosql stub to file)
@@ -36,6 +40,7 @@ src/
 ├── utils/         # Shared utilities (sleep, path traversal, logger, file)
 ├── webhook/       # Webhook server for async callbacks (wait step)
 ├── index.ts       # Main exports
+├── plugin.ts      # Vague plugin integration
 └── cli.ts         # CLI entry point
 ```
 
