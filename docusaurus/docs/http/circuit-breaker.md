@@ -2,7 +2,7 @@
 sidebar_position: 6
 ---
 
-# Circuit Breaker
+# Circuit breaker
 
 The circuit breaker pattern prevents cascading failures when an API is experiencing problems. Reqon includes a built-in circuit breaker for robust error handling.
 

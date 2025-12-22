@@ -2,7 +2,7 @@
 sidebar_position: 2
 ---
 
-# Loading OpenAPI Specs
+# Loading OpenAPI specs
 
 Reqon can load OpenAPI specifications from files or URLs.
 

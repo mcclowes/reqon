@@ -2,7 +2,7 @@
 sidebar_position: 4
 ---
 
-# Incremental Sync
+# Incremental sync
 
 Incremental sync allows you to fetch only changes since the last run, reducing API calls and improving performance.
 

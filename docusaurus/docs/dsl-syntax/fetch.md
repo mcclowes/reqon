@@ -2,11 +2,11 @@
 sidebar_position: 1
 ---
 
-# Fetch Steps
+# Fetch steps
 
 Fetch steps make HTTP requests to APIs. They're the primary way to retrieve data in Reqon.
 
-## HTTP Methods
+## HTTP methods
 
 ```vague
 // GET request

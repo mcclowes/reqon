@@ -4,7 +4,7 @@ description: Configure authentication for Reqon API sources including OAuth2, Be
 keywords: [reqon, authentication, OAuth2, bearer token, API key, credentials]
 ---
 
-# Authentication Overview
+# Authentication overview
 
 Reqon supports multiple authentication methods for connecting to APIs. Authentication is configured at the source level and credentials are provided via CLI or configuration files.
 

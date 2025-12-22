@@ -2,7 +2,7 @@
 sidebar_position: 5
 ---
 
-# Rate Limiting
+# Rate limiting
 
 Reqon provides adaptive rate limiting that learns from API responses and respects rate limit headers.
 
@@ -115,10 +115,10 @@ X-RateLimit-Reset: 1705752000
 Retry-After: 60
 ```
 
-Reqon will automatically:
-1. Pause for 60 seconds (from `Retry-After`)
-2. Update internal limit tracking
-3. Retry the request
+Reqon automatically:
+1. Pauses for 60 seconds (from `Retry-After`)
+2. Updates internal limit tracking
+3. Retries the request
 
 ## Adaptive rate limiting
 

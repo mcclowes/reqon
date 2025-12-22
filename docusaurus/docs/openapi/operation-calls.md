@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# Operation Calls
+# Operation calls
 
 Call OpenAPI operations using the `call` syntax with operation IDs.
 

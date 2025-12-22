@@ -116,11 +116,11 @@ Run scheduled missions continuously:
 reqon ./missions/ --daemon
 ```
 
-The daemon will:
-- Parse all missions in the folder
-- Execute scheduled missions according to their schedule
-- Respect rate limits and backoff strategies
-- Handle graceful shutdown on SIGINT/SIGTERM
+The daemon:
+- Parses all missions in the folder
+- Executes scheduled missions according to their schedule
+- Respects rate limits and backoff strategies
+- Handles graceful shutdown on SIGINT/SIGTERM
 
 ### One-shot scheduled execution
 

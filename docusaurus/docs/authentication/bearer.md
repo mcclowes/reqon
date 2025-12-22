@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# Bearer Token Authentication
+# Bearer token authentication
 
 Bearer token authentication is the most common auth method for REST APIs. The token is sent in the `Authorization` header with each request.
 

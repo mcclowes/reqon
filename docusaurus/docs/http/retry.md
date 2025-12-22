@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# Retry Strategies
+# Retry strategies
 
 Reqon provides built-in retry handling for transient failures with configurable backoff strategies.
 
@@ -176,7 +176,7 @@ HTTP/1.1 429 Too Many Requests
 Retry-After: 60
 ```
 
-Reqon will wait 60 seconds before retrying, regardless of backoff settings.
+Reqon waits 60 seconds before retrying, regardless of backoff settings.
 
 ## Combining with other features
 

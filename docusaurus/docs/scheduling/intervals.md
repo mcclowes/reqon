@@ -2,7 +2,7 @@
 sidebar_position: 3
 ---
 
-# Interval Scheduling
+# Interval scheduling
 
 Interval scheduling runs missions at fixed time intervals.
 

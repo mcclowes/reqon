@@ -6,7 +6,7 @@ keywords: [reqon, installation, getting started, tutorial, first mission]
 
 # Getting started
 
-This guide will help you install Reqon and run your first data pipeline.
+This guide helps you install Reqon and run your first data pipeline.
 
 ## Prerequisites
 

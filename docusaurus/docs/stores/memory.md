@@ -2,7 +2,7 @@
 sidebar_position: 2
 ---
 
-# Memory Store
+# Memory store
 
 The memory store uses an in-memory hash map. Data is lost when the process ends.
 

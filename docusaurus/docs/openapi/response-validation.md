@@ -2,7 +2,7 @@
 sidebar_position: 4
 ---
 
-# Response Validation
+# Response validation
 
 Reqon can validate API responses against OpenAPI schema definitions.
 

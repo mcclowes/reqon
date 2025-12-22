@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Flow Control Directives
+# Flow control directives
 
 Flow control directives determine what happens after pattern matching. They provide fine-grained control over error handling and execution flow.
 

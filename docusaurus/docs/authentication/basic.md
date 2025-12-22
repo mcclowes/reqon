@@ -2,7 +2,7 @@
 sidebar_position: 5
 ---
 
-# Basic Authentication
+# Basic authentication
 
 HTTP Basic Authentication sends username and password with each request, encoded in Base64. While simple, it should only be used over HTTPS.
 
