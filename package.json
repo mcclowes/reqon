@@ -63,9 +63,9 @@
   "dependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.2.3",
     "vague-lang": "^3.3.0",
-    "zod": "^3.24.0"
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
