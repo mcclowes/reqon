@@ -1,0 +1,142 @@
+name: AI Documentation Review
+
+on:
+  # Run weekly on Mondays at 9 AM UTC
+  schedule:
+    - cron: '0 9 * * 1'
+
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: 'Enable verbose output'
+        required: false
+        default: 'false'
+        type: boolean
+      create_issue:
+        description: 'Create GitHub issue if changes needed'
+        required: false
+        default: 'true'
+        type: boolean
+
+jobs:
+  review:
+    name: Review Vague Documentation
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run AI documentation review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Run the review and capture output
+          VERBOSE_FLAG=""
+          if [ "${{ inputs.verbose }}" = "true" ]; then
+            VERBOSE_FLAG="--verbose"
+          fi
+
+          # Run review and save report
+          npm run ai-review -- $VERBOSE_FLAG --save --format markdown > review-output.md 2>&1 || EXIT_CODE=$?
+
+          # Capture the exit code
+          echo "exit_code=${EXIT_CODE:-0}" >> $GITHUB_OUTPUT
+
+          # Check if changes are needed
+          if [ "${EXIT_CODE:-0}" -eq 1 ]; then
+            echo "changes_needed=true" >> $GITHUB_OUTPUT
+          elif [ "${EXIT_CODE:-0}" -eq 2 ]; then
+            echo "changes_needed=true" >> $GITHUB_OUTPUT
+            echo "critical=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes_needed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload review report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-report
+          path: |
+            review-output.md
+            .reqon-data/ai-reviews/*.json
+          retention-days: 30
+
+      - name: Create issue if changes needed
+        if: steps.review.outputs.changes_needed == 'true' && (github.event_name == 'schedule' || inputs.create_issue == 'true')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reviewOutput = fs.readFileSync('review-output.md', 'utf8');
+
+            const isCritical = '${{ steps.review.outputs.critical }}' === 'true';
+            const title = isCritical
+              ? '🔴 Critical: Vague documentation changes detected'
+              : '🟡 Vague documentation review: changes recommended';
+
+            // Check for existing open issues
+            const existingIssues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'ai-doc-review'
+            });
+
+            // Close existing issues if any
+            for (const issue of existingIssues.data) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: 'Closing in favor of new review.'
+              });
+            }
+
+            // Create new issue
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: reviewOutput,
+              labels: ['ai-doc-review', 'documentation', isCritical ? 'priority:high' : 'priority:medium']
+            });
+
+      - name: Summary
+        run: |
+          echo "## AI Documentation Review Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.review.outputs.changes_needed }}" = "true" ]; then
+            if [ "${{ steps.review.outputs.critical }}" = "true" ]; then
+              echo "🔴 **Critical changes detected** - immediate attention required" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "🟡 **Changes recommended** - review suggested actions" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "✅ **No changes needed** - Reqon is up to date with Vague documentation" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "See the uploaded artifact for the full report." >> $GITHUB_STEP_SUMMARY
