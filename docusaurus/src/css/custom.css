@@ -1,43 +1,53 @@
 /**
  * Reqon Documentation Theme
- * Based on a modern purple/violet color palette
+ * Warm cream (#F3EAD3) and dark charcoal (#252221) palette
  */
 
 /* Font imports with display swap for better performance */
 @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  --ifm-color-primary: #6366f1;
-  --ifm-color-primary-dark: #4f46e5;
-  --ifm-color-primary-darker: #4338ca;
-  --ifm-color-primary-darkest: #3730a3;
-  --ifm-color-primary-light: #818cf8;
-  --ifm-color-primary-lighter: #a5b4fc;
-  --ifm-color-primary-lightest: #c7d2fe;
+  /* Primary brand color - warm brown accent */
+  --ifm-color-primary: #8B7355;
+  --ifm-color-primary-dark: #7A6349;
+  --ifm-color-primary-darker: #6E5941;
+  --ifm-color-primary-darkest: #5A4936;
+  --ifm-color-primary-light: #9C8466;
+  --ifm-color-primary-lighter: #B8A088;
+  --ifm-color-primary-lightest: #D4BCAA;
+
+  /* Light theme backgrounds */
+  --ifm-background-color: #F3EAD3;
+  --ifm-background-surface-color: #EDE4CC;
 
   --ifm-code-font-size: 95%;
   --ifm-font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
   --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   --ifm-heading-font-family: 'Courier Prime', 'Courier New', monospace;
 
-  --docusaurus-highlighted-code-line-bg: rgba(99, 102, 241, 0.1);
+  --docusaurus-highlighted-code-line-bg: rgba(139, 115, 85, 0.15);
 
   --ifm-heading-font-weight: 700;
-  --ifm-navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --ifm-navbar-shadow: 0 1px 2px rgba(37, 34, 33, 0.08);
+  --ifm-navbar-background-color: #F3EAD3;
+  --ifm-footer-background-color: #EDE4CC;
 }
 
 [data-theme='dark'] {
-  --ifm-color-primary: #818cf8;
-  --ifm-color-primary-dark: #6366f1;
-  --ifm-color-primary-darker: #4f46e5;
-  --ifm-color-primary-darkest: #4338ca;
-  --ifm-color-primary-light: #a5b4fc;
-  --ifm-color-primary-lighter: #c7d2fe;
-  --ifm-color-primary-lightest: #e0e7ff;
+  /* Dark theme - charcoal base */
+  --ifm-color-primary: #D4BCAA;
+  --ifm-color-primary-dark: #C4A894;
+  --ifm-color-primary-darker: #B8A088;
+  --ifm-color-primary-darkest: #9C8466;
+  --ifm-color-primary-light: #E0CCBC;
+  --ifm-color-primary-lighter: #ECDCCE;
+  --ifm-color-primary-lightest: #F3EAD3;
 
-  --docusaurus-highlighted-code-line-bg: rgba(129, 140, 248, 0.2);
-  --ifm-background-color: #0f172a;
-  --ifm-background-surface-color: #1e293b;
+  --docusaurus-highlighted-code-line-bg: rgba(212, 188, 170, 0.2);
+  --ifm-background-color: #252221;
+  --ifm-background-surface-color: #312E2C;
+  --ifm-navbar-background-color: #252221;
+  --ifm-footer-background-color: #1E1C1B;
 }
 
 /* Code blocks */
@@ -74,11 +84,11 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Hero section on homepage */
 .hero {
-  background: linear-gradient(135deg, var(--ifm-color-primary-lightest) 0%, var(--ifm-background-color) 100%);
+  background: linear-gradient(135deg, #EDE4CC 0%, var(--ifm-background-color) 100%);
 }
 
 [data-theme='dark'] .hero {
-  background: linear-gradient(135deg, var(--ifm-color-primary-darkest) 0%, var(--ifm-background-color) 100%);
+  background: linear-gradient(135deg, #312E2C 0%, var(--ifm-background-color) 100%);
 }
 
 /* Sidebar improvements */
@@ -88,11 +98,11 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .menu__link:hover {
-  background-color: var(--ifm-color-primary-lightest);
+  background-color: #EDE4CC;
 }
 
 [data-theme='dark'] .menu__link:hover {
-  background-color: rgba(129, 140, 248, 0.1);
+  background-color: rgba(212, 188, 170, 0.1);
 }
 
 .menu__link--active {
@@ -108,7 +118,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .card:hover {
   border-color: var(--ifm-color-primary);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 4px 12px rgba(139, 115, 85, 0.15);
 }
 
 /* Tables */

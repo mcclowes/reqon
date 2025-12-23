@@ -1,49 +1,28 @@
 # TODO
 
-## Docs improvements
+## Docs
 
-- [ ] Use the logos logos - logo-light is a light versino of the logo to be used against dark bgs, and logo-dark is the inverse
-- [ ] Rework docs site styling - #F3EAD3 and #252221 are the main colours.
-- [ ] Buttons, headers, titles, etc. should all be sentence case
-- [ ] Use the icon image as a favicon
+- [x] Use logos - `logo-light` for dark backgrounds, `logo-dark` for light backgrounds
+- [x] Rework docs site styling - primary colors: #F3EAD3, #252221
+- [x] Use sentence case for buttons, headers, titles
+- [x] Use `icon.png` as favicon
 
 ## Core Features
 
-- [x] **State persistence** - Durable execution state for resumable missions with checkpointing
-- [x] **Incremental sync** - `since: lastSync` parameter for "only fetch changed since last run"
 - [ ] **Idempotency** - Upsert semantics and conflict resolution strategies
-- [x] **Schema overloading** - `match response { Schema1 -> ..., Schema2 -> ... }` - auto-fork based on response shape matching
-- [x] **Error handling via match** - Flow control directives (continue, skip, abort, retry, queue, jump) in match arms
-- [x] **Multi-file missions** - Split actions into separate files within a folder (mission.vague + action files)
-- [x] **Vague plugin system** - Extended Vague with runtime-extensible keywords and statement parsers; Reqon exports a plugin for Vague integration
 
 ## Store Adapters
 
-- [x] **File adapter** - JSON file-based storage in `.reqon-data/` for local development
 - [ ] **SQL adapter** - PostgreSQL/MySQL store implementation
 - [ ] **NoSQL adapter** - MongoDB/DynamoDB store implementation
 
 ## API Integration
 
-- [x] **OpenAPI integration** - Load sources from OAS, resolve operationIds, validate responses
-- [x] **Rate limiting** - Adaptive rate limiter, parses X-RateLimit-* headers, respects Retry-After, supports pause/throttle/fail strategies with callbacks
-- [x] **OAuth2 flow** - Token store interface, auto-refresh before expiry, 401 retry with refresh
 - [ ] **Connection registry** - Multi-tenant token management with proactive refresh
-
-## DSL Enhancements
-
-- [x] **`is` type checking** - `assume .items is array` syntax
-- [x] **Parallel execution** - `run [Step1, Step2] then Step3` (bracket syntax for parallel stages)
-- [x] **Conditional actions** - `run Step1 then Step2 if condition` (already implemented in parser)
-- [x] **Variables/let bindings** - Reusable values within missions
-- [x] **Schema definitions** - Full Vague schema support with validation and matching
 
 ## Developer Experience
 
-- [x] **Better error messages** - Line numbers, column, source context with pointer in parse/lexer/runtime errors
 - [ ] **VS Code extension** - Syntax highlighting and LSP for `.vague` files
-- [x] **Debug mode** - Step-through execution with state inspection (`--debug` flag, step/step-into/step-over/continue)
-- [ ] **Dry run improvements** - Mock responses based on schema
 
 ## Testing
 
@@ -57,5 +36,25 @@
 - [ ] **Architecture docs** - How Reqon extends Vague
 - [ ] **Contributing guide**
 
+---
+
 ## Completed
 
+- [x] **State persistence** - Durable execution state for resumable missions with checkpointing
+- [x] **Incremental sync** - `since: lastSync` parameter for "only fetch changed since last run"
+- [x] **Schema overloading** - `match response { Schema1 -> ..., Schema2 -> ... }`
+- [x] **Error handling via match** - Flow control directives (continue, skip, abort, retry, queue, jump)
+- [x] **Multi-file missions** - Split actions into separate files within a folder
+- [x] **Vague plugin system** - Runtime-extensible keywords and statement parsers
+- [x] **File adapter** - JSON file-based storage in `.reqon-data/`
+- [x] **OpenAPI integration** - Load sources from OAS, resolve operationIds, validate responses
+- [x] **Rate limiting** - Adaptive rate limiter with X-RateLimit-* header parsing
+- [x] **OAuth2 flow** - Token store interface, auto-refresh, 401 retry
+- [x] **`is` type checking** - `assume .items is array` syntax
+- [x] **Parallel execution** - `run [Step1, Step2] then Step3`
+- [x] **Conditional actions** - `run Step1 then Step2 if condition`
+- [x] **Variables/let bindings** - Reusable values within missions
+- [x] **Schema definitions** - Full Vague schema support with validation and matching
+- [x] **Better error messages** - Line numbers, column, source context with pointer
+- [x] **Debug mode** - Step-through execution with `--debug` flag
+- [x] **Dry run mock data** - Mock responses generated from OAS schemas
