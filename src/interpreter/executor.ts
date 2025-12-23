@@ -63,6 +63,7 @@ import type {
   StructuredLogger,
 } from '../observability/index.js';
 import { createEmitter, createStructuredLogger } from '../observability/index.js';
+import type { DebugController, DebugSnapshot, DebugLocation, DebugPauseReason, DebugCommand } from '../debug/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -167,6 +168,8 @@ export interface ExecutorConfig {
   eventEmitter?: EventEmitter;
   // Structured logger (defaults to console if verbose)
   logger?: StructuredLogger;
+  // Debug controller for step-through debugging
+  debugController?: DebugController;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -189,6 +192,7 @@ export class MissionExecutor {
   private eventEmitter?: EventEmitter;
   private logger?: StructuredLogger;
   private stepIndex = 0;
+  private debugController?: DebugController;
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
@@ -303,6 +307,9 @@ export class MissionExecutor {
       dataDir: config.dataDir,
       log: (msg) => this.log(msg),
     });
+
+    // Initialize debug controller if provided
+    this.debugController = config.debugController;
   }
 
   async execute(program: ReqonProgram): Promise<ExecutionResult> {
@@ -815,6 +822,20 @@ export class MissionExecutor {
 
     const stepStartTime = Date.now();
 
+    // Debug pause point - before executing step
+    if (this.debugController) {
+      const location: DebugLocation = {
+        action: actionName,
+        stepIndex: currentStepIndex,
+        stepType,
+      };
+      if (this.debugController.shouldPause(location)) {
+        const snapshot = this.captureDebugSnapshot(actionName, currentStepIndex, stepType, { type: 'step' }, execCtx);
+        const command = await this.debugController.pause(snapshot);
+        this.handleDebugCommand(command);
+      }
+    }
+
     try {
       switch (step.type) {
         case 'FetchStep':
@@ -927,6 +948,14 @@ export class MissionExecutor {
       emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
       executeStep: (s, a, c) => this.executeStep(s, a, c),
       actionName,
+      debugController: this.debugController,
+      captureDebugSnapshot: this.debugController
+        ? (action, stepIndex, stepType, pauseReason, ctx) =>
+            this.captureDebugSnapshot(action, stepIndex, stepType, pauseReason, ctx)
+        : undefined,
+      handleDebugCommand: this.debugController
+        ? (cmd) => this.handleDebugCommand(cmd as DebugCommand)
+        : undefined,
     });
     await handler.execute(step);
   }
@@ -965,6 +994,14 @@ export class MissionExecutor {
       emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
       executeStep: (s, a, c) => this.executeStep(s, a, c),
       actionName,
+      debugController: this.debugController,
+      captureDebugSnapshot: this.debugController
+        ? (action, stepIndex, stepType, pauseReason, ctx) =>
+            this.captureDebugSnapshot(action, stepIndex, stepType, pauseReason, ctx)
+        : undefined,
+      handleDebugCommand: this.debugController
+        ? (cmd) => this.handleDebugCommand(cmd as DebugCommand)
+        : undefined,
     });
     await handler.execute(step);
     // Flow control signals (SkipSignal, RetrySignal, etc.) will propagate up
@@ -1037,5 +1074,73 @@ export class MissionExecutor {
   /** Get the structured logger (for external access) */
   getLogger(): StructuredLogger | undefined {
     return this.logger;
+  }
+
+  /** Get the debug controller (for external access) */
+  getDebugController(): DebugController | undefined {
+    return this.debugController;
+  }
+
+  /** Capture current execution state for debugging */
+  private captureDebugSnapshot(
+    action: string,
+    stepIndex: number,
+    stepType: string,
+    pauseReason: DebugPauseReason,
+    ctx: ExecutionContext
+  ): DebugSnapshot {
+    // Collect variables from context chain
+    const variables: Record<string, unknown> = {};
+    let current: ExecutionContext | undefined = ctx;
+    while (current) {
+      for (const [key, value] of current.variables) {
+        if (!(key in variables)) {
+          variables[key] = value;
+        }
+      }
+      current = current.parent;
+    }
+
+    // Collect store info
+    const stores: Record<string, { type: string; count: number }> = {};
+    for (const [name, _store] of ctx.stores) {
+      stores[name] = {
+        type: ctx.storeTypes.get(name) ?? 'unknown',
+        count: -1, // Would need async call to get count
+      };
+    }
+
+    return {
+      mission: this.missionName ?? 'unknown',
+      action,
+      stepIndex,
+      stepType,
+      pauseReason,
+      variables,
+      stores,
+      response: ctx.response,
+    };
+  }
+
+  /** Handle debug command and update state */
+  private handleDebugCommand(cmd: DebugCommand): void {
+    if (!this.debugController) return;
+
+    switch (cmd.type) {
+      case 'abort':
+        throw new AbortError('Execution aborted by debugger');
+      case 'continue':
+        this.debugController.mode = 'run';
+        break;
+      case 'step':
+        this.debugController.mode = 'step';
+        break;
+      case 'step-into':
+        this.debugController.mode = 'step-into';
+        break;
+      case 'step-over':
+        this.debugController.mode = 'step-over';
+        break;
+    }
   }
 }

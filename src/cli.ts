@@ -7,6 +7,7 @@ import type { ScheduleEvent } from './scheduler/index.js';
 import { ReqonError } from './errors/index.js';
 import { loadEnv, loadCredentials } from './auth/credentials.js';
 import { WebhookServer } from './webhook/index.js';
+import type { DebugController } from './debug/index.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -29,6 +30,7 @@ Options:
   --webhook            Enable webhook server for 'wait' steps
   --webhook-port <n>   Port for webhook server (default: 3000)
   --webhook-url <url>  Base URL for webhook endpoints (default: http://localhost:3000)
+  --debug              Enable step-through debugging
   --help, -h           Show this help message
 
 Environment Variables:
@@ -58,6 +60,7 @@ Examples:
   const daemon = args.includes('--daemon');
   const once = args.includes('--once');
   const webhookEnabled = args.includes('--webhook');
+  const debugEnabled = args.includes('--debug');
 
   // Parse webhook options
   let webhookPort = 3000;
@@ -127,12 +130,22 @@ Examples:
     console.log(`Webhook server started on port ${webhookPort}`);
   }
 
+  // Initialize debug controller if enabled
+  let debugController: DebugController | undefined;
+  if (debugEnabled) {
+    const { CLIDebugger } = await import('./debug/cli-debugger.js');
+    debugController = new CLIDebugger();
+    console.log('Debug mode enabled. Commands: c(ontinue), s(tep), si(step-into), so(step-over), q(uit)');
+    console.log('Type "help" at the debug prompt for more commands.\n');
+  }
+
   try {
     const result = await fromPath(filePath, {
       dryRun,
       verbose,
       auth: auth as Record<string, { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }>,
       webhookServer,
+      debugController,
     });
 
     if (result.success) {
@@ -172,6 +185,10 @@ Examples:
     // Stop webhook server if it was started
     if (webhookServer) {
       await webhookServer.stop();
+    }
+    // Close debug controller if it was started
+    if (debugController?.close) {
+      debugController.close();
     }
   }
 }

@@ -4,10 +4,20 @@ import { evaluate } from '../evaluator.js';
 import { childContext, setVariable, getVariable } from '../context.js';
 import type { ExecutionContext } from '../context.js';
 import { StepError } from '../../errors/index.js';
+import type { DebugController, DebugSnapshot, DebugLocation } from '../../debug/index.js';
 
 export interface ForHandlerDeps extends StepHandlerDeps {
   executeStep: (step: ActionStep, actionName: string, ctx: ExecutionContext) => Promise<void>;
   actionName: string;
+  debugController?: DebugController;
+  captureDebugSnapshot?: (
+    action: string,
+    stepIndex: number,
+    stepType: string,
+    pauseReason: { type: 'loop-iteration'; variable: string; index: number; total: number },
+    ctx: ExecutionContext
+  ) => DebugSnapshot;
+  handleDebugCommand?: (cmd: { type: string }) => void;
 }
 
 /**
@@ -47,6 +57,32 @@ export class ForHandler implements StepHandler<ForStep> {
         itemIndex: i,
         totalItems: filtered.length,
       });
+
+      // Debug pause point - before each loop iteration (step-into mode)
+      if (this.deps.debugController && this.deps.captureDebugSnapshot && this.deps.handleDebugCommand) {
+        const location: DebugLocation = {
+          action: this.deps.actionName,
+          stepIndex: -1, // Use -1 for loop iterations
+          stepType: 'for-iteration',
+          isLoopIteration: true,
+          loopInfo: { variable: step.variable, index: i, total: filtered.length },
+        };
+        if (this.deps.debugController.shouldPause(location)) {
+          // Create child context to capture loop variable
+          const previewCtx = childContext(this.deps.ctx);
+          setVariable(previewCtx, step.variable, item);
+
+          const snapshot = this.deps.captureDebugSnapshot(
+            this.deps.actionName,
+            -1,
+            'for-iteration',
+            { type: 'loop-iteration', variable: step.variable, index: i, total: filtered.length },
+            previewCtx
+          );
+          const command = await this.deps.debugController.pause(snapshot);
+          this.deps.handleDebugCommand(command);
+        }
+      }
 
       try {
         await this.executeForItem(step, item);

@@ -148,6 +148,18 @@ export {
 } from './observability/index.js';
 export { MCP_SERVER_VERSION } from './mcp/index.js';
 
+// Debug
+export {
+  BaseDebugController,
+  CLIDebugger,
+  type DebugController,
+  type DebugMode,
+  type DebugPauseReason,
+  type DebugSnapshot,
+  type DebugCommand,
+  type DebugLocation,
+} from './debug/index.js';
+
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { ReqonLexer } from './lexer/index.js';

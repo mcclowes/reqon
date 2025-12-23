@@ -35,7 +35,7 @@
 
 - [x] **Better error messages** - Line numbers, column, source context with pointer in parse/lexer/runtime errors
 - [ ] **VS Code extension** - Syntax highlighting and LSP for `.vague` files
-- [ ] **Debug mode** - Step-through execution with state inspection
+- [x] **Debug mode** - Step-through execution with state inspection (`--debug` flag, step/step-into/step-over/continue)
 - [ ] **Dry run improvements** - Mock responses based on schema
 
 ## Testing

@@ -11,6 +11,7 @@ import {
   JumpSignal,
   QueueSignal,
 } from '../signals.js';
+import type { DebugController, DebugSnapshot, DebugLocation } from '../../debug/index.js';
 
 /**
  * Result of executing a match step
@@ -27,6 +28,15 @@ export interface MatchResult {
 export interface MatchHandlerDeps extends StepHandlerDeps {
   executeStep: (step: ActionStep, actionName: string, ctx: ExecutionContext) => Promise<void>;
   actionName: string;
+  debugController?: DebugController;
+  captureDebugSnapshot?: (
+    action: string,
+    stepIndex: number,
+    stepType: string,
+    pauseReason: { type: 'match-arm'; schema: string },
+    ctx: ExecutionContext
+  ) => DebugSnapshot;
+  handleDebugCommand?: (cmd: { type: string }) => void;
 }
 
 /**
@@ -81,6 +91,28 @@ export class MatchHandler {
 
     // Execute steps
     if (matchedArm.steps) {
+      // Debug pause point - before match arm body (step-into mode)
+      if (this.deps.debugController && this.deps.captureDebugSnapshot && this.deps.handleDebugCommand) {
+        const location: DebugLocation = {
+          action: this.deps.actionName,
+          stepIndex: -1, // Use -1 for match arms
+          stepType: 'match-arm',
+          isMatchArm: true,
+          matchInfo: { schema: matchedArm.schema },
+        };
+        if (this.deps.debugController.shouldPause(location)) {
+          const snapshot = this.deps.captureDebugSnapshot(
+            this.deps.actionName,
+            -1,
+            'match-arm',
+            { type: 'match-arm', schema: matchedArm.schema },
+            this.deps.ctx
+          );
+          const command = await this.deps.debugController.pause(snapshot);
+          this.deps.handleDebugCommand(command);
+        }
+      }
+
       for (const innerStep of matchedArm.steps) {
         await this.deps.executeStep(innerStep, this.deps.actionName, this.deps.ctx);
       }
