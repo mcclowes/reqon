@@ -1,5 +1,12 @@
 # TODO
 
+## Docs improvements
+
+- [ ] Use the logos logos - logo-light is a light versino of the logo to be used against dark bgs, and logo-dark is the inverse
+- [ ] Rework docs site styling - #F3EAD3 and #252221 are the main colours.
+- [ ] Buttons, headers, titles, etc. should all be sentence case
+- [ ] Use the icon image as a favicon
+
 ## Core Features
 
 - [x] **State persistence** - Durable execution state for resumable missions with checkpointing
@@ -49,3 +56,6 @@
 - [ ] **More examples** - QuickBooks, Stripe, Shopify integrations
 - [ ] **Architecture docs** - How Reqon extends Vague
 - [ ] **Contributing guide**
+
+## Completed
+
