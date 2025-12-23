@@ -4,7 +4,7 @@ info:
   description: Demo API showcasing Vague's mock data generation from OpenAPI schemas
   version: 1.0.0
 servers:
-  - url: https://api.ecommerce.example.com/v1
+  - url: http://localhost:4000
 
 paths:
   /products:
@@ -23,37 +23,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  products:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        name:
-                          type: string
-                          example: "Wireless Bluetooth Headphones"
-                        price:
-                          type: number
-                          minimum: 0.01
-                          maximum: 999.99
-                          example: 149.99
-                        category:
-                          type: string
-                          enum: [electronics, clothing, home, sports]
-                        inStock:
-                          type: boolean
-                          default: true
-                        stockQuantity:
-                          type: integer
-                          minimum: 0
-                          example: 42
-                  total:
-                    type: integer
-                    example: 156
+                $ref: '#/components/schemas/ProductListResponse'
 
   /orders:
     get:
@@ -65,31 +35,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  orders:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        orderNumber:
-                          type: string
-                          example: "ORD-2024-00001"
-                        status:
-                          type: string
-                          enum: [pending, processing, shipped, delivered]
-                        total:
-                          type: number
-                          example: 299.99
-                        createdAt:
-                          type: string
-                          format: date-time
-                        itemCount:
-                          type: integer
-                          example: 3
+                $ref: '#/components/schemas/OrderListResponse'
 
   /inventory:
     get:
@@ -101,34 +47,107 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        productId:
-                          type: string
-                          format: uuid
-                        sku:
-                          type: string
-                          example: "WBH-2024-BLK"
-                        quantity:
-                          type: integer
-                          minimum: 0
-                          example: 42
-                        warehouseLocation:
-                          type: string
-                          example: "A-12-3"
-                  lastUpdated:
-                    type: string
-                    format: date-time
-                  lowStockCount:
-                    type: integer
-                    example: 3
+                $ref: '#/components/schemas/InventoryResponse'
 
 components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Wireless Bluetooth Headphones"
+        price:
+          type: number
+          minimum: 0.01
+          maximum: 999.99
+          example: 149.99
+        category:
+          type: string
+          enum: [electronics, clothing, home, sports]
+        inStock:
+          type: boolean
+          default: true
+        stockQuantity:
+          type: integer
+          minimum: 0
+          example: 42
+
+    ProductListResponse:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        total:
+          type: integer
+          example: 156
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+          example: "ORD-2024-00001"
+        status:
+          type: string
+          enum: [pending, processing, shipped, delivered]
+        total:
+          type: number
+          example: 299.99
+        createdAt:
+          type: string
+          format: date-time
+        itemCount:
+          type: integer
+          example: 3
+
+    OrderListResponse:
+      type: object
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+
+    InventoryItem:
+      type: object
+      properties:
+        productId:
+          type: string
+          format: uuid
+        sku:
+          type: string
+          example: "WBH-2024-BLK"
+        quantity:
+          type: integer
+          minimum: 0
+          example: 42
+        warehouseLocation:
+          type: string
+          example: "A-12-3"
+
+    InventoryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryItem'
+        lastUpdated:
+          type: string
+          format: date-time
+        lowStockCount:
+          type: integer
+          example: 3
+
   securitySchemes:
     bearerAuth:
       type: http

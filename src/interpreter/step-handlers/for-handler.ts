@@ -42,7 +42,7 @@ export class ForHandler implements StepHandler<ForStep> {
       hasFilter: !!step.condition,
     });
 
-    this.deps.log(`Iterating over ${filtered.length} items`);
+    this.deps.log(`Iterating over ${filtered.length} ${filtered.length === 1 ? 'item' : 'items'}`);
 
     let processedCount = 0;
     let failedCount = 0;

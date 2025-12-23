@@ -1,12 +1,5 @@
 # TODO
 
-## Docs
-
-- [x] Use logos - `logo-light` for dark backgrounds, `logo-dark` for light backgrounds
-- [x] Rework docs site styling - primary colors: #F3EAD3, #252221
-- [x] Use sentence case for buttons, headers, titles
-- [x] Use `icon.png` as favicon
-
 ## Core Features
 
 - [ ] **Idempotency** - Upsert semantics and conflict resolution strategies
@@ -40,6 +33,9 @@
 
 ## Completed
 
+- [x] Docs site styling with brand colors (#F3EAD3, #252221)
+- [x] Logo integration (logo-light/logo-dark) and favicon
+- [x] Sentence case for UI text
 - [x] **State persistence** - Durable execution state for resumable missions with checkpointing
 - [x] **Incremental sync** - `since: lastSync` parameter for "only fetch changed since last run"
 - [x] **Schema overloading** - `match response { Schema1 -> ..., Schema2 -> ... }`

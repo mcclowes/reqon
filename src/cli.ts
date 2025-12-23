@@ -157,7 +157,7 @@ Examples:
       const storeData: Record<string, unknown[]> = {};
       for (const [name, store] of result.stores) {
         const items = await store.list();
-        console.log(`  Store "${name}": ${items.length} items`);
+        console.log(`  Store "${name}": ${items.length} ${items.length === 1 ? 'item' : 'items'}`);
         storeData[name] = items;
       }
 

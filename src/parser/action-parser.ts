@@ -50,6 +50,12 @@ export class ActionParser extends FetchParser {
       case ReqonTokenType.MEMORY:
         storeType = 'memory';
         break;
+      case ReqonTokenType.FILE:
+        storeType = 'file';
+        break;
+      case ReqonTokenType.POSTGREST:
+        storeType = 'postgrest';
+        break;
       default:
         throw this.error(`Unknown store type: ${typeToken.value}`);
     }

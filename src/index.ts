@@ -206,8 +206,8 @@ export async function fromPath(
   path: string,
   config: ExecutorConfig = {}
 ): Promise<import('./interpreter/index.js').ExecutionResult> {
-  const { program } = await loadMission(path);
-  const executor = new MissionExecutor(config);
+  const { program, baseDir } = await loadMission(path);
+  const executor = new MissionExecutor({ ...config, missionDir: baseDir });
   return executor.execute(program);
 }
 

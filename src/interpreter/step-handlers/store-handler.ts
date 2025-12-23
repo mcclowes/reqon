@@ -92,7 +92,7 @@ export class StoreHandler implements StepHandler<StoreStep> {
       }
     }
 
-    this.deps.log(`Stored ${items.length} items to ${step.target}`);
+    this.deps.log(`Stored ${items.length} ${items.length === 1 ? 'item' : 'items'} to ${step.target}`);
     this.emitStoreEvent(step, operation, items.length);
   }
 

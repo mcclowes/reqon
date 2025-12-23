@@ -87,11 +87,12 @@ export function createStore(options: CreateStoreOptions): StoreAdapter {
  * In development mode, sql/nosql fall back to file stores
  */
 export function resolveStoreType(
-  dslType: 'sql' | 'nosql' | 'memory',
+  dslType: 'sql' | 'nosql' | 'memory' | 'file' | 'postgrest',
   developmentMode = true
 ): StoreType {
-  if (dslType === 'memory') {
-    return 'memory';
+  // These types are used directly
+  if (dslType === 'memory' || dslType === 'file' || dslType === 'postgrest') {
+    return dslType;
   }
 
   if (developmentMode) {

@@ -13,6 +13,7 @@ export function generateMockData(
     maxDepth: options.maxDepth ?? 3,
     arrayLength: options.arrayLength ?? 2,
     seenRefs: new Set(),
+    counter: { value: 0 },
   };
 
   return generateValue(schema, ctx);
@@ -30,6 +31,8 @@ interface GeneratorContext {
   maxDepth: number;
   arrayLength: number;
   seenRefs: Set<string>;
+  /** Counter object for generating unique values (shared by reference) */
+  counter: { value: number };
 }
 
 function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): unknown {
@@ -82,7 +85,7 @@ function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): u
   // Generate based on type
   switch (schema.type) {
     case 'string':
-      return generateString(schema);
+      return generateString(schema, ctx);
     case 'number':
       return generateNumber(schema);
     case 'integer':
@@ -106,7 +109,7 @@ function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): u
   }
 }
 
-function generateString(schema: OpenAPIV3.SchemaObject): string {
+function generateString(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): string {
   // Handle format
   switch (schema.format) {
     case 'date':
@@ -114,12 +117,16 @@ function generateString(schema: OpenAPIV3.SchemaObject): string {
     case 'date-time':
       return '2024-01-15T10:30:00Z';
     case 'email':
-      return 'user@example.com';
+      return `user${ctx.counter.value++}@example.com`;
     case 'uri':
     case 'url':
       return 'https://example.com';
-    case 'uuid':
-      return '550e8400-e29b-41d4-a716-446655440000';
+    case 'uuid': {
+      // Generate unique UUIDs using counter
+      const id = ctx.counter.value++;
+      const hex = id.toString(16).padStart(12, '0');
+      return `550e8400-e29b-41d4-a716-${hex}`;
+    }
     case 'hostname':
       return 'example.com';
     case 'ipv4':

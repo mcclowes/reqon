@@ -1,0 +1,16 @@
+// Mock data definitions for E-Commerce API demo
+// Imports schemas from OpenAPI spec and creates datasets for the mock server
+//
+// Run: npx vague examples/mock-server-demo/mock-data.vague --serve 4000
+
+import ecommerce from "examples/mock-server-demo/openapi.yaml"
+
+schema Product from ecommerce.Product {}
+schema Order from ecommerce.Order {}
+schema InventoryItem from ecommerce.InventoryItem {}
+
+dataset ECommerce {
+  products: 20 of Product,
+  orders: 15 of Order,
+  inventory: 20 of InventoryItem
+}

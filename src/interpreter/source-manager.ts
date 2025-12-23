@@ -9,6 +9,7 @@
  * - Configuring rate limiters and circuit breakers per source
  */
 
+import { resolve } from 'node:path';
 import type { SourceDefinition } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
 import { HttpClient, BearerAuthProvider, OAuth2AuthProvider, type AuthProvider } from './http.js';
@@ -31,6 +32,8 @@ export interface SourceManagerConfig {
   auth?: Record<string, AuthConfig>;
   /** Logging function */
   log?: (message: string) => void;
+  /** Mission file directory for resolving relative paths */
+  missionDir?: string;
 }
 
 export interface SourceManagerDeps {
@@ -143,7 +146,11 @@ export class SourceManager {
     // If source has OAS spec, load it
     if (source.specPath) {
       try {
-        const oasSource = await loadOAS(source.specPath);
+        // Resolve relative spec paths against mission directory
+        const specPath = this.config.missionDir
+          ? resolve(this.config.missionDir, source.specPath)
+          : source.specPath;
+        const oasSource = await loadOAS(specPath);
         this.oasSources.set(source.name, oasSource);
         // Use base URL from OAS if not explicitly provided
         if (!baseUrl) {

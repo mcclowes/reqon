@@ -32,6 +32,8 @@ export enum ReqonTokenType {
   NOSQL = 'NOSQL',
   SQL = 'SQL',
   MEMORY = 'MEMORY',
+  FILE = 'FILE',
+  POSTGREST = 'POSTGREST',
 
   // Auth types
   OAUTH2 = 'OAUTH2',
@@ -130,6 +132,8 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   nosql: ReqonTokenType.NOSQL,
   sql: ReqonTokenType.SQL,
   memory: ReqonTokenType.MEMORY,
+  file: ReqonTokenType.FILE,
+  postgrest: ReqonTokenType.POSTGREST,
 
   // Auth types
   oauth2: ReqonTokenType.OAUTH2,

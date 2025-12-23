@@ -55,10 +55,12 @@ export interface AuthConfig {
 
 // store invoices_cache: nosql("invoices")
 // store invoices_sql: sql("accounting.invoices")
+// store data: file("data")
+// store records: postgrest("records")
 export interface StoreDefinition {
   type: 'StoreDefinition';
   name: string;
-  storeType: 'nosql' | 'sql' | 'memory';
+  storeType: 'nosql' | 'sql' | 'memory' | 'file' | 'postgrest';
   target: string; // collection/table name
 }
 

@@ -142,6 +142,8 @@ export interface ExecutorConfig {
   dryRun?: boolean;
   // Verbose logging
   verbose?: boolean;
+  // Mission file directory (for resolving relative paths like OAS specs)
+  missionDir?: string;
   // Rate limit callbacks (optional)
   rateLimitCallbacks?: RateLimitCallbacks;
   // Circuit breaker callbacks (optional)
@@ -202,7 +204,7 @@ export class MissionExecutor {
 
     // Initialize managers (logger set after verbose callbacks configured)
     this.sourceManager = new SourceManager(
-      { auth: config.auth },
+      { auth: config.auth, missionDir: config.missionDir },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
     this.storeManager = new StoreManager({
@@ -298,7 +300,7 @@ export class MissionExecutor {
 
     // Update managers with log function now that logger is configured
     this.sourceManager = new SourceManager(
-      { auth: config.auth, log: (msg) => this.log(msg) },
+      { auth: config.auth, missionDir: config.missionDir, log: (msg) => this.log(msg) },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
     this.storeManager = new StoreManager({

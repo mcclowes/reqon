@@ -25,7 +25,7 @@ describe('generateMockData', () => {
     it('generates email format', () => {
       const schema: OpenAPIV3.SchemaObject = { type: 'string', format: 'email' };
       const result = generateMockData(schema);
-      expect(result).toBe('user@example.com');
+      expect(result).toBe('user0@example.com');
     });
 
     it('generates uri format', () => {
@@ -37,7 +37,7 @@ describe('generateMockData', () => {
     it('generates uuid format', () => {
       const schema: OpenAPIV3.SchemaObject = { type: 'string', format: 'uuid' };
       const result = generateMockData(schema);
-      expect(result).toBe('550e8400-e29b-41d4-a716-446655440000');
+      expect(result).toBe('550e8400-e29b-41d4-a716-000000000000');
     });
 
     it('uses example when provided', () => {
@@ -169,7 +169,7 @@ describe('generateMockData', () => {
       expect(typeof result.user).toBe('object');
       const user = result.user as Record<string, unknown>;
       expect(typeof user.id).toBe('number');
-      expect(user.email).toBe('user@example.com');
+      expect(user.email).toBe('user0@example.com');
     });
 
     it('respects maxDepth option', () => {
@@ -283,8 +283,8 @@ describe('generateMockData', () => {
       expect(data.length).toBe(2);
 
       const firstUser = data[0];
-      expect(firstUser.id).toBe('550e8400-e29b-41d4-a716-446655440000');
-      expect(firstUser.email).toBe('user@example.com');
+      expect(firstUser.id).toBe('550e8400-e29b-41d4-a716-000000000000');
+      expect(firstUser.email).toBe('user1@example.com'); // counter 1 (UUID got 0)
       expect(firstUser.status).toBe('active');
 
       expect(typeof result.pagination).toBe('object');
