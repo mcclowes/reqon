@@ -33,10 +33,14 @@ interface GeneratorContext {
 }
 
 function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): unknown {
-  // Handle nullable
-  if (schema.nullable && ctx.depth > 0) {
-    // Return null occasionally for nullable fields at depth > 0
-    return null;
+  // Handle nullable - only return null if explicitly marked nullable
+  // and we're past the top level (depth > 0). Use strict equality check
+  // to avoid false positives from undefined/truthy coercion.
+  if (schema.nullable === true && ctx.depth > 1) {
+    // Return null ~20% of the time for nullable fields deep in the tree
+    if (Math.random() < 0.2) {
+      return null;
+    }
   }
 
   // Handle enum - pick first value

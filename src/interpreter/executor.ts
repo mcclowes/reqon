@@ -794,20 +794,20 @@ export class MissionExecutor {
   private async executeAction(action: ActionDefinition): Promise<void> {
     this.log(`Executing action: ${action.name}`);
 
+    // Create a child context for this action with its own response scope
+    // This allows parallel actions to have independent response values
+    const actionCtx = childContext(this.ctx);
+
     for (const step of action.steps) {
-      await this.executeStep(step, action.name);
+      await this.executeStep(step, action.name, actionCtx);
     }
   }
 
   private async executeStep(step: ActionStep, actionName: string, ctx?: ExecutionContext): Promise<void> {
     // Use provided context or default to this.ctx
+    // NOTE: ctx is used for action-scoped operations (response, variables)
+    // this.ctx is still used for mission-level resources (stores, sources)
     const execCtx = ctx ?? this.ctx;
-    const originalCtx = this.ctx;
-
-    // Temporarily use the provided context
-    if (ctx) {
-      this.ctx = ctx;
-    }
 
     // Track step index for events
     const currentStepIndex = this.stepIndex++;
@@ -839,31 +839,31 @@ export class MissionExecutor {
     try {
       switch (step.type) {
         case 'FetchStep':
-          await this.executeFetch(step);
+          await this.executeFetch(step, execCtx);
           break;
         case 'ForStep':
-          await this.executeFor(step, actionName);
+          await this.executeFor(step, actionName, execCtx);
           break;
         case 'MapStep':
-          await this.executeMap(step);
+          await this.executeMap(step, execCtx);
           break;
         case 'ValidateStep':
-          await this.executeValidate(step);
+          await this.executeValidate(step, execCtx);
           break;
         case 'StoreStep':
-          await this.executeStore(step);
+          await this.executeStore(step, execCtx);
           break;
         case 'MatchStep':
-          await this.executeMatch(step, actionName);
+          await this.executeMatch(step, actionName, execCtx);
           break;
         case 'LetStep':
-          await this.executeLet(step);
+          await this.executeLet(step, execCtx);
           break;
         case 'ApplyStep':
-          await this.executeApply(step);
+          await this.executeApply(step, execCtx);
           break;
         case 'WebhookStep':
-          await this.executeWebhook(step);
+          await this.executeWebhook(step, execCtx);
           break;
         default:
           throw new Error(`Unknown step type: ${(step as ActionStep).type}`);
@@ -911,17 +911,12 @@ export class MissionExecutor {
         details: error,
       });
       throw error;
-    } finally {
-      // Restore original context
-      if (ctx) {
-        this.ctx = originalCtx;
-      }
     }
   }
 
-  private async executeFetch(step: FetchStep): Promise<void> {
+  private async executeFetch(step: FetchStep, ctx: ExecutionContext): Promise<void> {
     const fetchHandler = new FetchHandler({
-      ctx: this.ctx,
+      ctx,
       oasSources: this.sourceManager.getAllOASSources(),
       sourceConfigs: this.sourceManager.getAllSourceConfigs(),
       syncStore: this.syncStore,
@@ -933,7 +928,7 @@ export class MissionExecutor {
     });
 
     const result = await fetchHandler.execute(step);
-    this.ctx.response = result.data;
+    ctx.response = result.data;
 
     // Update sync checkpoint after successful fetch
     if (result.checkpointKey && this.syncStore) {
@@ -941,9 +936,9 @@ export class MissionExecutor {
     }
   }
 
-  private async executeFor(step: ForStep, actionName: string): Promise<void> {
+  private async executeFor(step: ForStep, actionName: string, ctx: ExecutionContext): Promise<void> {
     const handler = new ForHandler({
-      ctx: this.ctx,
+      ctx,
       log: (msg) => this.log(msg),
       emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
       executeStep: (s, a, c) => this.executeStep(s, a, c),
@@ -960,44 +955,44 @@ export class MissionExecutor {
     await handler.execute(step);
   }
 
-  private async executeMap(step: MapStep): Promise<void> {
+  private async executeMap(step: MapStep, ctx: ExecutionContext): Promise<void> {
     const handler = new MapHandler({
-      ctx: this.ctx,
+      ctx,
       log: (msg) => this.log(msg),
       emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
     await handler.execute(step);
   }
 
-  private async executeValidate(step: ValidateStep): Promise<void> {
+  private async executeValidate(step: ValidateStep, ctx: ExecutionContext): Promise<void> {
     const handler = new ValidateHandler({
-      ctx: this.ctx,
+      ctx,
       log: (msg) => this.log(msg),
       emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
     await handler.execute(step);
   }
 
-  private async executeStore(step: StoreStep): Promise<void> {
+  private async executeStore(step: StoreStep, ctx: ExecutionContext): Promise<void> {
     const handler = new StoreHandler({
-      ctx: this.ctx,
+      ctx,
       log: (msg) => this.log(msg),
       emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
     });
     await handler.execute(step);
   }
 
-  private async executeMatch(step: MatchStep, actionName: string): Promise<void> {
+  private async executeMatch(step: MatchStep, actionName: string, ctx: ExecutionContext): Promise<void> {
     const handler = new MatchHandler({
-      ctx: this.ctx,
+      ctx,
       log: (msg) => this.log(msg),
       emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
       executeStep: (s, a, c) => this.executeStep(s, a, c),
       actionName,
       debugController: this.debugController,
       captureDebugSnapshot: this.debugController
-        ? (action, stepIndex, stepType, pauseReason, ctx) =>
-            this.captureDebugSnapshot(action, stepIndex, stepType, pauseReason, ctx)
+        ? (action, stepIndex, stepType, pauseReason, execCtx) =>
+            this.captureDebugSnapshot(action, stepIndex, stepType, pauseReason, execCtx)
         : undefined,
       handleDebugCommand: this.debugController
         ? (cmd) => this.handleDebugCommand(cmd as DebugCommand)
@@ -1007,27 +1002,27 @@ export class MissionExecutor {
     // Flow control signals (SkipSignal, RetrySignal, etc.) will propagate up
   }
 
-  private async executeLet(step: LetStep): Promise<void> {
-    const value = evaluate(step.value, this.ctx);
-    setVariable(this.ctx, step.name, value);
+  private async executeLet(step: LetStep, ctx: ExecutionContext): Promise<void> {
+    const value = evaluate(step.value, ctx);
+    setVariable(ctx, step.name, value);
     this.log(`Set variable '${step.name}' = ${JSON.stringify(value)}`);
   }
 
-  private async executeApply(step: ApplyStep): Promise<void> {
+  private async executeApply(step: ApplyStep, ctx: ExecutionContext): Promise<void> {
     const transform = this.transforms.get(step.transform);
     if (!transform) {
       throw new Error(`Transform '${step.transform}' not found`);
     }
 
     const handler = new ApplyHandler({
-      ctx: this.ctx,
+      ctx,
       log: (msg) => this.log(msg),
       transform,
     });
     await handler.execute(step);
   }
 
-  private async executeWebhook(step: WebhookStep): Promise<void> {
+  private async executeWebhook(step: WebhookStep, ctx: ExecutionContext): Promise<void> {
     if (!this.config.webhookServer) {
       throw new Error(
         'Webhook server not configured. Use --webhook flag or configure webhookServer in executor config.'
@@ -1035,7 +1030,7 @@ export class MissionExecutor {
     }
 
     const handler = new WebhookHandler({
-      ctx: this.ctx,
+      ctx,
       webhookServer: this.config.webhookServer,
       executionId: this.executionState?.id ?? 'ephemeral',
       log: (msg) => this.log(msg),

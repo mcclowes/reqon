@@ -1,0 +1,101 @@
+// E-Commerce Sync Demo
+// Demonstrates Vague's mock data generation from OpenAPI schemas
+// Run with: reqon examples/mock-server-demo/sync.vague --dry-run --verbose
+
+mission ECommerceSyncDemo {
+  // Load source from OpenAPI spec - mock data is generated from schema definitions
+  source ECommerceAPI from "./openapi.yaml" {
+    auth: bearer,
+    validateResponses: true
+  }
+
+  // In-memory stores for demo (use file() or sql() for persistence)
+  store products: memory("products")
+  store orders: memory("orders")
+  store customers: memory("customers")
+  store inventory: memory("inventory")
+  store order_summary: memory("order_summary")
+
+  // Schema for normalized order data
+  schema OrderSummary {
+    id: string,
+    orderNumber: string,
+    customerEmail: string,
+    status: string,
+    itemCount: number,
+    total: number,
+    createdAt: string
+  }
+
+  // Fetch all products using OAS operationId
+  // In --dry-run mode, mock data is generated from ProductListResponse schema
+  action FetchProducts {
+    call ECommerceAPI.listProducts
+
+    // Store the mock products - will have realistic UUIDs, prices, categories, etc.
+    store response.products -> products {
+      key: .id,
+      upsert: true
+    }
+  }
+
+  // Fetch orders with schema-aware mock data
+  action FetchOrders {
+    call ECommerceAPI.listOrders
+
+    // Orders include nested items, addresses, payment methods from OrderListResponse
+    store response.orders -> orders {
+      key: .id,
+      upsert: true
+    }
+  }
+
+  // Fetch inventory levels from InventoryResponse schema
+  action FetchInventory {
+    call ECommerceAPI.getInventory
+
+    store response.items -> inventory {
+      key: .productId
+    }
+  }
+
+  // Transform orders into summary format
+  action NormalizeOrders {
+    for order in orders {
+      // Map to simplified schema
+      map order -> OrderSummary {
+        id: .id,
+        orderNumber: .orderNumber,
+        customerEmail: "customer@example.com",
+        status: .status,
+        itemCount: 1,
+        total: .total,
+        createdAt: .createdAt
+      }
+
+      store response -> order_summary {
+        key: .id
+      }
+    }
+  }
+
+  // Demonstrate conditional processing based on inventory
+  action CheckLowStock {
+    for item in inventory {
+      // In a real mission, this might trigger a reorder API call
+      // For demo, we just process each item
+      let itemInfo = {
+        productId: item.productId,
+        sku: item.sku,
+        quantity: item.quantity
+      }
+
+      // Could store to alerts store or trigger webhook
+    }
+  }
+
+  // Execute pipeline: fetch in parallel, then normalize, then check stock
+  run [FetchProducts, FetchOrders, FetchInventory]
+    then NormalizeOrders
+    then CheckLowStock
+}

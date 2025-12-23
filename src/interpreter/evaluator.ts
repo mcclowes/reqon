@@ -66,7 +66,20 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
     }
 
     case 'QualifiedName': {
-      // Try from current/response first (common case)
+      // Handle 'response.x.y' specially - start from ctx.response
+      if (expr.parts.length > 0 && expr.parts[0] === 'response') {
+        let value: unknown = ctx.response;
+        for (let i = 1; i < expr.parts.length; i++) {
+          if (isRecord(value)) {
+            value = value[expr.parts[i]];
+          } else {
+            return undefined;
+          }
+        }
+        return value;
+      }
+
+      // Try from current/response first (common case for .field paths)
       let value: unknown = current ?? ctx.response;
       if (isRecord(value)) {
         let found = true;
