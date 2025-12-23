@@ -1,0 +1,105 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Reqon Injection",
+  "scopeName": "source.reqon.injection",
+  "injectionSelector": "L:source.vague",
+  "patterns": [
+    { "include": "#reqon-keywords" },
+    { "include": "#reqon-http" },
+    { "include": "#reqon-stores" },
+    { "include": "#reqon-auth" },
+    { "include": "#reqon-flow" },
+    { "include": "#reqon-schedule" },
+    { "include": "#reqon-options" }
+  ],
+  "repository": {
+    "reqon-keywords": {
+      "patterns": [
+        {
+          "comment": "Mission and pipeline keywords",
+          "name": "keyword.control.reqon.mission",
+          "match": "\\b(mission|action|source|store|run|then)\\b"
+        },
+        {
+          "comment": "Iteration and mapping",
+          "name": "keyword.control.reqon.iteration",
+          "match": "\\b(for|each|map|apply|to|as)\\b"
+        },
+        {
+          "comment": "Transform keywords",
+          "name": "keyword.control.reqon.transform",
+          "match": "\\b(transform|try)\\b"
+        },
+        {
+          "comment": "Webhook keywords",
+          "name": "keyword.control.reqon.webhook",
+          "match": "\\b(wait|timeout|path|expectedEvents|eventFilter|storage)\\b"
+        }
+      ]
+    },
+    "reqon-http": {
+      "patterns": [
+        {
+          "comment": "HTTP methods",
+          "name": "keyword.other.reqon.http",
+          "match": "\\b(get|post|put|patch|delete|call|GET|POST|PUT|PATCH|DELETE)\\b"
+        }
+      ]
+    },
+    "reqon-stores": {
+      "patterns": [
+        {
+          "comment": "Store types",
+          "name": "storage.type.reqon.store",
+          "match": "\\b(nosql|sql|memory|file|postgrest)\\b"
+        }
+      ]
+    },
+    "reqon-auth": {
+      "patterns": [
+        {
+          "comment": "Auth types",
+          "name": "storage.type.reqon.auth",
+          "match": "\\b(oauth2|bearer|basic|api_key|none)\\b"
+        }
+      ]
+    },
+    "reqon-flow": {
+      "patterns": [
+        {
+          "comment": "Flow control directives",
+          "name": "keyword.control.reqon.flow",
+          "match": "\\b(continue|skip|abort|queue|jump|retry)\\b"
+        },
+        {
+          "comment": "Pagination and sync",
+          "name": "keyword.control.reqon.sync",
+          "match": "\\b(paginate|until|since|lastSync|offset|cursor|page)\\b"
+        }
+      ]
+    },
+    "reqon-schedule": {
+      "patterns": [
+        {
+          "comment": "Scheduling keywords",
+          "name": "keyword.control.reqon.schedule",
+          "match": "\\b(schedule|cron|every|at|hours|minutes|seconds|days|weeks)\\b"
+        }
+      ]
+    },
+    "reqon-options": {
+      "patterns": [
+        {
+          "comment": "Configuration options",
+          "name": "variable.parameter.reqon.option",
+          "match": "\\b(key|partial|upsert|auth|base|headers|validateResponses|rateLimit|circuitBreaker|backoff|maxAttempts|initialDelay|maxDelay)\\b"
+        },
+        {
+          "comment": "Special response variable",
+          "name": "variable.language.reqon.response",
+          "match": "\\b(response)\\b"
+        }
+      ]
+    }
+  }
+}

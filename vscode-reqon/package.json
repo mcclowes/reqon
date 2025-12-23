@@ -1,0 +1,39 @@
+{
+  "name": "reqon-lang",
+  "displayName": "Reqon Language",
+  "description": "Syntax highlighting for Reqon keywords in .vague files - extends the Vague Language extension",
+  "version": "0.1.0",
+  "publisher": "mcclowes",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcclowes/reqon"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "reqon",
+    "vague",
+    "dsl",
+    "data pipeline",
+    "api",
+    "etl"
+  ],
+  "extensionDependencies": [
+    "mcclowes.vague-language"
+  ],
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "source.reqon.injection",
+        "path": "./syntaxes/reqon.injection.json",
+        "injectTo": [
+          "source.vague"
+        ]
+      }
+    ]
+  }
+}

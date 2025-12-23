@@ -15,7 +15,7 @@
 
 ## Developer Experience
 
-- [ ] **VS Code extension** - Syntax highlighting and LSP for `.vague` files
+- [ ] **VS Code LSP** - Language server for go-to-definition, autocomplete, diagnostics
 
 ## Testing
 
@@ -33,6 +33,7 @@
 
 ## Completed
 
+- [x] VS Code extension with Reqon keyword injection (vscode-reqon)
 - [x] Docs site styling with brand colors (#F3EAD3, #252221)
 - [x] Logo integration (logo-light/logo-dark) and favicon
 - [x] Sentence case for UI text
