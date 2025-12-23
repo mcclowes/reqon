@@ -107,25 +107,34 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
 
       switch (expr.operator) {
         case '+':
-          return (left as number) + (right as number);
+          // Allow string concatenation
+          if (typeof left === 'string' || typeof right === 'string') {
+            return String(left ?? '') + String(right ?? '');
+          }
+          return toNumber(left, '+') + toNumber(right, '+');
         case '-':
-          return (left as number) - (right as number);
+          return toNumber(left, '-') - toNumber(right, '-');
         case '*':
-          return (left as number) * (right as number);
-        case '/':
-          return (left as number) / (right as number);
+          return toNumber(left, '*') * toNumber(right, '*');
+        case '/': {
+          const divisor = toNumber(right, '/');
+          if (divisor === 0) {
+            throw new EvaluatorError('Division by zero', { expression: '/' });
+          }
+          return toNumber(left, '/') / divisor;
+        }
         case '==':
           return left === right;
         case '!=':
           return left !== right;
         case '<':
-          return (left as number) < (right as number);
+          return compareNumbers(left, right, '<');
         case '>':
-          return (left as number) > (right as number);
+          return compareNumbers(left, right, '>');
         case '<=':
-          return (left as number) <= (right as number);
+          return compareNumbers(left, right, '<=');
         case '>=':
-          return (left as number) >= (right as number);
+          return compareNumbers(left, right, '>=');
         default:
           throw new UnsupportedOperationError(`operator: ${expr.operator}`, 'binary expression');
       }
@@ -146,8 +155,8 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
 
     case 'UnaryExpression': {
       const operand = evaluate(expr.operand, ctx, current);
-      if (expr.operator === '-') return -(operand as number);
-      if (expr.operator === '+') return +(operand as number);
+      if (expr.operator === '-') return -toNumber(operand, 'unary -');
+      if (expr.operator === '+') return toNumber(operand, 'unary +');
       return operand;
     }
 
@@ -186,8 +195,12 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
           if (Array.isArray(args[0])) return args[0].length;
           if (typeof args[0] === 'string') return args[0].length;
           return 0;
-        case 'sum':
-          return (args[0] as number[]).reduce((a, b) => a + b, 0);
+        case 'sum': {
+          if (!Array.isArray(args[0])) {
+            throw new EvaluatorError('sum() requires an array argument', { expression: 'sum' });
+          }
+          return args[0].reduce((acc, val) => acc + toNumber(val, 'sum'), 0);
+        }
         case 'count':
           return Array.isArray(args[0]) ? args[0].length : 0;
         case 'first':
@@ -195,11 +208,11 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
         case 'last':
           return Array.isArray(args[0]) ? args[0][args[0].length - 1] : undefined;
         case 'round':
-          return Math.round(args[0] as number);
+          return Math.round(toNumber(args[0], 'round'));
         case 'floor':
-          return Math.floor(args[0] as number);
+          return Math.floor(toNumber(args[0], 'floor'));
         case 'ceil':
-          return Math.ceil(args[0] as number);
+          return Math.ceil(toNumber(args[0], 'ceil'));
         case 'now':
           return new Date().toISOString();
         case 'env':
@@ -282,6 +295,56 @@ export function interpolatePath(path: string, ctx: ExecutionContext, current?: u
 
     return String(value ?? '');
   });
+}
+
+/**
+ * Coerce a value to a number for arithmetic operations.
+ * Returns NaN for values that cannot be meaningfully converted.
+ */
+function toNumber(value: unknown, operator: string): number {
+  if (typeof value === 'number') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (!isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  if (typeof value === 'boolean') {
+    return value ? 1 : 0;
+  }
+  if (value === null || value === undefined) {
+    throw new EvaluatorError(
+      `Cannot perform '${operator}' on ${value === null ? 'null' : 'undefined'}`,
+      { expression: operator }
+    );
+  }
+  throw new EvaluatorError(
+    `Cannot perform '${operator}' on ${typeof value} (expected number)`,
+    { expression: operator }
+  );
+}
+
+/**
+ * Safely perform arithmetic comparison, with proper type coercion.
+ */
+function compareNumbers(left: unknown, right: unknown, operator: string): boolean {
+  const leftNum = toNumber(left, operator);
+  const rightNum = toNumber(right, operator);
+
+  switch (operator) {
+    case '<':
+      return leftNum < rightNum;
+    case '>':
+      return leftNum > rightNum;
+    case '<=':
+      return leftNum <= rightNum;
+    case '>=':
+      return leftNum >= rightNum;
+    default:
+      return false;
+  }
 }
 
 /** Type check functions map - more efficient than switch statement */

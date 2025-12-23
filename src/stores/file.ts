@@ -30,20 +30,63 @@ const DEFAULT_OPTIONS: Required<FileStoreOptions> = {
 /**
  * File-based JSON store for local development
  * Persists data to .reqon-data/{name}.json
+ *
+ * Use FileStore.create() for async initialization (recommended),
+ * or new FileStore() for lazy initialization (backward compatible).
  */
 export class FileStore implements StoreAdapter {
   private data: Map<string, Record<string, unknown>> = new Map();
   private filePath: string;
   private options: Required<FileStoreOptions>;
   private dirty = false;
-  private initialized: Promise<void>;
+  private initialized: Promise<void> | null = null;
+  private initError: Error | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingWrite: Promise<void> | null = null;
 
+  /**
+   * Create a FileStore with async initialization (recommended).
+   * The store is fully initialized when the promise resolves.
+   *
+   * @example
+   * const store = await FileStore.create('my-store', { baseDir: '.data' });
+   */
+  static async create(name: string, options: FileStoreOptions = {}): Promise<FileStore> {
+    const store = new FileStore(name, options);
+    await store.ensureInitialized();
+    return store;
+  }
+
+  /**
+   * Constructor for lazy initialization (backward compatible).
+   * Each operation will wait for initialization to complete.
+   * Prefer FileStore.create() for explicit async initialization.
+   */
   constructor(name: string, options: FileStoreOptions = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
     this.filePath = join(this.options.baseDir, `${name}.json`);
-    this.initialized = this.init();
+    // Lazy initialization - init() is called on first operation
+  }
+
+  /**
+   * Ensure the store is initialized. Safe to call multiple times.
+   * Throws if initialization previously failed.
+   */
+  private async ensureInitialized(): Promise<void> {
+    // If init previously failed, throw the cached error
+    if (this.initError) {
+      throw this.initError;
+    }
+
+    // If not yet started, start initialization
+    if (this.initialized === null) {
+      this.initialized = this.init().catch((error) => {
+        this.initError = error instanceof Error ? error : new Error(String(error));
+        throw this.initError;
+      });
+    }
+
+    await this.initialized;
   }
 
   private async init(): Promise<void> {
@@ -109,18 +152,18 @@ export class FileStore implements StoreAdapter {
   }
 
   async get(key: string): Promise<Record<string, unknown> | null> {
-    await this.initialized;
+    await this.ensureInitialized();
     return this.data.get(key) ?? null;
   }
 
   async set(key: string, value: Record<string, unknown>): Promise<void> {
-    await this.initialized;
+    await this.ensureInitialized();
     this.data.set(key, { ...value });
     await this.persist();
   }
 
   async bulkSet(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void> {
-    await this.initialized;
+    await this.ensureInitialized();
     // Set all records in memory first (no disk I/O per record)
     for (const { key, value } of records) {
       this.data.set(key, { ...value });
@@ -130,7 +173,7 @@ export class FileStore implements StoreAdapter {
   }
 
   async bulkUpsert(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void> {
-    await this.initialized;
+    await this.ensureInitialized();
     // Upsert all records in memory first (no disk I/O per record)
     for (const { key, value } of records) {
       const existing = this.data.get(key);
@@ -145,7 +188,7 @@ export class FileStore implements StoreAdapter {
   }
 
   async update(key: string, value: Partial<Record<string, unknown>>): Promise<void> {
-    await this.initialized;
+    await this.ensureInitialized();
     const existing = this.data.get(key);
     if (existing) {
       this.data.set(key, { ...existing, ...value });
@@ -156,18 +199,18 @@ export class FileStore implements StoreAdapter {
   }
 
   async delete(key: string): Promise<void> {
-    await this.initialized;
+    await this.ensureInitialized();
     this.data.delete(key);
     await this.persist();
   }
 
   async list(filter?: StoreFilter): Promise<Record<string, unknown>[]> {
-    await this.initialized;
+    await this.ensureInitialized();
     return applyStoreFilter(Array.from(this.data.values()), filter);
   }
 
   async count(filter?: StoreFilter): Promise<number> {
-    await this.initialized;
+    await this.ensureInitialized();
     // Apply only the where clause for counting (ignore limit/offset)
     const filtered = applyStoreFilter(Array.from(this.data.values()), {
       where: filter?.where,
@@ -176,7 +219,7 @@ export class FileStore implements StoreAdapter {
   }
 
   async clear(): Promise<void> {
-    await this.initialized;
+    await this.ensureInitialized();
     this.data.clear();
     await this.persist();
   }

@@ -4,6 +4,7 @@ import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
 import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
 import { sleep } from '../utils/async.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
+import { FetchError } from '../errors/index.js';
 
 export interface HttpClientConfig {
   baseUrl: string;
@@ -143,7 +144,7 @@ export class HttpClient {
           continue;
         }
 
-        const data = await response.json() as T;
+        const data = await this.parseResponseBody<T>(response, url, req.method);
 
         // Record success in circuit breaker
         if (this.config.circuitBreaker && this.config.sourceName && response.status < 500) {
@@ -176,6 +177,30 @@ export class HttpClient {
     }
 
     throw lastError ?? new Error('Request failed after all retries');
+  }
+
+  /**
+   * Safely parse response body, handling non-JSON responses gracefully.
+   * Attempts JSON parsing first, providing helpful errors on failure.
+   */
+  private async parseResponseBody<T>(response: Response, url: string, method: string): Promise<T> {
+    const contentType = response.headers.get('content-type') ?? '';
+
+    // Always attempt JSON parsing - many APIs don't set content-type correctly
+    try {
+      return await response.json() as T;
+    } catch (parseError) {
+      // Provide context about content-type mismatch if applicable
+      const isJsonContentType = contentType.includes('application/json') || contentType === '';
+      const contentTypeHint = !isJsonContentType
+        ? ` (content-type was '${contentType}')`
+        : '';
+
+      throw new FetchError(
+        `Failed to parse JSON response${contentTypeHint}: ${(parseError as Error).message}`,
+        { url, method, statusCode: response.status, cause: parseError as Error }
+      );
+    }
   }
 
   private buildUrl(path: string, query?: Record<string, string>): string {

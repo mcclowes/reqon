@@ -215,7 +215,15 @@ export class FetchHandler {
     }
 
     // Traditional: explicit method + path
-    const sourceName = step.source ?? this.deps.ctx.sources.keys().next().value!;
+    let sourceName = step.source;
+    if (!sourceName) {
+      // Use the first available source as default
+      const firstSource = this.deps.ctx.sources.keys().next();
+      if (firstSource.done) {
+        throw new Error('No sources defined. Add a source to your mission before making fetch requests.');
+      }
+      sourceName = firstSource.value;
+    }
     const method = step.method!;
     let path: string;
 

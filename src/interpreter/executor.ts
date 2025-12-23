@@ -16,20 +16,15 @@ import type {
   WebhookStep,
   PipelineDefinition,
   PipelineStage,
-  SourceDefinition,
-  StoreDefinition,
-  FieldMapping,
-  RateLimitSourceConfig,
 } from '../ast/nodes.js';
-import { isParallelStage, getStageActions } from '../ast/nodes.js';
+import { isParallelStage } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
 import { createContext, childContext, setVariable, getVariable } from './context.js';
-import { evaluate, interpolatePath } from './evaluator.js';
-import { HttpClient, BearerAuthProvider, OAuth2AuthProvider } from './http.js';
-import { createStore, resolveStoreType } from '../stores/index.js';
+import { evaluate } from './evaluator.js';
 import type { StoreAdapter } from '../stores/types.js';
-import { loadOAS, resolveOperation, getResponseSchema, validateResponse } from '../oas/index.js';
 import type { OASSource } from '../oas/index.js';
+import { SourceManager, type AuthConfig } from './source-manager.js';
+import { StoreManager } from './store-manager.js';
 import { AdaptiveRateLimiter } from '../auth/rate-limiter.js';
 import { CircuitBreaker, type CircuitBreakerCallbacks } from '../auth/circuit-breaker.js';
 import type { RateLimiter, RateLimitCallbacks } from '../auth/types.js';
@@ -174,26 +169,19 @@ export interface ExecutorConfig {
   logger?: StructuredLogger;
 }
 
-interface AuthConfig {
-  type: 'bearer' | 'oauth2' | 'none';
-  token?: string;
-  accessToken?: string;
-  refreshToken?: string;
-  tokenEndpoint?: string;
-  clientId?: string;
-  clientSecret?: string;
-}
+// AuthConfig is now exported from source-manager.ts
+export { type AuthConfig } from './source-manager.js';
 
 export class MissionExecutor {
   private config: ExecutorConfig;
   private ctx: ExecutionContext;
   private errors: ExecutionError[] = [];
   private actionsRun: string[] = [];
-  private oasSources: Map<string, OASSource> = new Map();
-  private sourceConfigs: Map<string, SourceDefinition> = new Map();
   private transforms: Map<string, TransformDefinition> = new Map();
   private rateLimiter: RateLimiter;
   private circuitBreaker: CircuitBreaker;
+  private sourceManager: SourceManager;
+  private storeManager: StoreManager;
   private executionStore?: ExecutionStore;
   private executionState?: ExecutionState;
   private syncStore?: SyncStore;
@@ -207,6 +195,17 @@ export class MissionExecutor {
     this.ctx = createContext();
     this.rateLimiter = new AdaptiveRateLimiter();
     this.circuitBreaker = new CircuitBreaker();
+
+    // Initialize managers (logger set after verbose callbacks configured)
+    this.sourceManager = new SourceManager(
+      { auth: config.auth },
+      { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
+    );
+    this.storeManager = new StoreManager({
+      customStores: config.stores,
+      developmentMode: config.developmentMode,
+      dataDir: config.dataDir,
+    });
 
     // Set up rate limit callbacks with default logging if verbose
     const callbacks: RateLimitCallbacks = config.rateLimitCallbacks ?? {};
@@ -292,6 +291,18 @@ export class MissionExecutor {
         context: {},
       });
     }
+
+    // Update managers with log function now that logger is configured
+    this.sourceManager = new SourceManager(
+      { auth: config.auth, log: (msg) => this.log(msg) },
+      { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
+    );
+    this.storeManager = new StoreManager({
+      customStores: config.stores,
+      developmentMode: config.developmentMode,
+      dataDir: config.dataDir,
+      log: (msg) => this.log(msg),
+    });
   }
 
   async execute(program: ReqonProgram): Promise<ExecutionResult> {
@@ -493,15 +504,11 @@ export class MissionExecutor {
       `${this.config.dataDir ?? '.reqon-data'}/sync`
     );
 
-    // Initialize sources (HTTP clients)
-    for (const source of mission.sources) {
-      await this.initializeSource(source);
-    }
+    // Initialize sources using SourceManager
+    await this.sourceManager.initializeSources(mission.sources, this.ctx);
 
-    // Initialize stores
-    for (const store of mission.stores) {
-      await this.initializeStore(store);
-    }
+    // Initialize stores using StoreManager
+    await this.storeManager.initializeStores(mission.stores, this.ctx);
 
     // Initialize schemas (for match step schema matching)
     for (const schema of mission.schemas) {
@@ -777,116 +784,6 @@ export class MissionExecutor {
     }
   }
 
-  private async initializeSource(source: SourceDefinition): Promise<void> {
-    // Store source config for later reference
-    this.sourceConfigs.set(source.name, source);
-
-    const authConfig = this.config.auth?.[source.name];
-
-    let authProvider;
-    if (authConfig) {
-      if (authConfig.type === 'bearer' && authConfig.token) {
-        authProvider = new BearerAuthProvider(authConfig.token);
-      } else if (authConfig.type === 'oauth2' && authConfig.accessToken) {
-        authProvider = new OAuth2AuthProvider({
-          accessToken: authConfig.accessToken,
-          refreshToken: authConfig.refreshToken,
-          tokenEndpoint: authConfig.tokenEndpoint,
-          clientId: authConfig.clientId,
-          clientSecret: authConfig.clientSecret,
-        });
-      }
-    }
-
-    // If source has OAS spec, load it
-    let baseUrl = source.config.base;
-    if (source.specPath) {
-      try {
-        const oasSource = await loadOAS(source.specPath);
-        this.oasSources.set(source.name, oasSource);
-        // Use base URL from OAS if not explicitly provided
-        if (!baseUrl) {
-          baseUrl = oasSource.baseUrl;
-        }
-        this.log(`Loaded OAS spec for ${source.name}: ${oasSource.operations.size} operations`);
-      } catch (error) {
-        throw new Error(`Failed to load OAS spec for ${source.name}: ${(error as Error).message}`);
-      }
-    }
-
-    if (!baseUrl) {
-      throw new Error(`Source ${source.name} has no base URL (provide 'base' or OAS spec with servers)`);
-    }
-
-    // Configure rate limiter for this source
-    if (source.config.rateLimit) {
-      this.rateLimiter.configure(source.name, {
-        strategy: source.config.rateLimit.strategy,
-        maxWait: source.config.rateLimit.maxWait,
-        fallbackRpm: source.config.rateLimit.fallbackRpm,
-      });
-      this.log(
-        `Rate limit config for ${source.name}: strategy=${source.config.rateLimit.strategy ?? 'pause'}, ` +
-          `maxWait=${source.config.rateLimit.maxWait ?? 300}s`
-      );
-    }
-
-    // Configure circuit breaker for this source
-    if (source.config.circuitBreaker) {
-      this.circuitBreaker.configure(source.name, {
-        failureThreshold: source.config.circuitBreaker.failureThreshold,
-        // Convert seconds to milliseconds for the circuit breaker
-        resetTimeout: source.config.circuitBreaker.resetTimeout
-          ? source.config.circuitBreaker.resetTimeout * 1000
-          : undefined,
-        successThreshold: source.config.circuitBreaker.successThreshold,
-        failureWindow: source.config.circuitBreaker.failureWindow
-          ? source.config.circuitBreaker.failureWindow * 1000
-          : undefined,
-      });
-      this.log(
-        `Circuit breaker config for ${source.name}: ` +
-          `failureThreshold=${source.config.circuitBreaker.failureThreshold ?? 5}, ` +
-          `resetTimeout=${source.config.circuitBreaker.resetTimeout ?? 30}s`
-      );
-    }
-
-    const client = new HttpClient({
-      baseUrl,
-      auth: authProvider,
-      rateLimiter: this.rateLimiter,
-      circuitBreaker: this.circuitBreaker,
-      sourceName: source.name,
-    });
-
-    this.ctx.sources.set(source.name, client);
-    this.log(`Initialized source: ${source.name}`);
-  }
-
-  private async initializeStore(store: StoreDefinition): Promise<void> {
-    // Check for custom store adapter
-    if (this.config.stores?.[store.name]) {
-      this.ctx.stores.set(store.name, this.config.stores[store.name]);
-      this.ctx.storeTypes.set(store.name, 'custom');
-      this.log(`Initialized store: ${store.name} (custom adapter)`);
-      return;
-    }
-
-    // Use store factory to create appropriate adapter
-    const developmentMode = this.config.developmentMode ?? true;
-    const storeType = resolveStoreType(store.storeType, developmentMode);
-
-    const adapter = createStore({
-      type: storeType,
-      name: store.target,
-      baseDir: this.config.dataDir,
-    });
-
-    this.ctx.stores.set(store.name, adapter);
-    this.ctx.storeTypes.set(store.name, storeType);
-    this.log(`Initialized store: ${store.name} (${storeType}${storeType !== store.storeType ? ` <- ${store.storeType}` : ''})`);
-  }
-
   private async executeAction(action: ActionDefinition): Promise<void> {
     this.log(`Executing action: ${action.name}`);
 
@@ -1004,8 +901,8 @@ export class MissionExecutor {
   private async executeFetch(step: FetchStep): Promise<void> {
     const fetchHandler = new FetchHandler({
       ctx: this.ctx,
-      oasSources: this.oasSources,
-      sourceConfigs: this.sourceConfigs,
+      oasSources: this.sourceManager.getAllOASSources(),
+      sourceConfigs: this.sourceManager.getAllSourceConfigs(),
       syncStore: this.syncStore,
       missionName: this.missionName,
       executionId: this.executionState?.id,
