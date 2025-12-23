@@ -11,7 +11,7 @@ type FeatureItem = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'Declarative Syntax',
+    title: 'Declarative syntax',
     icon: '📝',
     description: (
       <>
@@ -21,7 +21,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
-    title: 'Built-in Best Practices',
+    title: 'Built-in best practices',
     icon: '⚡',
     description: (
       <>
@@ -31,7 +31,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
-    title: 'Multiple Auth Methods',
+    title: 'Multiple auth methods',
     icon: '🔐',
     description: (
       <>
@@ -41,7 +41,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
-    title: 'OpenAPI Integration',
+    title: 'OpenAPI integration',
     icon: '📋',
     description: (
       <>
@@ -51,7 +51,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
-    title: 'Flexible Storage',
+    title: 'Flexible storage',
     icon: '💾',
     description: (
       <>
@@ -61,7 +61,7 @@ const FeatureList: FeatureItem[] = [
     ),
   },
   {
-    title: 'Production Ready',
+    title: 'Production ready',
     icon: '🚀',
     description: (
       <>

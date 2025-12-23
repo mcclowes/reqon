@@ -59,7 +59,6 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Reqon',
       logo: {
         alt: 'Reqon Logo',
         src: 'img/logo-dark.svg',
@@ -100,11 +99,11 @@ const config: Config = {
           title: 'Learn',
           items: [
             {
-              label: 'Getting Started',
+              label: 'Getting started',
               to: '/docs/getting-started',
             },
             {
-              label: 'Core Concepts',
+              label: 'Core concepts',
               to: '/docs/category/core-concepts',
             },
             {
@@ -117,11 +116,11 @@ const config: Config = {
           title: 'Reference',
           items: [
             {
-              label: 'DSL Syntax',
+              label: 'DSL syntax',
               to: '/docs/category/dsl-syntax',
             },
             {
-              label: 'API Reference',
+              label: 'API reference',
               to: '/docs/api-reference',
             },
             {

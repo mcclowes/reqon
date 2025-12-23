@@ -87,8 +87,24 @@ h1, h2, h3, h4, h5, h6 {
   background: linear-gradient(135deg, #EDE4CC 0%, var(--ifm-background-color) 100%);
 }
 
+.hero__title {
+  color: #252221;
+}
+
+.hero__subtitle {
+  color: #5A4936;
+}
+
 [data-theme='dark'] .hero {
   background: linear-gradient(135deg, #312E2C 0%, var(--ifm-background-color) 100%);
+}
+
+[data-theme='dark'] .hero__title {
+  color: #F3EAD3;
+}
+
+[data-theme='dark'] .hero__subtitle {
+  color: #D4BCAA;
 }
 
 /* Sidebar improvements */

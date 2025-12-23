@@ -7,10 +7,10 @@ const sidebars: SidebarsConfig = {
     'cli',
     {
       type: 'category',
-      label: 'Core Concepts',
+      label: 'Core concepts',
       link: {
         type: 'generated-index',
-        title: 'Core Concepts',
+        title: 'Core concepts',
         description: 'Learn about the fundamental building blocks of Reqon',
       },
       items: [
@@ -23,10 +23,10 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'DSL Syntax',
+      label: 'DSL syntax',
       link: {
         type: 'generated-index',
-        title: 'DSL Syntax Reference',
+        title: 'DSL syntax reference',
         description: 'Complete reference for Reqon DSL syntax',
       },
       items: [
@@ -43,10 +43,10 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'HTTP & Fetching',
+      label: 'HTTP and fetching',
       link: {
         type: 'generated-index',
-        title: 'HTTP & Fetching',
+        title: 'HTTP and fetching',
         description: 'Learn about HTTP requests, pagination, and retry strategies',
       },
       items: [
@@ -76,10 +76,10 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Error Handling',
+      label: 'Error handling',
       link: {
         type: 'generated-index',
-        title: 'Error Handling',
+        title: 'Error handling',
         description: 'Handle errors with flow control directives',
       },
       items: [
@@ -90,10 +90,10 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Store Adapters',
+      label: 'Store adapters',
       link: {
         type: 'generated-index',
-        title: 'Store Adapters',
+        title: 'Store adapters',
         description: 'Persist data to various backends',
       },
       items: [
@@ -106,10 +106,10 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'OpenAPI Integration',
+      label: 'OpenAPI integration',
       link: {
         type: 'generated-index',
-        title: 'OpenAPI Integration',
+        title: 'OpenAPI integration',
         description: 'Use OpenAPI specs for type-safe API calls',
       },
       items: [
@@ -150,10 +150,10 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
-      label: 'Advanced Topics',
+      label: 'Advanced topics',
       link: {
         type: 'generated-index',
-        title: 'Advanced Topics',
+        title: 'Advanced topics',
         description: 'Deep dive into advanced Reqon features',
       },
       items: [

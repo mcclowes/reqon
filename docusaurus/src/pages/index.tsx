@@ -46,13 +46,13 @@ function HomepageHeader() {
           <Link
             className="button button--secondary button--lg"
             to="/docs/">
-            Get Started
+            Get started
           </Link>
           <Link
             className="button button--outline button--lg"
-            style={{marginLeft: '1rem', color: 'white', borderColor: 'white'}}
+            style={{marginLeft: '1rem'}}
             to="/docs/examples">
-            View Examples
+            View examples
           </Link>
         </div>
       </div>
@@ -66,7 +66,7 @@ function CodeExample() {
       <div className="container">
         <div className="row">
           <div className="col col--6">
-            <Heading as="h2">Declarative Data Pipelines</Heading>
+            <Heading as="h2">Declarative data pipelines</Heading>
             <p>
               Define what you want to happen, not how. Reqon handles pagination,
               retries, rate limiting, and error handling automatically.
@@ -80,7 +80,7 @@ function CodeExample() {
             <Link
               className="button button--primary button--lg"
               to="/docs/getting-started">
-              Learn the Syntax
+              Learn the syntax
             </Link>
           </div>
           <div className="col col--6">
@@ -98,7 +98,7 @@ export default function Home(): ReactNode {
   const {siteConfig} = useDocusaurusContext();
   return (
     <Layout
-      title="Declarative DSL for Data Pipelines"
+      title="Declarative DSL for data pipelines"
       description="Reqon is a declarative DSL framework for fetch, map, validate pipelines. Build robust data synchronization with clean, readable syntax.">
       <HomepageHeader />
       <main>
