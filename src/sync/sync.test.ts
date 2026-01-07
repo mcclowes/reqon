@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { rmSync, existsSync } from 'node:fs';
-import {
-  generateCheckpointKey,
-  formatSinceDate,
-  parseSinceDate,
-  EPOCH,
-} from './state.js';
+import { generateCheckpointKey, formatSinceDate, parseSinceDate, EPOCH } from './state.js';
 import { FileSyncStore, MemorySyncStore } from './store.js';
 import { ReqonLexer } from '../lexer/index.js';
 import { ReqonParser } from '../parser/parser.js';
@@ -267,5 +262,62 @@ describe('Parser: since config', () => {
     expect(fetch.since?.type).toBe('lastSync');
     expect(fetch.since?.param).toBe('modified_since');
     expect(fetch.since?.format).toBe('unix');
+  });
+
+  it('parses since: lastSync with header option', () => {
+    const source = `
+      mission Test {
+        source API { auth: bearer, base: "https://api.example.com" }
+        store items: memory("items")
+
+        action Fetch {
+          get "/items" {
+            since: lastSync {
+              header: "If-Modified-Since"
+            }
+          }
+          store response -> items { key: .id }
+        }
+
+        run Fetch
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0] as MissionDefinition;
+    const fetch = mission.actions[0].steps[0] as FetchStep;
+
+    expect(fetch.since?.type).toBe('lastSync');
+    expect(fetch.since?.header).toBe('If-Modified-Since');
+    expect(fetch.since?.param).toBeUndefined();
+  });
+
+  it('parses since: lastSync with header and format options', () => {
+    const source = `
+      mission Test {
+        source API { auth: bearer, base: "https://api.example.com" }
+        store items: memory("items")
+
+        action Fetch {
+          get "/items" {
+            since: lastSync {
+              header: "If-Modified-Since",
+              format: iso
+            }
+          }
+          store response -> items { key: .id }
+        }
+
+        run Fetch
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0] as MissionDefinition;
+    const fetch = mission.actions[0].steps[0] as FetchStep;
+
+    expect(fetch.since?.type).toBe('lastSync');
+    expect(fetch.since?.header).toBe('If-Modified-Since');
+    expect(fetch.since?.format).toBe('iso');
   });
 });

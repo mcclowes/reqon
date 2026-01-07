@@ -1,8 +1,13 @@
-import type { FetchStep, RetryConfig, PaginationConfig } from '../ast/nodes.js';
+import type { FetchStep } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
 import { evaluate, interpolatePath } from './evaluator.js';
 import { HttpClient } from './http.js';
-import { resolveOperation, getResponseSchema, validateResponse, generateMockData } from '../oas/index.js';
+import {
+  resolveOperation,
+  getResponseSchema,
+  validateResponse,
+  generateMockData,
+} from '../oas/index.js';
 import type { OASSource } from '../oas/index.js';
 import { generateCheckpointKey, formatSinceDate, type SyncStore } from '../sync/index.js';
 import { extractNestedValue } from '../utils/path.js';
@@ -48,8 +53,12 @@ export class FetchHandler {
       throw new Error(`Source not found: ${resolved.sourceName}`);
     }
 
-    // Resolve "since" query parameter for incremental sync
-    const { query: sinceQuery, checkpointKey } = await this.resolveSinceParams(
+    // Resolve "since" query parameter and/or header for incremental sync
+    const {
+      query: sinceQuery,
+      headers: sinceHeaders,
+      checkpointKey,
+    } = await this.resolveSinceParams(
       step,
       resolved.sourceName,
       resolved.operationId,
@@ -67,7 +76,7 @@ export class FetchHandler {
       hasSince: !!step.since,
     });
 
-    const fetchStartTime = Date.now();
+    const _fetchStartTime = Date.now(); // Reserved for fetch duration tracking
 
     if (this.deps.dryRun) {
       const mockData = this.generateDryRunMockData(resolved.sourceName, resolved.operationId);
@@ -89,7 +98,8 @@ export class FetchHandler {
           resolved.method,
           resolved.sourceName,
           resolved.operationId,
-          sinceQuery
+          sinceQuery,
+          sinceHeaders
         );
         data = result;
         pagesFetched = Array.isArray(result) ? undefined : 1; // Will be set by executePaginated
@@ -99,6 +109,7 @@ export class FetchHandler {
             method: resolved.method,
             path: resolved.path,
             query: Object.keys(sinceQuery).length > 0 ? sinceQuery : undefined,
+            headers: Object.keys(sinceHeaders).length > 0 ? sinceHeaders : undefined,
             body: step.body ? evaluate(step.body, this.deps.ctx) : undefined,
           },
           step.retry
@@ -135,12 +146,14 @@ export class FetchHandler {
   private isRetryableError(error: unknown): boolean {
     if (error instanceof Error) {
       const message = error.message.toLowerCase();
-      return message.includes('timeout') ||
-             message.includes('network') ||
-             message.includes('rate limit') ||
-             message.includes('429') ||
-             message.includes('503') ||
-             message.includes('502');
+      return (
+        message.includes('timeout') ||
+        message.includes('network') ||
+        message.includes('rate limit') ||
+        message.includes('429') ||
+        message.includes('503') ||
+        message.includes('502')
+      );
     }
     return false;
   }
@@ -220,7 +233,9 @@ export class FetchHandler {
       // Use the first available source as default
       const firstSource = this.deps.ctx.sources.keys().next();
       if (firstSource.done) {
-        throw new Error('No sources defined. Add a source to your mission before making fetch requests.');
+        throw new Error(
+          'No sources defined. Add a source to your mission before making fetch requests.'
+        );
       }
       sourceName = firstSource.value;
     }
@@ -243,28 +258,48 @@ export class FetchHandler {
     sourceName: string,
     operationId: string | undefined,
     path: string
-  ): Promise<{ query: Record<string, string>; checkpointKey?: string }> {
+  ): Promise<{
+    query: Record<string, string>;
+    headers: Record<string, string>;
+    checkpointKey?: string;
+  }> {
     const query: Record<string, string> = {};
+    const headers: Record<string, string> = {};
 
     if (!step.since || !this.deps.syncStore) {
-      return { query };
+      return { query, headers };
     }
 
     const checkpointKey = step.since.key ?? generateCheckpointKey(sourceName, operationId, path);
 
     if (step.since.type === 'lastSync') {
       const lastSync = await this.deps.syncStore.getLastSync(checkpointKey);
-      const paramName = step.since.param ?? 'since';
       const format = step.since.format ?? 'iso';
-      query[paramName] = formatSinceDate(lastSync, format);
-      this.deps.log(`Incremental sync: ${paramName}=${query[paramName]} (key: ${checkpointKey})`);
+      const formattedDate = formatSinceDate(lastSync, format);
+
+      if (step.since.header) {
+        // Send as header (e.g., If-Modified-Since)
+        headers[step.since.header] = formattedDate;
+        this.deps.log(
+          `Incremental sync: header ${step.since.header}=${formattedDate} (key: ${checkpointKey})`
+        );
+      } else {
+        // Send as query parameter (default behavior)
+        const paramName = step.since.param ?? 'since';
+        query[paramName] = formattedDate;
+        this.deps.log(`Incremental sync: ${paramName}=${formattedDate} (key: ${checkpointKey})`);
+      }
     } else if (step.since.type === 'expression' && step.since.expression) {
       const value = evaluate(step.since.expression, this.deps.ctx);
-      const paramName = step.since.param ?? 'since';
-      query[paramName] = String(value);
+      if (step.since.header) {
+        headers[step.since.header] = String(value);
+      } else {
+        const paramName = step.since.param ?? 'since';
+        query[paramName] = String(value);
+      }
     }
 
-    return { query, checkpointKey };
+    return { query, headers, checkpointKey };
   }
 
   private async executePaginated(
@@ -274,7 +309,8 @@ export class FetchHandler {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     sourceName: string,
     operationId?: string,
-    sinceQuery: Record<string, string> = {}
+    sinceQuery: Record<string, string> = {},
+    sinceHeaders: Record<string, string> = {}
   ): Promise<unknown[]> {
     const allResults: unknown[] = [];
     const paginate = step.paginate!;
@@ -291,10 +327,11 @@ export class FetchHandler {
       // Build query with pagination params
       const paginationQuery = strategy.buildQuery(ctx);
       const query: Record<string, string> = { ...sinceQuery, ...paginationQuery };
+      const headers = Object.keys(sinceHeaders).length > 0 ? sinceHeaders : undefined;
 
       this.deps.log(`Fetching page ${ctx.page + 1}...`);
 
-      const response = await client.request({ method, path: basePath, query }, step.retry);
+      const response = await client.request({ method, path: basePath, query, headers }, step.retry);
       await this.validateOASResponse(sourceName, operationId, response.data);
 
       // Temporarily set response for until condition evaluation

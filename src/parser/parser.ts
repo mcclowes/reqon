@@ -1,17 +1,17 @@
 /**
- * Main Reqon Parser
- *
- * This is the top-level parser that combines all domain-specific parser modules.
- * The parser is organized as an inheritance chain:
- *
- * ReqonParserBase (token manipulation)
- *   └─ ReqonExpressionParser (expression parsing)
- *       └─ SourceParser (source definitions, auth config)
- *           └─ ScheduleParser (schedule definitions)
- *               └─ FetchParser (fetch steps, pagination, retry)
- *                   └─ ActionParser (actions, steps, transforms)
- *                       └─ PipelineParser (pipeline stages)
- *                           └─ ReqonParser (mission parsing, validation)
+ * ---
+ * purpose: Top-level parser - combines all domain-specific parser modules
+ * inputs:
+ *   - Token[] from lexer
+ *   - source string for error messages
+ * outputs:
+ *   - ReqonProgram AST
+ * related:
+ *   - ./pipeline-parser.ts - parent class (pipeline stage parsing)
+ *   - ./action-parser.ts - action/step parsing
+ *   - ./fetch-parser.ts - HTTP fetch parsing
+ *   - ../ast/nodes.ts - AST node types
+ * ---
  */
 import { TokenType, type SchemaDefinition, type Token } from 'vague-lang';
 import { ReqonTokenType } from '../lexer/tokens.js';
@@ -118,7 +118,13 @@ export class ReqonParser extends PipelineParser {
     const definedTransforms = new Set(transforms.map((t) => t.name));
 
     // Validate all references within actions (stores, sources)
-    this.validateActionReferences(actions, definedStores, definedSources, definedActions, definedTransforms);
+    this.validateActionReferences(
+      actions,
+      definedStores,
+      definedSources,
+      definedActions,
+      definedTransforms
+    );
 
     return {
       type: 'MissionDefinition',
@@ -167,7 +173,14 @@ export class ReqonParser extends PipelineParser {
     actionName: string
   ): void {
     for (const step of steps) {
-      this.validateStepReferences(step, definedStores, definedSources, definedActions, definedTransforms, actionName);
+      this.validateStepReferences(
+        step,
+        definedStores,
+        definedSources,
+        definedActions,
+        definedTransforms,
+        actionName
+      );
     }
   }
 
@@ -260,10 +273,7 @@ export class ReqonParser extends PipelineParser {
    * Validate that all action references in the pipeline exist
    * Note: This is called by the loader after action merging
    */
-  validatePipelineReferences(
-    pipeline: PipelineDefinition,
-    definedActions: Set<string>
-  ): void {
+  validatePipelineReferences(pipeline: PipelineDefinition, definedActions: Set<string>): void {
     for (const stage of pipeline.stages) {
       if (stage.action) {
         if (!definedActions.has(stage.action)) {

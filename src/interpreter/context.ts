@@ -1,7 +1,20 @@
-import type { Expression, SchemaDefinition } from 'vague-lang';
+/**
+ * ---
+ * purpose: Execution context - scoped state for variables, stores, sources
+ * exports:
+ *   - ExecutionContext - interface for execution state
+ *   - createContext, childContext - context factory functions
+ *   - getVariable, setVariable - scoped variable access
+ * related:
+ *   - ./executor.ts - creates and uses contexts
+ *   - ./evaluator.ts - reads from context during expression evaluation
+ *   - ../stores/types.ts - StoreAdapter interface
+ * ---
+ */
+
+import type { SchemaDefinition } from 'vague-lang';
 import type { StoreAdapter } from '../stores/types.js';
 import type { HttpClient } from './http.js';
-import type { SourceDefinition, StoreDefinition } from '../ast/nodes.js';
 
 export interface ExecutionContext {
   // Named stores

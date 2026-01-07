@@ -1,12 +1,28 @@
-import type {
-  Expression,
-  FieldDefinition,
-  SchemaDefinition,
-  Statement as VagueStatement,
-} from 'vague-lang';
+/**
+ * ---
+ * purpose: AST node type definitions for Reqon programs
+ * exports:
+ *   - ReqonProgram, Statement - top-level types
+ *   - MissionDefinition, ActionDefinition - pipeline structure
+ *   - SourceDefinition, StoreDefinition - resource declarations
+ *   - FetchStep, ForStep, MapStep, ValidateStep, etc. - action steps
+ * related:
+ *   - ../parser/parser.ts - produces these AST nodes
+ *   - ../interpreter/executor.ts - executes AST
+ *   - vague-lang - Expression, SchemaDefinition from parent DSL
+ * ---
+ */
+
+import type { Expression, SchemaDefinition, Statement as VagueStatement } from 'vague-lang';
 
 // Reqon extends Vague's statements
-export type Statement = VagueStatement | MissionDefinition | SourceDefinition | StoreDefinition | ActionDefinition | TransformDefinition;
+export type Statement =
+  | VagueStatement
+  | MissionDefinition
+  | SourceDefinition
+  | StoreDefinition
+  | ActionDefinition
+  | TransformDefinition;
 
 export interface ReqonProgram {
   type: 'ReqonProgram';
@@ -117,7 +133,16 @@ export interface ActionDefinition {
   steps: ActionStep[];
 }
 
-export type ActionStep = FetchStep | ForStep | MapStep | ValidateStep | StoreStep | MatchStep | LetStep | ApplyStep | WebhookStep;
+export type ActionStep =
+  | FetchStep
+  | ForStep
+  | MapStep
+  | ValidateStep
+  | StoreStep
+  | MatchStep
+  | LetStep
+  | ApplyStep
+  | WebhookStep;
 
 // let myVar = expression
 export interface LetStep {
@@ -153,17 +178,17 @@ export interface WebhookStorageConfig {
 
 // Flow control directives for match arms
 export type FlowDirective =
-  | { type: 'continue' }                          // proceed to next pipeline stage
-  | { type: 'skip' }                              // skip remaining steps, move to next stage
-  | { type: 'abort'; message?: string }           // halt mission with error
-  | { type: 'retry'; backoff?: RetryConfig }      // retry current action
-  | { type: 'queue'; target?: string }            // queue for later processing
-  | { type: 'jump'; action: string; then?: 'retry' | 'continue' };  // jump to action
+  | { type: 'continue' } // proceed to next pipeline stage
+  | { type: 'skip' } // skip remaining steps, move to next stage
+  | { type: 'abort'; message?: string } // halt mission with error
+  | { type: 'retry'; backoff?: RetryConfig } // retry current action
+  | { type: 'queue'; target?: string } // queue for later processing
+  | { type: 'jump'; action: string; then?: 'retry' | 'continue' }; // jump to action
 
 // match response { Schema1 -> steps..., Schema2 -> flow directive }
 export interface MatchStep {
   type: 'MatchStep';
-  target: Expression;  // what to match (usually 'response')
+  target: Expression; // what to match (usually 'response')
   arms: MatchArm[];
 }
 
@@ -204,8 +229,10 @@ export interface SinceConfig {
   type: 'lastSync' | 'expression';
   /** Custom checkpoint key (defaults to source:endpoint) */
   key?: string;
-  /** Query parameter name for the since value (default: varies by API) */
+  /** Query parameter name for the since value (default: 'since') */
   param?: string;
+  /** Header name for the since value (e.g., 'If-Modified-Since'). Mutually exclusive with param. */
+  header?: string;
   /** Date format for the since value */
   format?: 'iso' | 'unix' | 'unix-ms' | 'date-only';
   /** Expression to evaluate for 'expression' type */
@@ -336,7 +363,9 @@ export interface PipelineStage {
 }
 
 /** Helper to check if a stage is parallel */
-export function isParallelStage(stage: PipelineStage): stage is PipelineStage & { actions: string[] } {
+export function isParallelStage(
+  stage: PipelineStage
+): stage is PipelineStage & { actions: string[] } {
   return Array.isArray(stage.actions) && stage.actions.length > 0;
 }
 
@@ -347,5 +376,5 @@ export function getStageActions(stage: PipelineStage): string[] {
   return [];
 }
 
-// Re-export Vague types for convenience
+// Re-export Vague types for convenience (FieldDefinition used by schema definitions)
 export type { Expression, FieldDefinition, SchemaDefinition } from 'vague-lang';

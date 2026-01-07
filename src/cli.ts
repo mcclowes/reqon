@@ -1,8 +1,21 @@
 #!/usr/bin/env node
+/**
+ * ---
+ * purpose: CLI entry point - parses args and runs missions
+ * inputs:
+ *   - file.reqon or folder path
+ *   - --dry-run, --verbose, --auth, --env, --output, --daemon, --webhook, --debug
+ * related:
+ *   - ./index.ts - library APIs used by CLI
+ *   - ./scheduler/index.ts - daemon mode scheduling
+ *   - ./webhook/index.ts - webhook server for wait steps
+ *   - ./debug/cli-debugger.ts - interactive debugging
+ * ---
+ */
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
-import { fromPath, parse, Scheduler, loadMission } from './index.js';
+import { fromPath, Scheduler, loadMission } from './index.js';
 import type { ScheduleEvent } from './scheduler/index.js';
 import { ReqonError } from './errors/index.js';
 import { loadEnv, loadCredentials } from './auth/credentials.js';
@@ -109,7 +122,10 @@ Examples:
     await runDaemon(filePath, {
       verbose,
       dryRun,
-      auth: auth as Record<string, { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }>,
+      auth: auth as Record<
+        string,
+        { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }
+      >,
       once,
     });
     return;
@@ -135,7 +151,9 @@ Examples:
   if (debugEnabled) {
     const { CLIDebugger } = await import('./debug/cli-debugger.js');
     debugController = new CLIDebugger();
-    console.log('Debug mode enabled. Commands: c(ontinue), s(tep), si(step-into), so(step-over), q(uit)');
+    console.log(
+      'Debug mode enabled. Commands: c(ontinue), s(tep), si(step-into), so(step-over), q(uit)'
+    );
     console.log('Type "help" at the debug prompt for more commands.\n');
   }
 
@@ -143,7 +161,10 @@ Examples:
     const result = await fromPath(filePath, {
       dryRun,
       verbose,
-      auth: auth as Record<string, { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }>,
+      auth: auth as Record<
+        string,
+        { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }
+      >,
       webhookServer,
       debugController,
     });
@@ -204,11 +225,9 @@ async function runDaemon(filePath: string, options: DaemonOptions): Promise<void
   const absolutePath = resolve(filePath);
 
   let program;
-  let baseDir: string;
   try {
     const result = await loadMission(absolutePath);
     program = result.program;
-    baseDir = result.baseDir;
   } catch (error) {
     if (error instanceof ReqonError) {
       console.error(error.format());

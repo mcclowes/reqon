@@ -1,24 +1,16 @@
 /**
- * Reqon plugin for Vague.
- *
- * This plugin registers Reqon's keywords and statement parsers with Vague,
- * allowing Vague to parse Reqon syntax when the plugin is registered.
- *
- * Usage:
- *   import { registerPlugin } from 'vague-lang';
- *   import { reqonPlugin } from 'reqon';
- *   registerPlugin(reqonPlugin);
- *
- * Or simply import the plugin module to auto-register:
- *   import 'reqon/plugin';
+ * ---
+ * purpose: Vague plugin - registers Reqon keywords with Vague's lexer
+ * exports:
+ *   - reqonPlugin - plugin object for manual registration
+ *   - registerReqonPlugin, unregisterReqonPlugin - registration helpers
+ * related:
+ *   - ./lexer/tokens.ts - REQON_KEYWORDS map
+ *   - vague-lang - parent DSL framework
+ * ---
  */
 
-import {
-  registerPlugin,
-  unregisterPlugin,
-  type VaguePlugin,
-  type PluginKeyword,
-} from 'vague-lang';
+import { registerPlugin, unregisterPlugin, type VaguePlugin, type PluginKeyword } from 'vague-lang';
 import { REQON_KEYWORDS } from './lexer/tokens.js';
 
 /**

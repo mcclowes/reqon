@@ -164,12 +164,14 @@ export class FetchParser extends ScheduleParser {
     // since: lastSync
     // since: lastSync("custom-key")
     // since: lastSync { param: "modified_since", format: "unix" }
+    // since: lastSync { header: "If-Modified-Since" }
 
     if (this.check(ReqonTokenType.LAST_SYNC)) {
       this.advance();
 
       let key: string | undefined;
       let param: string | undefined;
+      let header: string | undefined;
       let format: SinceConfig['format'];
       let updateFrom: string | undefined;
 
@@ -189,8 +191,12 @@ export class FetchParser extends ScheduleParser {
             case 'param':
               param = this.consume(TokenType.STRING, 'Expected param name').value;
               break;
+            case 'header':
+              header = this.consume(TokenType.STRING, 'Expected header name').value;
+              break;
             case 'format':
-              format = this.consume(TokenType.IDENTIFIER, 'Expected format').value as SinceConfig['format'];
+              format = this.consume(TokenType.IDENTIFIER, 'Expected format')
+                .value as SinceConfig['format'];
               break;
             case 'updateFrom':
               updateFrom = this.consume(TokenType.STRING, 'Expected field path').value;
@@ -208,6 +214,7 @@ export class FetchParser extends ScheduleParser {
         type: 'lastSync',
         key,
         param,
+        header,
         format,
         updateFrom,
       };
@@ -281,7 +288,8 @@ export class FetchParser extends ScheduleParser {
           maxAttempts = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
           break;
         case 'backoff':
-          backoff = this.consume(TokenType.IDENTIFIER, 'Expected backoff type').value as RetryConfig['backoff'];
+          backoff = this.consume(TokenType.IDENTIFIER, 'Expected backoff type')
+            .value as RetryConfig['backoff'];
           break;
         case 'initialDelay':
           initialDelay = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);

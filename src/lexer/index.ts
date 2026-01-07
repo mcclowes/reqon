@@ -1,8 +1,15 @@
 /**
- * Lexer module for Reqon.
- *
- * Uses Vague's Lexer with Reqon keywords registered via the plugin system.
- * Importing this module automatically registers the Reqon plugin.
+ * ---
+ * purpose: Lexer module - wraps Vague lexer with Reqon keywords
+ * note: Importing this module auto-registers Reqon plugin with Vague
+ * exports:
+ *   - ReqonLexer (alias for Vague Lexer)
+ *   - ReqonTokenType, REQON_KEYWORDS
+ * related:
+ *   - ./tokens.ts - Reqon-specific keywords (mission, action, fetch, etc.)
+ *   - ../plugin.ts - registers keywords with Vague
+ *   - ../parser/index.ts - consumes tokens
+ * ---
  */
 
 // Import plugin to auto-register Reqon keywords with Vague

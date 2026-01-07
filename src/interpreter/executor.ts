@@ -1,4 +1,20 @@
-import type { Expression, SchemaDefinition } from 'vague-lang';
+/**
+ * ---
+ * purpose: Mission executor - orchestrates pipeline execution
+ * inputs:
+ *   - ReqonProgram - parsed AST
+ *   - ExecutorConfig - auth, stores, callbacks, debug settings
+ * outputs:
+ *   - ExecutionResult - success/errors, stores, duration
+ * related:
+ *   - ./context.ts - execution state (variables, stores, sources)
+ *   - ./evaluator.ts - expression evaluation
+ *   - ./fetch-handler.ts - HTTP requests
+ *   - ./step-handlers/ - individual step type handlers
+ *   - ./source-manager.ts - auth provider management
+ * ---
+ */
+
 import type {
   ReqonProgram,
   MissionDefinition,
@@ -14,15 +30,13 @@ import type {
   ApplyStep,
   TransformDefinition,
   WebhookStep,
-  PipelineDefinition,
   PipelineStage,
 } from '../ast/nodes.js';
 import { isParallelStage } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
-import { createContext, childContext, setVariable, getVariable } from './context.js';
+import { createContext, childContext, setVariable } from './context.js';
 import { evaluate } from './evaluator.js';
 import type { StoreAdapter } from '../stores/types.js';
-import type { OASSource } from '../oas/index.js';
 import { SourceManager, type AuthConfig } from './source-manager.js';
 import { StoreManager } from './store-manager.js';
 import { AdaptiveRateLimiter } from '../auth/rate-limiter.js';
@@ -35,12 +49,7 @@ import {
   type ExecutionStore,
   FileExecutionStore,
 } from '../execution/index.js';
-import {
-  generateCheckpointKey,
-  formatSinceDate,
-  type SyncStore,
-  FileSyncStore,
-} from '../sync/index.js';
+import { type SyncStore, FileSyncStore } from '../sync/index.js';
 import { FetchHandler } from './fetch-handler.js';
 import {
   ForHandler,
@@ -57,13 +66,15 @@ import {
   QueueSignal,
 } from './step-handlers/index.js';
 import type { WebhookServer } from '../webhook/index.js';
+import type { EventEmitter, StepType, StructuredLogger } from '../observability/index.js';
+import { createStructuredLogger } from '../observability/index.js';
 import type {
-  EventEmitter,
-  StepType,
-  StructuredLogger,
-} from '../observability/index.js';
-import { createEmitter, createStructuredLogger } from '../observability/index.js';
-import type { DebugController, DebugSnapshot, DebugLocation, DebugPauseReason, DebugCommand } from '../debug/index.js';
+  DebugController,
+  DebugSnapshot,
+  DebugLocation,
+  DebugPauseReason,
+  DebugCommand,
+} from '../debug/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -279,9 +290,9 @@ export class MissionExecutor {
 
     // Initialize execution store if persistence enabled
     if (config.persistState) {
-      this.executionStore = config.executionStore ?? new FileExecutionStore(
-        `${config.dataDir ?? '.reqon-data'}/executions`
-      );
+      this.executionStore =
+        config.executionStore ??
+        new FileExecutionStore(`${config.dataDir ?? '.reqon-data'}/executions`);
     }
 
     // Initialize event emitter if provided
@@ -393,11 +404,12 @@ export class MissionExecutor {
         success: true,
         stagesCompleted,
         stagesFailed,
-        stagesSkipped: this.executionState?.stages.filter(s => s.status === 'skipped').length ?? 0,
+        stagesSkipped:
+          this.executionState?.stages.filter((s) => s.status === 'skipped').length ?? 0,
         errorCount: this.errors.length,
       });
     } else {
-      const failedStage = this.executionState?.stages.find(s => s.status === 'failed');
+      const failedStage = this.executionState?.stages.find((s) => s.status === 'failed');
       this.eventEmitter?.emit('mission.failed', {
         error: this.errors[0]?.message ?? 'Unknown error',
         failedStage: failedStage?.action,
@@ -474,7 +486,10 @@ export class MissionExecutor {
 
   private updateStageState(
     stageIndex: number,
-    updates: Partial<{ status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped'; error?: string }>
+    updates: Partial<{
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+      error?: string;
+    }>
   ): void {
     if (!this.executionState) return;
 
@@ -508,10 +523,9 @@ export class MissionExecutor {
     this.missionName = mission.name;
 
     // Initialize sync store
-    this.syncStore = this.config.syncStore ?? new FileSyncStore(
-      mission.name,
-      `${this.config.dataDir ?? '.reqon-data'}/sync`
-    );
+    this.syncStore =
+      this.config.syncStore ??
+      new FileSyncStore(mission.name, `${this.config.dataDir ?? '.reqon-data'}/sync`);
 
     // Initialize sources using SourceManager
     await this.sourceManager.initializeSources(mission.sources, this.ctx);
@@ -721,7 +735,7 @@ export class MissionExecutor {
     try {
       // Execute all actions in parallel
       const results = await Promise.allSettled(
-        actionDefs.map(action => this.executeAction(action))
+        actionDefs.map((action) => this.executeAction(action))
       );
 
       // Check for failures
@@ -736,7 +750,7 @@ export class MissionExecutor {
       }
 
       if (failures.length > 0) {
-        const errorMsg = failures.map(f => `${f.name}: ${f.error.message}`).join('; ');
+        const errorMsg = failures.map((f) => `${f.name}: ${f.error.message}`).join('; ');
         throw new Error(`Parallel stage failed: ${errorMsg}`);
       }
 
@@ -805,7 +819,11 @@ export class MissionExecutor {
     }
   }
 
-  private async executeStep(step: ActionStep, actionName: string, ctx?: ExecutionContext): Promise<void> {
+  private async executeStep(
+    step: ActionStep,
+    actionName: string,
+    ctx?: ExecutionContext
+  ): Promise<void> {
     // Use provided context or default to this.ctx
     // NOTE: ctx is used for action-scoped operations (response, variables)
     // this.ctx is still used for mission-level resources (stores, sources)
@@ -822,7 +840,7 @@ export class MissionExecutor {
       stepType,
     });
 
-    const stepStartTime = Date.now();
+    const _stepStartTime = Date.now(); // Reserved for future step duration tracking
 
     // Debug pause point - before executing step
     if (this.debugController) {
@@ -832,7 +850,13 @@ export class MissionExecutor {
         stepType,
       };
       if (this.debugController.shouldPause(location)) {
-        const snapshot = this.captureDebugSnapshot(actionName, currentStepIndex, stepType, { type: 'step' }, execCtx);
+        const snapshot = this.captureDebugSnapshot(
+          actionName,
+          currentStepIndex,
+          stepType,
+          { type: 'step' },
+          execCtx
+        );
         const command = await this.debugController.pause(snapshot);
         this.handleDebugCommand(command);
       }
@@ -926,7 +950,9 @@ export class MissionExecutor {
       executionId: this.executionState?.id,
       dryRun: this.config.dryRun,
       log: (msg) => this.log(msg),
-      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
+      emit: this.eventEmitter
+        ? (type, payload) => this.eventEmitter!.emit(type, payload)
+        : undefined,
     });
 
     const result = await fetchHandler.execute(step);
@@ -938,11 +964,17 @@ export class MissionExecutor {
     }
   }
 
-  private async executeFor(step: ForStep, actionName: string, ctx: ExecutionContext): Promise<void> {
+  private async executeFor(
+    step: ForStep,
+    actionName: string,
+    ctx: ExecutionContext
+  ): Promise<void> {
     const handler = new ForHandler({
       ctx,
       log: (msg) => this.log(msg),
-      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
+      emit: this.eventEmitter
+        ? (type, payload) => this.eventEmitter!.emit(type, payload)
+        : undefined,
       executeStep: (s, a, c) => this.executeStep(s, a, c),
       actionName,
       debugController: this.debugController,
@@ -961,7 +993,9 @@ export class MissionExecutor {
     const handler = new MapHandler({
       ctx,
       log: (msg) => this.log(msg),
-      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
+      emit: this.eventEmitter
+        ? (type, payload) => this.eventEmitter!.emit(type, payload)
+        : undefined,
     });
     await handler.execute(step);
   }
@@ -970,7 +1004,9 @@ export class MissionExecutor {
     const handler = new ValidateHandler({
       ctx,
       log: (msg) => this.log(msg),
-      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
+      emit: this.eventEmitter
+        ? (type, payload) => this.eventEmitter!.emit(type, payload)
+        : undefined,
     });
     await handler.execute(step);
   }
@@ -979,16 +1015,24 @@ export class MissionExecutor {
     const handler = new StoreHandler({
       ctx,
       log: (msg) => this.log(msg),
-      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
+      emit: this.eventEmitter
+        ? (type, payload) => this.eventEmitter!.emit(type, payload)
+        : undefined,
     });
     await handler.execute(step);
   }
 
-  private async executeMatch(step: MatchStep, actionName: string, ctx: ExecutionContext): Promise<void> {
+  private async executeMatch(
+    step: MatchStep,
+    actionName: string,
+    ctx: ExecutionContext
+  ): Promise<void> {
     const handler = new MatchHandler({
       ctx,
       log: (msg) => this.log(msg),
-      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
+      emit: this.eventEmitter
+        ? (type, payload) => this.eventEmitter!.emit(type, payload)
+        : undefined,
       executeStep: (s, a, c) => this.executeStep(s, a, c),
       actionName,
       debugController: this.debugController,
@@ -1036,7 +1080,9 @@ export class MissionExecutor {
       webhookServer: this.config.webhookServer,
       executionId: this.executionState?.id ?? 'ephemeral',
       log: (msg) => this.log(msg),
-      emit: this.eventEmitter ? (type, payload) => this.eventEmitter!.emit(type, payload) : undefined,
+      emit: this.eventEmitter
+        ? (type, payload) => this.eventEmitter!.emit(type, payload)
+        : undefined,
     });
     await handler.execute(step);
   }

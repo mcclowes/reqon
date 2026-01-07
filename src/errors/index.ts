@@ -1,3 +1,16 @@
+/**
+ * ---
+ * purpose: Structured error classes with source location tracking
+ * exports:
+ *   - ReqonError - base class with location and format()
+ *   - ParseError, LexerError, RuntimeError, ValidationError - specific types
+ *   - formatErrors, getSourceLine, getSourceContext - display helpers
+ * related:
+ *   - ../parser/parser.ts - throws ParseError
+ *   - ../interpreter/executor.ts - throws RuntimeError
+ * ---
+ */
+
 export interface SourceLocation {
   line: number;
   column: number;
@@ -196,11 +209,7 @@ export class StepError extends Error {
   readonly action?: string;
   readonly cause?: Error;
 
-  constructor(
-    message: string,
-    stepType: string,
-    options?: { action?: string; cause?: Error }
-  ) {
+  constructor(message: string, stepType: string, options?: { action?: string; cause?: Error }) {
     super(message);
     this.name = 'StepError';
     this.stepType = stepType;
@@ -287,7 +296,7 @@ export class UnsupportedOperationError extends Error {
  * Format multiple errors for display
  */
 export function formatErrors(errors: ReqonError[]): string {
-  return errors.map(e => e.format()).join('\n\n');
+  return errors.map((e) => e.format()).join('\n\n');
 }
 
 /**

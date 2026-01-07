@@ -1,3 +1,16 @@
+/**
+ * ---
+ * purpose: Store interface definitions - contract for all store adapters
+ * exports:
+ *   - StoreAdapter - CRUD interface (get, set, update, delete, list, count)
+ *   - StoreFilter - where/limit/offset for queries
+ *   - StoreConfig - store type configuration
+ * related:
+ *   - ./memory.ts, ./file.ts, ./postgrest.ts - implementations
+ *   - ../interpreter/step-handlers/store-handler.ts - uses StoreAdapter
+ * ---
+ */
+
 export interface StoreAdapter {
   get(key: string): Promise<Record<string, unknown> | null>;
   set(key: string, value: Record<string, unknown>): Promise<void>;

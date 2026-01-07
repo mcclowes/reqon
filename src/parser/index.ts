@@ -1,15 +1,14 @@
 /**
- * Parser module exports
- *
- * The parser is organized as a chain of specialized parsers:
- * - ReqonParserBase: Token manipulation
- * - ReqonExpressionParser: Expression parsing
- * - SourceParser: Source definitions, auth config
- * - ScheduleParser: Schedule definitions
- * - FetchParser: Fetch steps, pagination, retry
- * - ActionParser: Actions, steps, transforms
- * - PipelineParser: Pipeline stages
- * - ReqonParser: Main parser (mission parsing, validation)
+ * ---
+ * purpose: Parser module exports - inheritance chain of specialized parsers
+ * note: Parser classes form inheritance chain (Base -> Expression -> Source -> Schedule -> Fetch -> Action -> Pipeline -> ReqonParser)
+ * exports:
+ *   - ReqonParser - top-level parser for .vague files
+ * related:
+ *   - ./parser.ts - ReqonParser implementation
+ *   - ./base.ts - token manipulation utilities
+ *   - ../lexer/index.ts - tokenization
+ * ---
  */
 export { ReqonParser } from './parser.js';
 export { ReqonExpressionParser } from './expressions.js';

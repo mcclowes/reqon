@@ -1,3 +1,19 @@
+/**
+ * ---
+ * purpose: Expression evaluator - evaluates Vague/Reqon expressions at runtime
+ * inputs:
+ *   - Expression AST node (literals, identifiers, binary ops, function calls)
+ *   - ExecutionContext with variables, response, stores
+ *   - Optional current record for iteration contexts
+ * outputs:
+ *   - Evaluated value (any JSON-compatible type)
+ * related:
+ *   - ./context.ts - provides variable bindings
+ *   - ./executor.ts - calls evaluate() for step expressions
+ *   - ../parser/expressions.ts - IsExpression, ObjectLiteralExpression types
+ * ---
+ */
+
 import type { Expression } from 'vague-lang';
 import type { ExecutionContext } from './context.js';
 import { getVariable } from './context.js';
@@ -24,7 +40,11 @@ import { EvaluatorError, UnsupportedOperationError } from '../errors/index.js';
  * // Evaluate with current record context
  * const result = evaluate(expr, ctx, { id: 1, name: 'test' });
  */
-export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpression, ctx: ExecutionContext, current?: unknown): unknown {
+export function evaluate(
+  expr: Expression | IsExpression | ObjectLiteralExpression,
+  ctx: ExecutionContext,
+  current?: unknown
+): unknown {
   // Handle IsExpression before the switch (custom Reqon type, not in vague-lang Expression union)
   if (expr.type === 'IsExpression') {
     const isExpr = expr as IsExpression;
@@ -253,10 +273,9 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
     }
 
     default:
-      throw new EvaluatorError(
-        `Cannot evaluate expression type: ${(expr as Expression).type}`,
-        { expression: (expr as Expression).type }
-      );
+      throw new EvaluatorError(`Cannot evaluate expression type: ${(expr as Expression).type}`, {
+        expression: (expr as Expression).type,
+      });
   }
 }
 
@@ -268,7 +287,11 @@ export function evaluate(expr: Expression | IsExpression | ObjectLiteralExpressi
  * @param current - Optional current record for iteration contexts
  * @returns The string representation of the evaluated value
  */
-export function evaluateToString(expr: Expression, ctx: ExecutionContext, current?: unknown): string {
+export function evaluateToString(
+  expr: Expression,
+  ctx: ExecutionContext,
+  current?: unknown
+): string {
   const value = evaluate(expr, ctx, current);
   return String(value ?? '');
 }
@@ -333,10 +356,9 @@ function toNumber(value: unknown, operator: string): number {
       { expression: operator }
     );
   }
-  throw new EvaluatorError(
-    `Cannot perform '${operator}' on ${typeof value} (expected number)`,
-    { expression: operator }
-  );
+  throw new EvaluatorError(`Cannot perform '${operator}' on ${typeof value} (expected number)`, {
+    expression: operator,
+  });
 }
 
 /**

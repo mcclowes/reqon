@@ -144,10 +144,11 @@ describe('FetchHandler', () => {
       const handler = new FetchHandler(deps);
       await handler.execute(step);
 
-      expect(mockClient.request).toHaveBeenCalledWith(
-        expect.anything(),
-        { maxAttempts: 3, backoff: 'exponential', initialDelay: 1000 }
-      );
+      expect(mockClient.request).toHaveBeenCalledWith(expect.anything(), {
+        maxAttempts: 3,
+        backoff: 'exponential',
+        initialDelay: 1000,
+      });
     });
   });
 
@@ -166,7 +167,10 @@ describe('FetchHandler', () => {
       const result = await handler.execute(step);
 
       expect(mockClient.request).not.toHaveBeenCalled();
-      expect(result.data).toEqual({ _dryRun: true, _message: 'No OAS schema available for mock generation' });
+      expect(result.data).toEqual({
+        _dryRun: true,
+        _message: 'No OAS schema available for mock generation',
+      });
       expect(deps.log).toHaveBeenCalledWith('(dry run - skipping actual request)');
     });
   });
@@ -236,9 +240,7 @@ describe('FetchHandler', () => {
       };
 
       const handler = new FetchHandler(deps);
-      await expect(handler.execute(step)).rejects.toThrow(
-        "Source 'api' does not have an OAS spec"
-      );
+      await expect(handler.execute(step)).rejects.toThrow("Source 'api' does not have an OAS spec");
     });
   });
 
@@ -336,6 +338,58 @@ describe('FetchHandler', () => {
       expect(mockClient.request).toHaveBeenCalledWith(
         expect.objectContaining({
           query: { from: '2024-06-01T00:00:00Z' },
+        }),
+        undefined
+      );
+    });
+
+    it('adds since as header when header option specified', async () => {
+      mockSyncStore.getLastSync = vi.fn(async () => new Date('2024-01-15T10:00:00Z'));
+
+      const step: FetchStep = {
+        type: 'FetchStep',
+        source: 'api',
+        method: 'GET',
+        path: { type: 'Literal', value: '/events', dataType: 'string' } as Expression,
+        since: {
+          type: 'lastSync',
+          header: 'If-Modified-Since',
+          format: 'iso',
+        },
+      };
+
+      const handler = new FetchHandler(deps);
+      await handler.execute(step);
+
+      expect(mockClient.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          headers: { 'If-Modified-Since': '2024-01-15T10:00:00.000Z' },
+        }),
+        undefined
+      );
+    });
+
+    it('does not add query param when using header option', async () => {
+      mockSyncStore.getLastSync = vi.fn(async () => new Date('2024-01-15T10:00:00Z'));
+
+      const step: FetchStep = {
+        type: 'FetchStep',
+        source: 'api',
+        method: 'GET',
+        path: { type: 'Literal', value: '/events', dataType: 'string' } as Expression,
+        since: {
+          type: 'lastSync',
+          header: 'If-Modified-Since',
+        },
+      };
+
+      const handler = new FetchHandler(deps);
+      await handler.execute(step);
+
+      expect(mockClient.request).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: undefined,
+          headers: { 'If-Modified-Since': expect.any(String) },
         }),
         undefined
       );

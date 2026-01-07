@@ -1,3 +1,18 @@
+/**
+ * ---
+ * purpose: Main library entry point - exports all public APIs
+ * exports:
+ *   - parse, execute, fromFile, fromPath, reqon - convenience functions
+ *   - ReqonLexer, ReqonParser - parsing infrastructure
+ *   - MissionExecutor - runtime execution
+ *   - Store adapters, Scheduler, Sync, Webhook, Observability
+ * related:
+ *   - ./cli.ts - CLI entry point using these exports
+ *   - ./plugin.ts - Vague plugin registration
+ *   - ./interpreter/executor.ts - core execution logic
+ * ---
+ */
+
 export { ReqonLexer, ReqonTokenType, type ReqonToken } from './lexer/index.js';
 export { reqonPlugin, registerReqonPlugin } from './plugin.js';
 export { ReqonParser } from './parser/index.js';
@@ -212,10 +227,7 @@ export async function fromPath(
 }
 
 // Tagged template literal for inline missions
-export function reqon(
-  strings: TemplateStringsArray,
-  ...values: unknown[]
-): ReqonProgram {
+export function reqon(strings: TemplateStringsArray, ...values: unknown[]): ReqonProgram {
   let source = strings[0];
   for (let i = 0; i < values.length; i++) {
     source += String(values[i]) + strings[i + 1];
