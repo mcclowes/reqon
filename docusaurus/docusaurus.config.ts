@@ -11,7 +11,7 @@ const config: Config = {
     v4: true,
   },
 
-  url: 'https://reqon.dev',
+  url: 'https://reqon.mcclowes.com',
   baseUrl: '/',
 
   organizationName: 'mcclowes',
