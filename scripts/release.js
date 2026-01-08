@@ -102,7 +102,7 @@ function checkBranch() {
 
 function tagExists(tag) {
   try {
-    exec(`git rev-parse ${tag}`, { silent: true, ignoreError: true, allowInDryRun: true });
+    execSync(`git rev-parse ${tag}`, { cwd: rootDir, stdio: 'pipe' });
     return true;
   } catch {
     return false;
