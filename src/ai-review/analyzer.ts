@@ -4,6 +4,7 @@
 
 import { AnthropicClient } from './anthropic-client.js';
 import { VagueDocFetcher, fetchReqonContext } from './doc-fetcher.js';
+import { ReviewStateStore } from './state.js';
 import type {
   AIReviewConfig,
   VagueDocumentation,
@@ -14,10 +15,17 @@ import type {
   SuggestedAction,
 } from './types.js';
 
+export interface ChangeCheckResult {
+  hasChanges: boolean;
+  currentCommit: string;
+  lastReviewedCommit: string | null;
+}
+
 export class DocumentationAnalyzer {
   private config: Required<AIReviewConfig>;
   private anthropicClient: AnthropicClient;
   private docFetcher: VagueDocFetcher;
+  private stateStore: ReviewStateStore;
 
   constructor(config: AIReviewConfig = {}) {
     // Resolve config with defaults
@@ -46,6 +54,30 @@ export class DocumentationAnalyzer {
       token: this.config.githubToken,
       verbose: this.config.verbose,
     });
+
+    this.stateStore = new ReviewStateStore(`${this.config.outputDir}/state.json`);
+  }
+
+  /**
+   * Check if there are changes in Vague since the last review
+   */
+  async checkForChanges(): Promise<ChangeCheckResult> {
+    const lastReviewedCommit = await this.stateStore.getLastReviewedCommit();
+    const currentCommit = await this.docFetcher.getLatestCommitSha();
+
+    const hasChanges = lastReviewedCommit === null || currentCommit !== lastReviewedCommit;
+
+    if (this.config.verbose) {
+      console.log(`Current Vague commit: ${currentCommit}`);
+      console.log(`Last reviewed commit: ${lastReviewedCommit ?? 'none'}`);
+      console.log(`Changes detected: ${hasChanges}`);
+    }
+
+    return {
+      hasChanges,
+      currentCommit,
+      lastReviewedCommit,
+    };
   }
 
   /**
@@ -85,6 +117,13 @@ export class DocumentationAnalyzer {
 
     // Parse the AI response
     const result = this.parseAnalysisResponse(analysisResponse, vagueDoc, reqonContext);
+
+    // Update state to track this review
+    await this.stateStore.updateAfterReview(
+      vagueDoc.commitSha,
+      String(vagueDoc.packageJson?.version ?? 'unknown'),
+      result.changesNeeded
+    );
 
     return {
       result,

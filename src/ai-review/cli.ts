@@ -13,6 +13,8 @@
  *   --format <fmt>    Output format: console, json, markdown
  *   --list            List previous reports
  *   --show <file>     Show a specific report
+ *   --check-only      Only check for changes, don't run review
+ *   --force           Run review even if no changes detected
  *   --help            Show help
  */
 
@@ -43,15 +45,29 @@ Options:
   --list              List previous reports
   --show <file>       Show a specific previous report
   --save              Save the report to disk
+  --check-only        Only check if Vague has changed, don't run AI review
+  --force             Run review even if no changes detected since last review
   --help, -h          Show this help message
 
 Environment Variables:
-  ANTHROPIC_API_KEY   Required. Your Anthropic API key
+  ANTHROPIC_API_KEY   Required (except for --check-only). Your Anthropic API key
   GITHUB_TOKEN        Optional. GitHub token for higher rate limits
 
+Exit Codes:
+  0   No changes needed (or no changes detected with --check-only)
+  1   Changes needed (non-critical) or changes detected with --check-only
+  2   Critical changes needed
+  3   Skipped (no changes since last review)
+
 Examples:
+  # Check if Vague has changed (no API key needed)
+  npx tsx src/ai-review/cli.ts --check-only
+
   # Run a review and show results
   ANTHROPIC_API_KEY=sk-... npx tsx src/ai-review/cli.ts --verbose
+
+  # Force review even if no changes
+  ANTHROPIC_API_KEY=sk-... npx tsx src/ai-review/cli.ts --force
 
   # Run and save report
   ANTHROPIC_API_KEY=sk-... npx tsx src/ai-review/cli.ts --save
@@ -68,6 +84,8 @@ Examples:
   const verbose = args.includes('--verbose');
   const save = args.includes('--save');
   const list = args.includes('--list');
+  const checkOnly = args.includes('--check-only');
+  const force = args.includes('--force');
 
   // Parse output directory
   let outputDir = '.reqon-data/ai-reviews';
@@ -128,10 +146,53 @@ Examples:
     return;
   }
 
-  // Check for API key
+  // For check-only, we don't need API key
+  if (checkOnly) {
+    const config: AIReviewConfig = {
+      outputDir,
+      verbose,
+      apiKey: 'not-needed-for-check', // Won't be used
+    };
+
+    try {
+      // Create analyzer without API key validation for check-only
+      const { VagueDocFetcher } = await import('./doc-fetcher.js');
+      const { ReviewStateStore } = await import('./state.js');
+
+      const docFetcher = new VagueDocFetcher({
+        token: process.env.GITHUB_TOKEN,
+        verbose,
+      });
+      const stateStore = new ReviewStateStore(`${outputDir}/state.json`);
+
+      const lastReviewedCommit = await stateStore.getLastReviewedCommit();
+      const currentCommit = await docFetcher.getLatestCommitSha();
+      const hasChanges = lastReviewedCommit === null || currentCommit !== lastReviewedCommit;
+
+      if (format === 'json') {
+        console.log(JSON.stringify({
+          hasChanges,
+          currentCommit,
+          lastReviewedCommit,
+        }, null, 2));
+      } else {
+        console.log(`Current Vague commit:      ${currentCommit}`);
+        console.log(`Last reviewed commit:      ${lastReviewedCommit ?? 'none'}`);
+        console.log(`Changes since last review: ${hasChanges ? 'YES' : 'NO'}`);
+      }
+
+      process.exit(hasChanges ? 1 : 0);
+    } catch (error) {
+      console.error(`Error checking for changes: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  }
+
+  // Check for API key (required for full review)
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('Error: ANTHROPIC_API_KEY environment variable is required');
     console.error('Set it with: export ANTHROPIC_API_KEY=your-key');
+    console.error('(Use --check-only to check for changes without an API key)');
     process.exit(1);
   }
 
@@ -146,7 +207,23 @@ Examples:
     const analyzer = new DocumentationAnalyzer(config);
     const reporter = new ReviewReporter({ outputDir, verbose });
 
-    console.log('Starting AI documentation review...');
+    // Check for changes first (unless --force)
+    if (!force) {
+      console.log('Checking for changes in Vague...');
+      const changeCheck = await analyzer.checkForChanges();
+
+      if (!changeCheck.hasChanges) {
+        console.log(`\n✓ No changes detected in Vague since last review.`);
+        console.log(`  Last reviewed commit: ${changeCheck.lastReviewedCommit}`);
+        console.log(`  Current commit: ${changeCheck.currentCommit}`);
+        console.log('\nUse --force to run review anyway.');
+        process.exit(3); // Exit code 3 = skipped
+      }
+
+      console.log(`Changes detected (${changeCheck.lastReviewedCommit?.slice(0, 7) ?? 'none'} → ${changeCheck.currentCommit.slice(0, 7)})`);
+    }
+
+    console.log('\nStarting AI documentation review...');
     console.log('This may take a minute...\n');
 
     const report = await analyzer.review(process.cwd());

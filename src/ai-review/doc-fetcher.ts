@@ -109,11 +109,19 @@ export class VagueDocFetcher {
   /**
    * Get the latest commit SHA from the default branch
    */
-  private async getLatestCommitSha(): Promise<string> {
+  async getLatestCommitSha(): Promise<string> {
     const response = await this.githubRequest<GitHubRef>(
       `/repos/${this.repo}/git/ref/heads/main`
     );
     return response.object.sha;
+  }
+
+  /**
+   * Check if there are changes since a given commit SHA
+   */
+  async hasChangesSince(lastReviewedSha: string): Promise<boolean> {
+    const currentSha = await this.getLatestCommitSha();
+    return currentSha !== lastReviewedSha;
   }
 
   /**
