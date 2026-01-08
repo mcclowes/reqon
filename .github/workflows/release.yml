@@ -53,15 +53,13 @@ jobs:
           fi
           echo "✓ Changelog contains entry for $TAG_VERSION"
 
-      - name: Publish to npm
+      - name: Publish to npm with provenance
         run: |
           if [[ "$GITHUB_REF" == *"-alpha"* ]] || [[ "$GITHUB_REF" == *"-beta"* ]] || [[ "$GITHUB_REF" == *"-rc"* ]]; then
             npm publish --provenance --access public --tag next
           else
             npm publish --provenance --access public
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
