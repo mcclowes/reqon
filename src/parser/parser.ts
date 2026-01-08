@@ -26,6 +26,8 @@ import type {
   TransformDefinition,
   PipelineDefinition,
   ScheduleDefinition,
+  CheckpointConfig,
+  TraceConfig,
 } from '../ast/nodes.js';
 import { PipelineParser } from './pipeline-parser.js';
 
@@ -83,6 +85,8 @@ export class ReqonParser extends PipelineParser {
     const actions: ActionDefinition[] = [];
     let pipeline: PipelineDefinition | undefined;
     let schedule: ScheduleDefinition | undefined;
+    let checkpoint: CheckpointConfig | undefined;
+    let trace: TraceConfig | undefined;
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
       if (this.check(ReqonTokenType.SOURCE)) {
@@ -99,6 +103,10 @@ export class ReqonParser extends PipelineParser {
         pipeline = this.parsePipeline();
       } else if (this.check(ReqonTokenType.SCHEDULE)) {
         schedule = this.parseSchedule();
+      } else if (this.check(ReqonTokenType.CHECKPOINT)) {
+        checkpoint = this.parseCheckpointConfig();
+      } else if (this.check(ReqonTokenType.TRACE)) {
+        trace = this.parseTraceConfig();
       } else {
         throw this.error(`Unexpected token in mission: ${this.peek().value}`);
       }
@@ -130,6 +138,8 @@ export class ReqonParser extends PipelineParser {
       type: 'MissionDefinition',
       name,
       schedule,
+      checkpoint,
+      trace,
       sources,
       stores,
       schemas,
@@ -137,6 +147,50 @@ export class ReqonParser extends PipelineParser {
       actions,
       pipeline,
     };
+  }
+
+  /**
+   * Parse checkpoint configuration: checkpoint: afterStep | onFailure
+   */
+  private parseCheckpointConfig(): CheckpointConfig {
+    this.consume(ReqonTokenType.CHECKPOINT, "Expected 'checkpoint'");
+    this.consume(TokenType.COLON, "Expected ':'");
+
+    let mode: CheckpointConfig['mode'];
+
+    // Check for keyword token (afterStep, onFailure)
+    if (this.check(ReqonTokenType.AFTER_STEP)) {
+      this.advance();
+      mode = 'after-step';
+    } else if (this.check(ReqonTokenType.ON_FAILURE)) {
+      this.advance();
+      mode = 'on-failure';
+    } else {
+      throw this.error("Expected 'afterStep' or 'onFailure'");
+    }
+
+    return { type: 'CheckpointConfig', mode };
+  }
+
+  /**
+   * Parse trace configuration: trace: full | minimal
+   */
+  private parseTraceConfig(): TraceConfig {
+    this.consume(ReqonTokenType.TRACE, "Expected 'trace'");
+    this.consume(TokenType.COLON, "Expected ':'");
+
+    let mode: TraceConfig['mode'];
+    if (this.check(ReqonTokenType.FULL)) {
+      this.advance();
+      mode = 'full';
+    } else if (this.peek().value === 'minimal') {
+      this.advance();
+      mode = 'minimal';
+    } else {
+      throw this.error("Expected 'full' or 'minimal'");
+    }
+
+    return { type: 'TraceConfig', mode };
   }
 
   /**

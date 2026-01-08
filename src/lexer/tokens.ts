@@ -88,6 +88,17 @@ export enum ReqonTokenType {
   EXPECTED_EVENTS = 'EXPECTED_EVENTS',
   EVENT_FILTER = 'EVENT_FILTER',
   STORAGE = 'STORAGE',
+
+  // Durability features
+  CHECKPOINT = 'CHECKPOINT',
+  TRACE = 'TRACE',
+  PAUSE = 'PAUSE',
+  PERSIST = 'PERSIST',
+  DURATION = 'DURATION',
+  RESUME_ON = 'RESUME_ON',
+  AFTER_STEP = 'AFTER_STEP',
+  ON_FAILURE = 'ON_FAILURE',
+  FULL = 'FULL',
 }
 
 // Combined token type
@@ -185,6 +196,17 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   expectedEvents: ReqonTokenType.EXPECTED_EVENTS,
   eventFilter: ReqonTokenType.EVENT_FILTER,
   storage: ReqonTokenType.STORAGE,
+
+  // Durability features
+  checkpoint: ReqonTokenType.CHECKPOINT,
+  trace: ReqonTokenType.TRACE,
+  pause: ReqonTokenType.PAUSE,
+  persist: ReqonTokenType.PERSIST,
+  duration: ReqonTokenType.DURATION,
+  resumeOn: ReqonTokenType.RESUME_ON,
+  afterStep: ReqonTokenType.AFTER_STEP,
+  onFailure: ReqonTokenType.ON_FAILURE,
+  full: ReqonTokenType.FULL,
 };
 
 // ReqonToken is now an alias for Vague's Token

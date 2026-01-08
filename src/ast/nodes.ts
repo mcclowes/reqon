@@ -113,11 +113,35 @@ export interface ScheduleRetryConfig {
   delaySeconds: number;
 }
 
+// Checkpoint configuration for durable execution
+// checkpoint: after-step | on-failure
+export interface CheckpointConfig {
+  type: 'CheckpointConfig';
+  /** When to create checkpoints */
+  mode: 'after-step' | 'on-failure';
+  /** Optional: custom store for checkpoint data (defaults to FileStore) */
+  store?: string;
+}
+
+// Trace configuration for time-travel debugging
+// trace: full
+export interface TraceConfig {
+  type: 'TraceConfig';
+  /** Trace mode - 'full' captures state at each step */
+  mode: 'full' | 'minimal';
+  /** Optional: custom store for trace data */
+  store?: string;
+}
+
 // mission SyncXeroInvoices { ... }
 export interface MissionDefinition {
   type: 'MissionDefinition';
   name: string;
   schedule?: ScheduleDefinition;
+  /** Checkpoint configuration for durable execution */
+  checkpoint?: CheckpointConfig;
+  /** Trace configuration for time-travel debugging */
+  trace?: TraceConfig;
   sources: SourceDefinition[];
   stores: StoreDefinition[];
   schemas: SchemaDefinition[];
@@ -142,7 +166,8 @@ export type ActionStep =
   | MatchStep
   | LetStep
   | ApplyStep
-  | WebhookStep;
+  | WebhookStep
+  | PauseStep;
 
 // let myVar = expression
 export interface LetStep {
@@ -175,6 +200,22 @@ export interface WebhookStorageConfig {
   /** Expression for extracting key from webhook payload */
   key?: Expression;
 }
+
+// pause { duration: "7d", persist: FileStore, resume-on: webhook "/approved" | timeout }
+// Resource-free long pause that persists state and releases resources
+export interface PauseStep {
+  type: 'PauseStep';
+  /** Duration to pause (e.g., "7d", "1h", "30m", 86400000) */
+  duration: string | number;
+  /** Store to persist pause state (defaults to FileStore) */
+  persist?: string;
+  /** Resume triggers - timeout (default) and/or webhook */
+  resumeOn?: PauseResumeTrigger[];
+}
+
+export type PauseResumeTrigger =
+  | { type: 'timeout' }
+  | { type: 'webhook'; path: string; eventFilter?: Expression };
 
 // Flow control directives for match arms
 export type FlowDirective =

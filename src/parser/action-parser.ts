@@ -2,7 +2,12 @@
  * Action and step parsing
  * Handles parsing of action definitions and all step types.
  */
-import { TokenType, type Expression, type FieldDefinition, type SchemaDefinition } from 'vague-lang';
+import {
+  TokenType,
+  type Expression,
+  type FieldDefinition,
+  type SchemaDefinition,
+} from 'vague-lang';
 import { ReqonTokenType } from '../lexer/tokens.js';
 import type {
   ActionDefinition,
@@ -20,6 +25,8 @@ import type {
   TransformVariant,
   WebhookStep,
   WebhookStorageConfig,
+  PauseStep,
+  PauseResumeTrigger,
   StoreDefinition,
   FieldMapping,
   ValidationConstraint,
@@ -102,6 +109,7 @@ export class ActionParser extends FetchParser {
     if (this.check(TokenType.MATCH)) return this.parseMatchStep();
     if (this.check(TokenType.LET)) return this.parseLetStep();
     if (this.check(ReqonTokenType.WAIT)) return this.parseWaitStep();
+    if (this.check(ReqonTokenType.PAUSE)) return this.parsePauseStep();
 
     throw this.error(`Expected action step, got: ${this.peek().value}`);
   }
@@ -293,7 +301,7 @@ export class ActionParser extends FetchParser {
       const condition = this.parseExpression();
 
       let message: string | undefined;
-      let severity: ValidationConstraint['severity'] = 'error';
+      const severity: ValidationConstraint['severity'] = 'error';
 
       constraints.push({ type: 'ValidationConstraint', condition, message, severity });
       this.match(TokenType.COMMA);
@@ -310,11 +318,8 @@ export class ActionParser extends FetchParser {
   protected parseStoreStep(): StoreStep {
     this.consume(ReqonTokenType.STORE, "Expected 'store'");
 
-    // Check for 'each' keyword
-    let isEach = false;
-    if (this.match(ReqonTokenType.EACH)) {
-      isEach = true;
-    }
+    // Check for 'each' keyword (consume but not used yet - reserved for future)
+    this.match(ReqonTokenType.EACH);
 
     const source = this.parseExpression();
     this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
@@ -511,13 +516,19 @@ export class ActionParser extends FetchParser {
 
       switch (key) {
         case 'timeout':
-          step.timeout = parseInt(this.consume(TokenType.NUMBER, 'Expected timeout value').value, 10);
+          step.timeout = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected timeout value').value,
+            10
+          );
           break;
         case 'path':
           step.path = this.consume(TokenType.STRING, 'Expected path string').value;
           break;
         case 'expectedEvents':
-          step.expectedEvents = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          step.expectedEvents = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
           break;
         case 'eventFilter':
           step.eventFilter = this.parseExpression();
@@ -609,6 +620,106 @@ export class ActionParser extends FetchParser {
   }
 
   /**
+   * Parse pause step: pause { duration: "7d", persist: FileStore, resume-on: timeout | webhook "/path" }
+   */
+  protected parsePauseStep(): PauseStep {
+    this.consume(ReqonTokenType.PAUSE, "Expected 'pause'");
+    this.consume(TokenType.LBRACE, "Expected '{'");
+
+    let duration: string | number | undefined;
+    let persist: string | undefined;
+    let resumeOn: PauseResumeTrigger[] | undefined;
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      const key = this.parsePauseOptionKey();
+      this.consume(TokenType.COLON, "Expected ':'");
+
+      switch (key) {
+        case 'duration':
+          if (this.check(TokenType.STRING)) {
+            duration = this.advance().value;
+          } else if (this.check(TokenType.NUMBER)) {
+            duration = parseInt(this.advance().value, 10);
+          } else {
+            throw this.error('Expected duration string or number');
+          }
+          break;
+        case 'persist':
+          persist = this.consume(TokenType.IDENTIFIER, 'Expected store name').value;
+          break;
+        case 'resumeOn':
+          resumeOn = this.parsePauseResumeTriggers();
+          break;
+        default:
+          throw this.error(`Unknown pause option: ${key}`);
+      }
+
+      this.match(TokenType.COMMA);
+    }
+
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    if (duration === undefined) {
+      throw this.error('Pause step requires a duration');
+    }
+
+    return { type: 'PauseStep', duration, persist, resumeOn };
+  }
+
+  /**
+   * Parse pause option key, handling keyword tokens
+   */
+  private parsePauseOptionKey(): string {
+    if (this.check(ReqonTokenType.DURATION)) {
+      this.advance();
+      return 'duration';
+    } else if (this.check(ReqonTokenType.PERSIST)) {
+      this.advance();
+      return 'persist';
+    } else if (this.check(ReqonTokenType.RESUME_ON)) {
+      this.advance();
+      return 'resumeOn';
+    }
+    return this.consume(TokenType.IDENTIFIER, 'Expected option key').value;
+  }
+
+  /**
+   * Parse pause resume triggers: timeout | webhook "/path"
+   */
+  private parsePauseResumeTriggers(): PauseResumeTrigger[] {
+    const triggers: PauseResumeTrigger[] = [];
+
+    do {
+      if (this.check(ReqonTokenType.TIMEOUT)) {
+        this.advance();
+        triggers.push({ type: 'timeout' });
+      } else if (this.check(ReqonTokenType.WAIT)) {
+        // 'wait' keyword for webhook trigger (reusing wait keyword)
+        this.advance();
+        const path = this.consume(TokenType.STRING, 'Expected webhook path').value;
+        let eventFilter: Expression | undefined;
+        if (this.match(TokenType.WHERE)) {
+          eventFilter = this.parseExpression();
+        }
+        triggers.push({ type: 'webhook', path, eventFilter });
+      } else if (this.peek().value === 'webhook') {
+        // Allow 'webhook' as an identifier too
+        this.advance();
+        const path = this.consume(TokenType.STRING, 'Expected webhook path').value;
+        let eventFilter: Expression | undefined;
+        if (this.match(TokenType.WHERE)) {
+          eventFilter = this.parseExpression();
+        }
+        triggers.push({ type: 'webhook', path, eventFilter });
+      } else {
+        throw this.error('Expected timeout or webhook trigger');
+      }
+    } while (this.match(TokenType.PIPE)); // Allow: timeout | webhook "/path"
+
+    return triggers;
+  }
+
+  /**
    * Parse a schema definition
    */
   parseSchema(): SchemaDefinition {
@@ -648,7 +759,10 @@ export class ActionParser extends FetchParser {
     return {
       type: 'FieldDefinition',
       name,
-      fieldType: { type: 'PrimitiveType', name: typeName as 'string' | 'int' | 'decimal' | 'date' | 'boolean' },
+      fieldType: {
+        type: 'PrimitiveType',
+        name: typeName as 'string' | 'int' | 'decimal' | 'date' | 'boolean',
+      },
     };
   }
 }

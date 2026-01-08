@@ -73,7 +73,16 @@ export interface StageCompletePayload {
 // Step Events
 // ============================================================================
 
-export type StepType = 'fetch' | 'for' | 'map' | 'validate' | 'store' | 'match' | 'let' | 'webhook';
+export type StepType =
+  | 'fetch'
+  | 'for'
+  | 'map'
+  | 'validate'
+  | 'store'
+  | 'match'
+  | 'let'
+  | 'webhook'
+  | 'pause';
 
 export interface StepStartPayload {
   actionName: string;

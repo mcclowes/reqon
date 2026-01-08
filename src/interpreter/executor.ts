@@ -30,6 +30,7 @@ import type {
   ApplyStep,
   TransformDefinition,
   WebhookStep,
+  PauseStep,
   PipelineStage,
 } from '../ast/nodes.js';
 import { isParallelStage } from '../ast/nodes.js';
@@ -59,6 +60,7 @@ import {
   MatchHandler,
   ApplyHandler,
   WebhookHandler,
+  PauseHandler,
   SkipSignal,
   AbortError,
   RetrySignal,
@@ -77,6 +79,18 @@ import type {
 } from '../debug/index.js';
 import type { ControlServer } from '../control/index.js';
 import { PauseSignal } from './signals.js';
+import {
+  type TraceStore,
+  type TraceRecorder,
+  FileTraceStore,
+  createTraceRecorder,
+} from '../trace/index.js';
+import {
+  type PauseManager,
+  type PauseStore,
+  FilePauseStore,
+  createPauseManager,
+} from '../pause/index.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -88,6 +102,10 @@ export interface ExecutionResult {
   executionId?: string;
   /** Execution state (if persistence enabled) */
   state?: ExecutionState;
+  /** Trace ID if tracing was enabled */
+  traceId?: string;
+  /** Pause ID if execution was paused */
+  pauseId?: string;
 }
 
 export interface ExecutionError {
@@ -187,6 +205,12 @@ export interface ExecutorConfig {
   debugController?: DebugController;
   // Control server for pause/resume and status queries
   controlServer?: ControlServer;
+  // Custom trace store for time-travel debugging
+  traceStore?: TraceStore;
+  // Custom pause store for long pauses
+  pauseStore?: PauseStore;
+  // Custom pause manager
+  pauseManager?: PauseManager;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -210,6 +234,12 @@ export class MissionExecutor {
   private logger?: StructuredLogger;
   private stepIndex = 0;
   private debugController?: DebugController;
+  private traceRecorder?: TraceRecorder;
+  private traceStore?: TraceStore;
+  private pauseManager?: PauseManager;
+  private pauseStore?: PauseStore;
+  private currentStageIndex = 0;
+  private currentPauseId?: string;
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
@@ -327,6 +357,22 @@ export class MissionExecutor {
 
     // Initialize debug controller if provided
     this.debugController = config.debugController;
+
+    // Initialize trace store
+    this.traceStore =
+      config.traceStore ?? new FileTraceStore(`${config.dataDir ?? '.reqon-data'}/traces`);
+
+    // Initialize pause store and manager
+    this.pauseStore =
+      config.pauseStore ?? new FilePauseStore(`${config.dataDir ?? '.reqon-data'}/pauses`);
+
+    this.pauseManager =
+      config.pauseManager ??
+      createPauseManager({
+        store: this.pauseStore,
+        webhookServer: config.webhookServer,
+        log: (msg) => this.log(msg),
+      });
   }
 
   async execute(program: ReqonProgram): Promise<ExecutionResult> {
@@ -350,6 +396,19 @@ export class MissionExecutor {
     // Initialize or resume execution state
     await this.initializeExecutionState(mission);
 
+    // Initialize trace recorder if tracing is enabled
+    if (mission.trace && this.traceStore && this.executionState) {
+      this.traceRecorder = createTraceRecorder({
+        executionId: this.executionState.id,
+        mission: mission.name,
+        mode: mission.trace.mode,
+        store: this.traceStore,
+        metadata: this.config.metadata,
+        streaming: true, // Stream snapshots as they happen
+      });
+      this.log(`Tracing enabled (mode: ${mission.trace.mode})`);
+    }
+
     try {
       await this.executeMission(mission);
 
@@ -364,7 +423,8 @@ export class MissionExecutor {
       // PauseSignal is not an error - execution was intentionally paused
       if (error instanceof PauseSignal) {
         this.log('Execution paused');
-        // State is already set to 'paused' in checkPause()
+        this.currentPauseId = error.pauseId;
+        // State is already set to 'paused' in checkPause() or pause handler
         // Don't record as error, just let execution end
       } else {
         this.errors.push({
@@ -434,6 +494,11 @@ export class MissionExecutor {
       });
     }
 
+    // Finalize trace if enabled
+    if (this.traceRecorder) {
+      await this.traceRecorder.finalize(success);
+    }
+
     return {
       success,
       duration,
@@ -442,6 +507,8 @@ export class MissionExecutor {
       stores: this.ctx.stores,
       executionId: this.executionState?.id,
       state: this.executionState,
+      traceId: this.traceRecorder ? this.executionState?.id : undefined,
+      pauseId: this.currentPauseId,
     };
   }
 
@@ -600,6 +667,9 @@ export class MissionExecutor {
           continue;
         }
       }
+
+      // Track current stage index for pause handler
+      this.currentStageIndex = i;
 
       // Execute stage (parallel or sequential)
       if (isParallelStage(stage)) {
@@ -864,7 +934,12 @@ export class MissionExecutor {
       stepType,
     });
 
-    const _stepStartTime = Date.now(); // Reserved for future step duration tracking
+    const stepStartTime = Date.now();
+
+    // Record trace snapshot before step
+    if (this.traceRecorder) {
+      await this.traceRecorder.recordBeforeStep(actionName, currentStepIndex, stepType, execCtx);
+    }
 
     // Debug pause point - before executing step
     if (this.debugController) {
@@ -915,8 +990,24 @@ export class MissionExecutor {
         case 'WebhookStep':
           await this.executeWebhook(step, execCtx);
           break;
+        case 'PauseStep':
+          await this.executePause(step, actionName, currentStepIndex, execCtx);
+          break;
         default:
           throw new Error(`Unknown step type: ${(step as ActionStep).type}`);
+      }
+
+      const stepDuration = Date.now() - stepStartTime;
+
+      // Record trace snapshot after step
+      if (this.traceRecorder) {
+        await this.traceRecorder.recordAfterStep(
+          actionName,
+          currentStepIndex,
+          stepType,
+          execCtx,
+          stepDuration
+        );
       }
 
       // Emit step.complete event (success)
@@ -932,7 +1023,8 @@ export class MissionExecutor {
         error instanceof SkipSignal ||
         error instanceof RetrySignal ||
         error instanceof JumpSignal ||
-        error instanceof QueueSignal
+        error instanceof QueueSignal ||
+        error instanceof PauseSignal
       ) {
         // Emit step.complete for flow control (not an error)
         this.eventEmitter?.emit('step.complete', {
@@ -1112,6 +1204,40 @@ export class MissionExecutor {
     await handler.execute(step);
   }
 
+  private async executePause(
+    step: PauseStep,
+    actionName: string,
+    stepIndex: number,
+    ctx: ExecutionContext
+  ): Promise<void> {
+    if (!this.pauseManager) {
+      throw new Error('Pause manager not configured');
+    }
+
+    // Mark execution state as paused before creating pause
+    if (this.executionState) {
+      this.executionState.status = 'paused';
+      await this.saveExecutionState();
+    }
+
+    const handler = new PauseHandler({
+      ctx,
+      log: (msg) => this.log(msg),
+      emit: this.eventEmitter
+        ? (type, payload) => this.eventEmitter!.emit(type, payload)
+        : undefined,
+      pauseManager: this.pauseManager,
+      executionId: this.executionState?.id ?? 'ephemeral',
+      mission: this.missionName ?? 'unknown',
+      actionName,
+      stageIndex: this.currentStageIndex,
+      stepIndex,
+    });
+
+    // This will throw PauseSignal
+    await handler.execute(step);
+  }
+
   private log(message: string): void {
     if (this.logger) {
       this.logger.info(message);
@@ -1163,6 +1289,7 @@ export class MissionExecutor {
       MatchStep: 'match',
       LetStep: 'let',
       WebhookStep: 'webhook',
+      PauseStep: 'pause',
     };
     return mapping[stepType] ?? 'fetch';
   }

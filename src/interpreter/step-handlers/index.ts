@@ -10,6 +10,7 @@ export {
   type WebhookHandlerDeps,
   type WebhookHandlerResult,
 } from './webhook-handler.js';
+export { PauseHandler, type PauseHandlerDeps, type PauseHandlerResult } from './pause-handler.js';
 
 // Export signals from the canonical location
 export {

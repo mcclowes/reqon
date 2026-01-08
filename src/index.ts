@@ -185,6 +185,51 @@ export {
   type DebugLocation,
 } from './debug/index.js';
 
+// Trace - time-travel debugging
+export {
+  FileTraceStore,
+  MemoryTraceStore,
+  TraceRecorder,
+  TraceReplayer,
+  createTraceRecorder,
+  createTraceReplayer,
+  createExecutionTrace,
+  safeClone,
+  truncateForTrace,
+  type TraceStore,
+  type TraceSnapshot,
+  type StoreSnapshot as TraceStoreSnapshot,
+  type LoopContext as TraceLoopContext,
+  type ExecutionTrace,
+  type TraceRecorderConfig,
+  type ReplaySession,
+  type ReplayStepResult,
+  type TimelineEvent,
+  type VariableChange,
+  type SnapshotDiff,
+} from './trace/index.js';
+
+// Pause - resource-free long pauses
+export {
+  FilePauseStore,
+  MemoryPauseStore,
+  PauseManager,
+  createPauseManager,
+  parseDuration,
+  formatDuration,
+  createPauseState,
+  isPauseExpired,
+  getRemainingTime,
+  getPauseSummary,
+  type PauseStore,
+  type PauseState,
+  type PauseCheckpoint,
+  type PauseResumeTriggerState,
+  type PauseManagerConfig,
+  type CreatePauseOptions,
+  type PauseStatus,
+} from './pause/index.js';
+
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { ReqonLexer } from './lexer/index.js';
