@@ -12,6 +12,14 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+_No changes yet._
+
+---
+
+## 0.3.0
+
+_Released 2025-01-08_
+
 ### Added
 
 - **Durability features**
