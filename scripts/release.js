@@ -53,25 +53,27 @@ function getPackageVersion() {
 }
 
 function validateChangelog(version) {
-  const changelog = readFileSync(join(rootDir, 'CHANGELOG.md'), 'utf-8');
+  const changelogPath = join(rootDir, 'docusaurus', 'docs', 'changelog.md');
+  const changelog = readFileSync(changelogPath, 'utf-8');
 
   // Check if the version has an entry in the changelog
-  const versionHeader = `## [${version}]`;
+  const versionHeader = `## ${version}`;
   if (!changelog.includes(versionHeader)) {
-    console.error(`\nError: CHANGELOG.md does not contain an entry for version ${version}`);
-    console.error(`Please add a section: ${versionHeader} - YYYY-MM-DD`);
+    console.error(`\nError: docusaurus/docs/changelog.md does not contain an entry for version ${version}`);
+    console.error(`Please add a section: ${versionHeader}`);
     console.error('\nExample:');
-    console.error(`${versionHeader} - ${new Date().toISOString().split('T')[0]}`);
+    console.error(`${versionHeader}`);
+    console.error(`\n_Released ${new Date().toISOString().split('T')[0]}_`);
     console.error('\n### Added');
     console.error('- Your new features here\n');
     process.exit(1);
   }
 
-  // Check the version has a date (not just [Unreleased])
-  const versionRegex = new RegExp(`## \\[${version.replace(/\./g, '\\.')}\\] - \\d{4}-\\d{2}-\\d{2}`);
+  // Check the version has a release date (not just Unreleased)
+  const versionRegex = new RegExp(`## ${version.replace(/\./g, '\\.')}[\\s\\S]*?_Released \\d{4}-\\d{2}-\\d{2}_`);
   if (!versionRegex.test(changelog)) {
-    console.error(`\nError: CHANGELOG.md entry for ${version} is missing a date`);
-    console.error(`Please update the header to: ${versionHeader} - ${new Date().toISOString().split('T')[0]}`);
+    console.error(`\nError: Changelog entry for ${version} is missing a release date`);
+    console.error(`Please add: _Released ${new Date().toISOString().split('T')[0]}_`);
     process.exit(1);
   }
 

@@ -182,6 +182,7 @@ const sidebars: SidebarsConfig = {
     },
     'examples',
     'api-reference',
+    'changelog',
   ],
 };
 
