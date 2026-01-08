@@ -53,6 +53,7 @@ export {
   type ExecutionState,
   type ExecutionStore,
   type StageState,
+  type LiveProgress,
 } from './execution/index.js';
 export {
   Scheduler,
@@ -119,6 +120,15 @@ export {
   type WebhookEvent,
   type WaitResult,
 } from './webhook/index.js';
+
+// Control server for pause/resume and status queries
+export {
+  ControlServer,
+  type ControlServerConfig,
+  type ControlServerCallbacks,
+  type StatusResponse,
+  type ControlResponse,
+} from './control/index.js';
 
 // Observability
 export {

@@ -357,6 +357,15 @@ export class FetchHandler {
 
       ctx.page++;
 
+      // Emit heartbeat after each page
+      this.deps.emit?.('fetch.heartbeat', {
+        source: sourceName,
+        path: basePath,
+        pagesProcessed: ctx.page,
+        itemsFetched: allResults.length,
+        hasMore,
+      });
+
       // Safety limit
       if (ctx.page >= MAX_PAGINATION_PAGES) {
         this.deps.log(`Warning: pagination limit (${MAX_PAGINATION_PAGES}) reached`);

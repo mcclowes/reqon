@@ -6,6 +6,9 @@ import type { ExecutionContext } from '../context.js';
 import { StepError } from '../../errors/index.js';
 import type { DebugController, DebugSnapshot, DebugLocation } from '../../debug/index.js';
 
+/** Heartbeat interval for loop iterations */
+const LOOP_HEARTBEAT_INTERVAL = 10;
+
 export interface ForHandlerDeps extends StepHandlerDeps {
   executeStep: (step: ActionStep, actionName: string, ctx: ExecutionContext) => Promise<void>;
   actionName: string;
@@ -18,6 +21,8 @@ export interface ForHandlerDeps extends StepHandlerDeps {
     ctx: ExecutionContext
   ) => DebugSnapshot;
   handleDebugCommand?: (cmd: { type: string }) => void;
+  /** Optional callback to check for pause requests (called every N iterations) */
+  checkPause?: () => Promise<void>;
 }
 
 /**
@@ -51,6 +56,19 @@ export class ForHandler implements StepHandler<ForStep> {
     for (let i = 0; i < filtered.length; i++) {
       const item = filtered[i];
 
+      // Check for pause request every N iterations
+      if (i > 0 && i % LOOP_HEARTBEAT_INTERVAL === 0) {
+        await this.deps.checkPause?.();
+
+        // Emit heartbeat every N iterations
+        this.deps.emit?.('loop.heartbeat', {
+          variable: step.variable,
+          current: i,
+          total: filtered.length,
+          processedCount,
+        });
+      }
+
       // Emit loop.iteration event
       this.deps.emit?.('loop.iteration', {
         variable: step.variable,
@@ -59,7 +77,11 @@ export class ForHandler implements StepHandler<ForStep> {
       });
 
       // Debug pause point - before each loop iteration (step-into mode)
-      if (this.deps.debugController && this.deps.captureDebugSnapshot && this.deps.handleDebugCommand) {
+      if (
+        this.deps.debugController &&
+        this.deps.captureDebugSnapshot &&
+        this.deps.handleDebugCommand
+      ) {
         const location: DebugLocation = {
           action: this.deps.actionName,
           stepIndex: -1, // Use -1 for loop iterations
@@ -119,11 +141,9 @@ export class ForHandler implements StepHandler<ForStep> {
     }
 
     if (!Array.isArray(collection)) {
-      throw new StepError(
-        'For loop collection must be an array',
-        'for',
-        { action: this.deps.actionName }
-      );
+      throw new StepError('For loop collection must be an array', 'for', {
+        action: this.deps.actionName,
+      });
     }
 
     return collection;

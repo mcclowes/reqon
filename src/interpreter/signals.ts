@@ -71,3 +71,13 @@ export class AbortError extends Error {
     this.name = 'AbortError';
   }
 }
+
+/**
+ * Signal thrown when execution is paused by external control
+ */
+export class PauseSignal extends Error {
+  constructor() {
+    super('Execution paused');
+    this.name = 'PauseSignal';
+  }
+}

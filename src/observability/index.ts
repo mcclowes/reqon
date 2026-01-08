@@ -28,12 +28,14 @@ export type {
   FetchCompletePayload,
   FetchRetryPayload,
   FetchErrorPayload,
+  FetchHeartbeatPayload,
   DataTransformPayload,
   DataValidatePayload,
   DataStorePayload,
   LoopStartPayload,
   LoopIterationPayload,
   LoopCompletePayload,
+  LoopHeartbeatPayload,
   MatchAttemptPayload,
   MatchResultPayload,
   WebhookRegisterPayload,
@@ -49,13 +51,7 @@ export type {
 export { ObservabilityEmitter, createEmitter } from './events.js';
 
 // Logger
-export type {
-  LogEntry,
-  Span,
-  LogOutput,
-  StructuredLogger,
-  CreateLoggerOptions,
-} from './logger.js';
+export type { LogEntry, Span, LogOutput, StructuredLogger, CreateLoggerOptions } from './logger.js';
 
 export {
   ConsoleOutput,

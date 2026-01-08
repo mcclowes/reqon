@@ -131,6 +131,14 @@ export interface FetchErrorPayload {
   retryable: boolean;
 }
 
+export interface FetchHeartbeatPayload {
+  source: string;
+  path: string;
+  pagesProcessed: number;
+  itemsFetched: number;
+  hasMore: boolean;
+}
+
 // ============================================================================
 // Data Flow Events
 // ============================================================================
@@ -180,6 +188,13 @@ export interface LoopCompletePayload {
   itemsProcessed: number;
   itemsSkipped: number;
   itemsFailed: number;
+}
+
+export interface LoopHeartbeatPayload {
+  variable: string;
+  current: number;
+  total: number;
+  processedCount: number;
 }
 
 // ============================================================================
@@ -292,6 +307,7 @@ export type EventType =
   | 'fetch.complete'
   | 'fetch.retry'
   | 'fetch.error'
+  | 'fetch.heartbeat'
   // Data operations
   | 'data.transform'
   | 'data.validate'
@@ -300,6 +316,7 @@ export type EventType =
   | 'loop.start'
   | 'loop.iteration'
   | 'loop.complete'
+  | 'loop.heartbeat'
   // Match operations
   | 'match.attempt'
   | 'match.result'

@@ -21,6 +21,7 @@ import { ReqonError } from './errors/index.js';
 import { loadEnv, loadCredentials } from './auth/credentials.js';
 import { WebhookServer } from './webhook/index.js';
 import type { DebugController } from './debug/index.js';
+import { ControlServer } from './control/index.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -43,7 +44,10 @@ Options:
   --webhook            Enable webhook server for 'wait' steps
   --webhook-port <n>   Port for webhook server (default: 3000)
   --webhook-url <url>  Base URL for webhook endpoints (default: http://localhost:3000)
+  --control            Enable control server for pause/resume and status queries
+  --control-port <n>   Port for control server (default: 3001)
   --debug              Enable step-through debugging
+  --resume <id>        Resume a paused or failed execution by ID
   --help, -h           Show this help message
 
 Environment Variables:
@@ -63,6 +67,15 @@ Examples:
   reqon sync-invoices.reqon --output ./output.json
   reqon sync-invoices.reqon --daemon --verbose
   reqon sync-invoices.reqon --webhook --webhook-port 8080 --verbose
+  reqon sync-invoices.reqon --control --verbose   # enable control server
+  reqon sync-invoices.reqon --resume exec_abc123  # resume paused execution
+
+Control Server:
+  When --control is enabled, the server exposes these endpoints:
+    POST /pause    Request graceful pause at next safe point
+    POST /resume   Clear pause request
+    GET  /status   Get current execution state and progress
+    GET  /health   Health check
 `);
     process.exit(0);
   }
@@ -74,6 +87,7 @@ Examples:
   const once = args.includes('--once');
   const webhookEnabled = args.includes('--webhook');
   const debugEnabled = args.includes('--debug');
+  const controlEnabled = args.includes('--control');
 
   // Parse webhook options
   let webhookPort = 3000;
@@ -86,6 +100,20 @@ Examples:
   const webhookUrlIndex = args.indexOf('--webhook-url');
   if (webhookUrlIndex !== -1 && args[webhookUrlIndex + 1]) {
     webhookUrl = args[webhookUrlIndex + 1];
+  }
+
+  // Parse control server options
+  let controlPort = 3001;
+  const controlPortIndex = args.indexOf('--control-port');
+  if (controlPortIndex !== -1 && args[controlPortIndex + 1]) {
+    controlPort = parseInt(args[controlPortIndex + 1], 10);
+  }
+
+  // Parse resume option
+  let resumeFrom: string | undefined;
+  const resumeIndex = args.indexOf('--resume');
+  if (resumeIndex !== -1 && args[resumeIndex + 1]) {
+    resumeFrom = args[resumeIndex + 1];
   }
 
   // Load .env file(s)
@@ -146,6 +174,16 @@ Examples:
     console.log(`Webhook server started on port ${webhookPort}`);
   }
 
+  // Start control server if enabled
+  let controlServer: ControlServer | undefined;
+  if (controlEnabled) {
+    controlServer = new ControlServer({ port: controlPort, verbose });
+    await controlServer.start();
+    console.log(`Control server started on port ${controlPort}`);
+    console.log(`  POST http://localhost:${controlPort}/pause  - request pause`);
+    console.log(`  GET  http://localhost:${controlPort}/status - check status`);
+  }
+
   // Initialize debug controller if enabled
   let debugController: DebugController | undefined;
   if (debugEnabled) {
@@ -167,9 +205,20 @@ Examples:
       >,
       webhookServer,
       debugController,
+      controlServer,
+      resumeFrom,
     });
 
-    if (result.success) {
+    // Check if execution was paused
+    const isPaused = result.state?.status === 'paused';
+
+    if (isPaused) {
+      console.log(`\n⏸ Mission paused`);
+      console.log(`  Duration: ${result.duration}ms`);
+      console.log(`  Actions run: ${result.actionsRun.join(' → ')}`);
+      console.log(`  Execution ID: ${result.executionId}`);
+      console.log(`\n  To resume: reqon ${filePath} --resume ${result.executionId}`);
+    } else if (result.success) {
       console.log(`\n✓ Mission completed successfully`);
       console.log(`  Duration: ${result.duration}ms`);
       console.log(`  Actions run: ${result.actionsRun.join(' → ')}`);
@@ -193,6 +242,10 @@ Examples:
       for (const error of result.errors) {
         console.error(`  [${error.action}/${error.step}] ${error.message}`);
       }
+      if (result.executionId) {
+        console.log(`\n  Execution ID: ${result.executionId}`);
+        console.log(`  To resume: reqon ${filePath} --resume ${result.executionId}`);
+      }
       process.exit(1);
     }
   } catch (error) {
@@ -206,6 +259,10 @@ Examples:
     // Stop webhook server if it was started
     if (webhookServer) {
       await webhookServer.stop();
+    }
+    // Stop control server if it was started
+    if (controlServer) {
+      await controlServer.stop();
     }
     // Close debug controller if it was started
     if (debugController?.close) {

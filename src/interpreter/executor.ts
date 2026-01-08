@@ -75,6 +75,8 @@ import type {
   DebugPauseReason,
   DebugCommand,
 } from '../debug/index.js';
+import type { ControlServer } from '../control/index.js';
+import { PauseSignal } from './signals.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -183,6 +185,8 @@ export interface ExecutorConfig {
   logger?: StructuredLogger;
   // Debug controller for step-through debugging
   debugController?: DebugController;
+  // Control server for pause/resume and status queries
+  controlServer?: ControlServer;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -357,24 +361,32 @@ export class MissionExecutor {
         await this.saveExecutionState();
       }
     } catch (error) {
-      this.errors.push({
-        action: 'mission',
-        step: 'execute',
-        message: (error as Error).message,
-        details: error,
-      });
+      // PauseSignal is not an error - execution was intentionally paused
+      if (error instanceof PauseSignal) {
+        this.log('Execution paused');
+        // State is already set to 'paused' in checkPause()
+        // Don't record as error, just let execution end
+      } else {
+        this.errors.push({
+          action: 'mission',
+          step: 'execute',
+          message: (error as Error).message,
+          details: error,
+        });
 
-      // Mark execution as failed
-      if (this.executionState) {
-        this.executionState.status = 'failed';
-        this.executionState.completedAt = new Date();
-        this.executionState.duration = Date.now() - startTime;
-        await this.saveExecutionState();
+        // Mark execution as failed
+        if (this.executionState) {
+          this.executionState.status = 'failed';
+          this.executionState.completedAt = new Date();
+          this.executionState.duration = Date.now() - startTime;
+          await this.saveExecutionState();
+        }
       }
     }
 
     const duration = Date.now() - startTime;
-    const success = this.errors.length === 0;
+    const isPaused = this.executionState?.status === 'paused';
+    const success = this.errors.length === 0 && !isPaused;
 
     // Emit onExecutionComplete callback - count stages in a single pass
     const stageCounts = this.executionState?.stages.reduce(
@@ -398,8 +410,13 @@ export class MissionExecutor {
       errors: this.errors,
     });
 
-    // Emit mission.complete or mission.failed event
-    if (success) {
+    // Emit mission.complete, mission.paused, or mission.failed event
+    if (isPaused) {
+      this.eventEmitter?.emit('mission.paused', {
+        stagesCompleted,
+        executionId: this.executionState?.id,
+      });
+    } else if (success) {
       this.eventEmitter?.emit('mission.complete', {
         success: true,
         stagesCompleted,
@@ -563,6 +580,9 @@ export class MissionExecutor {
     for (let i = 0; i < mission.pipeline.stages.length; i++) {
       const stage = mission.pipeline.stages[i];
 
+      // Check for pause request at safe point (between stages)
+      await this.checkPause();
+
       // Skip already completed stages when resuming
       if (i < resumeIndex) {
         this.log(`Skipping ${this.getStageName(stage)} (already completed)`);
@@ -576,6 +596,7 @@ export class MissionExecutor {
           this.log(`Skipping ${this.getStageName(stage)} (condition not met)`);
           this.updateStageState(i, { status: 'skipped' });
           await this.saveExecutionState();
+          this.updateControlServerState();
           continue;
         }
       }
@@ -586,6 +607,9 @@ export class MissionExecutor {
       } else if (stage.action) {
         await this.executeSequentialStage(i, stage.action, actions, mission);
       }
+
+      // Update control server with latest state after each stage
+      this.updateControlServerState();
     }
   }
 
@@ -985,6 +1009,7 @@ export class MissionExecutor {
       handleDebugCommand: this.debugController
         ? (cmd) => this.handleDebugCommand(cmd as DebugCommand)
         : undefined,
+      checkPause: this.config.controlServer ? () => this.checkPause() : undefined,
     });
     await handler.execute(step);
   }
@@ -1092,6 +1117,39 @@ export class MissionExecutor {
       this.logger.info(message);
     } else if (this.config.verbose) {
       console.log(`[Reqon] ${message}`);
+    }
+  }
+
+  /**
+   * Check if pause has been requested and handle it
+   * Should be called at safe pause points (between stages, loop iterations)
+   */
+  private async checkPause(): Promise<void> {
+    if (!this.config.controlServer?.isPauseRequested()) {
+      return;
+    }
+
+    this.log('Pause requested - saving state and pausing execution');
+
+    // Save state as paused
+    if (this.executionState) {
+      this.executionState.status = 'paused';
+      await this.saveExecutionState();
+    }
+
+    // Clear the pause request (it's been handled)
+    this.config.controlServer.clearPauseRequest();
+
+    // Throw pause signal to stop execution
+    throw new PauseSignal();
+  }
+
+  /**
+   * Update control server with current state
+   */
+  private updateControlServerState(): void {
+    if (this.config.controlServer && this.executionState) {
+      this.config.controlServer.updateState(this.executionState);
     }
   }
 

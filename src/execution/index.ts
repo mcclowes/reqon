@@ -6,6 +6,7 @@ export type {
   Checkpoint,
   ExecutionStateError,
   CreateExecutionOptions,
+  LiveProgress,
 } from './state.js';
 
 export {

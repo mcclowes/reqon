@@ -107,6 +107,31 @@ export interface ExecutionStateError {
 }
 
 /**
+ * Live progress information for real-time status queries
+ */
+export interface LiveProgress {
+  /** Current stage index */
+  currentStage: number;
+  /** Current action name */
+  currentAction: string;
+  /** Current step type (if executing a step) */
+  currentStep?: string;
+  /** Loop progress (for for-in steps) */
+  loopProgress?: {
+    current: number;
+    total: number;
+    variable: string;
+  };
+  /** Pagination progress (for paginated fetches) */
+  paginationProgress?: {
+    pagesProcessed: number;
+    itemsFetched: number;
+  };
+  /** Timestamp of last heartbeat */
+  lastHeartbeat: Date;
+}
+
+/**
  * Options for creating a new execution
  */
 export interface CreateExecutionOptions {
