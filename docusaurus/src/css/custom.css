@@ -73,6 +73,12 @@ code {
   font-weight: 700;
 }
 
+/* Constrain navbar logo size */
+.navbar__logo img {
+  height: 28px;
+  width: auto;
+}
+
 /* Heading typography - Courier Prime display font */
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--ifm-heading-font-family);
@@ -177,6 +183,17 @@ th {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
 }
 
+/* Ensure feature section text has good contrast */
+[data-theme='dark'] .features-section p,
+[data-theme='dark'] .features-section .hero__subtitle {
+  color: rgba(243, 234, 211, 0.85);
+}
+
+[data-theme='dark'] .features-section h2,
+[data-theme='dark'] .features-section h3 {
+  color: #F3EAD3;
+}
+
 /* TOC styling */
 .table-of-contents__link:hover {
   color: var(--ifm-color-primary);
@@ -209,4 +226,98 @@ th {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--ifm-color-emphasis-400);
+}
+
+/* Smooth scrolling for anchor links */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* External link indicators */
+.navbar__item[href*="://"]::after,
+.footer__link-item[href*="://"]::after {
+  content: " \2197";
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+
+/* Better button styling */
+.button--primary {
+  background-color: var(--ifm-color-primary);
+  border-color: var(--ifm-color-primary);
+  color: #fff;
+}
+
+.button--primary:hover {
+  background-color: var(--ifm-color-primary-dark);
+  border-color: var(--ifm-color-primary-dark);
+  color: #fff;
+}
+
+[data-theme='dark'] .button--primary {
+  background-color: var(--ifm-color-primary);
+  color: #252221;
+}
+
+[data-theme='dark'] .button--primary:hover {
+  background-color: var(--ifm-color-primary-light);
+}
+
+.button--secondary {
+  background-color: transparent;
+  border-color: var(--ifm-color-primary);
+  color: var(--ifm-color-primary);
+}
+
+.button--secondary:hover {
+  background-color: var(--ifm-color-primary);
+  color: #fff;
+}
+
+[data-theme='dark'] .button--secondary:hover {
+  color: #252221;
+}
+
+/* Focus states for accessibility */
+.button:focus-visible,
+.menu__link:focus-visible,
+.navbar__link:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--ifm-color-primary);
+  outline-offset: 2px;
+}
+
+/* Better code block styling in dark mode */
+[data-theme='dark'] pre {
+  background-color: #1a1918;
+}
+
+[data-theme='dark'] code {
+  background-color: rgba(212, 188, 170, 0.1);
+}
+
+/* Inline code in dark mode */
+[data-theme='dark'] :not(pre) > code {
+  border: 1px solid rgba(212, 188, 170, 0.2);
+}
+
+/* Skip to content for accessibility */
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  z-index: 999;
+  padding: 1rem;
+  background-color: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+  text-decoration: none;
+}
+
+.skip-to-content:focus {
+  left: 0;
 }

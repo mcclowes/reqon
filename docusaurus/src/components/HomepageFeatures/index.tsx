@@ -86,7 +86,7 @@ function Feature({title, icon, description}: FeatureItem) {
 
 export default function HomepageFeatures(): ReactNode {
   return (
-    <section className={styles.features}>
+    <section className={clsx(styles.features, 'features-section')}>
       <div className="container">
         <div className="text--center margin-bottom--xl">
           <Heading as="h2">Why Reqon?</Heading>
