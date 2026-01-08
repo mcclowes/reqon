@@ -18,26 +18,12 @@ jobs:
       - name: Checkout reqon
         uses: actions/checkout@v6
 
-      - name: Checkout vague dependency
-        uses: actions/checkout@v6
-        with:
-          repository: mcclowes/vague
-          path: ../vague
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Install vague dependencies
-        run: npm ci
-        working-directory: ../vague
-
-      - name: Build vague
-        run: npm run build
-        working-directory: ../vague
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
@@ -60,29 +46,12 @@ jobs:
       - name: Validate changelog
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          if ! grep -q "## \[$TAG_VERSION\]" CHANGELOG.md; then
-            echo "Error: CHANGELOG.md does not contain an entry for version $TAG_VERSION"
-            echo "Please add a section: ## [$TAG_VERSION] - YYYY-MM-DD"
+          if ! grep -q "## $TAG_VERSION" docusaurus/docs/changelog.md; then
+            echo "Error: docusaurus/docs/changelog.md does not contain an entry for version $TAG_VERSION"
+            echo "Please add a section: ## $TAG_VERSION"
             exit 1
           fi
           echo "✓ Changelog contains entry for $TAG_VERSION"
-
-      - name: Get vague-lang version
-        id: vague-version
-        run: |
-          VAGUE_VERSION=$(node -p "require('../vague/package.json').version")
-          echo "version=$VAGUE_VERSION" >> $GITHUB_OUTPUT
-
-      - name: Update package.json for publishing
-        run: |
-          # Replace local file dependency with published version for npm
-          node -e "
-            const pkg = require('./package.json');
-            if (pkg.dependencies['vague-lang']?.startsWith('file:')) {
-              pkg.dependencies['vague-lang'] = '^${{ steps.vague-version.outputs.version }}';
-            }
-            require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2));
-          "
 
       - name: Publish to npm
         run: |
