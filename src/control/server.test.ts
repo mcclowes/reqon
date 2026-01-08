@@ -63,8 +63,11 @@ describe('ControlServer', () => {
     it('returns appropriate message when pause already requested', async () => {
       await server.start();
 
-      // First pause
-      await fetch(`http://localhost:${TEST_PORT}/pause`, { method: 'POST' });
+      // First pause - consume body to ensure connection closes cleanly
+      const firstRes = await fetch(`http://localhost:${TEST_PORT}/pause`, {
+        method: 'POST',
+      });
+      await firstRes.json();
 
       // Second pause
       const res = await fetch(`http://localhost:${TEST_PORT}/pause`, {
