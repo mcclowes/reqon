@@ -108,3 +108,4 @@ output.json
 .reqon-test-progress/
 .test-reqon-data/
 .test-scheduler*/
+.claude/settings.local.json
