@@ -38,6 +38,7 @@ const sidebars: SidebarsConfig = {
         'dsl-syntax/pipelines',
         'dsl-syntax/expressions',
         'dsl-syntax/wait',
+        'dsl-syntax/pause',
         'dsl-syntax/variables',
       ],
     },
@@ -86,6 +87,21 @@ const sidebars: SidebarsConfig = {
         'error-handling/flow-control',
         'error-handling/retry-strategies',
         'error-handling/dead-letter-queues',
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Durability',
+      link: {
+        type: 'generated-index',
+        title: 'Durability',
+        description: 'Build resilient, long-running pipelines with checkpoints, tracing, and pauses',
+      },
+      items: [
+        'durability/overview',
+        'durability/checkpoint',
+        'durability/trace',
+        'durability/pause',
       ],
     },
     {
