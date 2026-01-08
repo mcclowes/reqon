@@ -191,6 +191,28 @@ run Step1 then Step2 then Step3
 run [Step1, Step2] then Step3  // Step1 and Step2 run in parallel, then Step3
 ```
 
+### Durability Features
+
+```vague
+mission DurablePipeline {
+  // Checkpoint after each step for resume-on-failure
+  checkpoint: afterStep  // or onFailure
+
+  // Enable time-travel debugging
+  trace: full  // or minimal
+
+  action WaitForApproval {
+    // Resource-free pause (days/weeks without holding resources)
+    pause {
+      duration: "7d",
+      resumeOn: timeout | webhook "/approved"
+    }
+  }
+
+  run WaitForApproval
+}
+```
+
 ## OpenAPI Integration
 
 Reqon can consume OpenAPI specs directly, eliminating the need for handwritten SDK code:

@@ -16,6 +16,9 @@ src/
 ├── ast/           # Extended AST nodes (missions, actions, steps)
 ├── auth/          # Rate limiting, circuit breaker, and auth providers (bearer, oauth2, basic, api_key)
 ├── benchmark/     # Performance benchmarks (lexer, parser, evaluator, store, e2e)
+├── config/        # Runtime configuration and constants
+├── control/       # Control server for pause/resume, status queries, heartbeats
+├── debug/         # CLI debugger and debug controller
 ├── errors/        # Structured error classes (ParseError, RuntimeError, etc.)
 ├── execution/     # Execution state management and persistence
 ├── interpreter/   # Runtime execution
@@ -26,17 +29,19 @@ src/
 │   ├── pagination.ts    # Pagination strategies (offset, page, cursor)
 │   ├── http.ts          # HTTP client with retry/backoff
 │   ├── schema-matcher.ts # Schema matching logic
-│   ├── signals.ts       # Execution signals (abort, skip, etc.)
-│   └── step-handlers/   # Individual step type handlers (for, map, validate, store, match, webhook, apply)
+│   ├── signals.ts       # Execution signals (abort, skip, pause, etc.)
+│   └── step-handlers/   # Individual step type handlers (for, map, validate, store, match, webhook, apply, pause)
 ├── lexer/         # Reqon keywords (uses Vague's lexer via plugin)
 ├── loader/        # Mission loader (single file or folder with action files)
 ├── mcp/           # Model Context Protocol integration
 ├── oas/           # OpenAPI spec integration (loader, validator)
 ├── observability/ # Structured events, logging, OpenTelemetry integration
 ├── parser/        # Parser for mission/action/fetch/store syntax
+├── pause/         # Resource-free long pauses (state, store, manager)
 ├── scheduler/     # Cron/interval scheduling for missions
 ├── stores/        # Store adapters (memory, file, postgrest; sql/nosql stub to file)
 ├── sync/          # Incremental sync checkpointing
+├── trace/         # Time-travel debugging (recorder, replayer, snapshots)
 ├── utils/         # Shared utilities (sleep, path traversal, logger, file)
 ├── webhook/       # Webhook server for async callbacks (wait step)
 ├── index.ts       # Main exports
@@ -70,6 +75,9 @@ Key constructs:
 - `since: lastSync` - Incremental sync with checkpointing
 - `wait` - Webhook/callback waiting with timeout, path, eventFilter, storage
 - `schedule` - Mission scheduling (every N units, cron, or at datetime)
+- `checkpoint` - Durable execution mode (afterStep, onFailure)
+- `trace` - Time-travel debugging mode (full, minimal)
+- `pause` - Resource-free long pauses with resume triggers (timeout, webhook)
 
 ## Code Conventions
 
