@@ -6,6 +6,9 @@ import { sleep } from '../utils/async.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
 
+/** Maximum buffered response body size (10 MiB) before the request is rejected. */
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
 export interface HttpClientConfig {
   baseUrl: string;
   headers?: Record<string, string>;
@@ -177,6 +180,18 @@ export class HttpClient {
           continue;
         }
 
+        // Any remaining non-2xx/3xx response is an error: a 4xx (other than the
+        // 429/401-refresh cases handled above) or a 5xx that exhausted retries.
+        // Returning it as `data` would let map/store persist an API error body.
+        if (response.status >= 400) {
+          const snippet = await this.safeReadSnippet(response);
+          throw new FetchError(
+            `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}` +
+              (snippet ? `: ${snippet}` : ''),
+            { url, method: req.method, statusCode: response.status }
+          );
+        }
+
         const data = await this.parseResponseBody<T>(response, url, req.method);
 
         // Record success in circuit breaker
@@ -194,6 +209,12 @@ export class HttpClient {
 
         // Re-throw circuit breaker errors immediately
         if (error instanceof CircuitBreakerError) {
+          throw error;
+        }
+
+        // HTTP-status errors (4xx, exhausted 5xx) and body parse/size errors
+        // are definitive — don't burn retries re-fetching them.
+        if (error instanceof FetchError && error.statusCode !== undefined) {
           throw error;
         }
 
@@ -258,24 +279,74 @@ export class HttpClient {
   }
 
   /**
-   * Safely parse response body, handling non-JSON responses gracefully.
-   * Attempts JSON parsing first, providing helpful errors on failure.
+   * Parse a successful (2xx) response body. Handles empty/204 responses,
+   * returns non-JSON content as raw text, and caps the buffered size.
    */
   private async parseResponseBody<T>(response: Response, url: string, method: string): Promise<T> {
+    // No-content responses have no body to parse.
+    if (response.status === 204 || response.status === 205) {
+      return null as T;
+    }
+
+    const text = await this.readCappedText(response, url, method);
+    if (text.trim() === '') {
+      return null as T;
+    }
+
     const contentType = response.headers.get('content-type') ?? '';
+    const looksJson = contentType === '' || contentType.includes('json');
 
-    // Always attempt JSON parsing - many APIs don't set content-type correctly
     try {
-      return (await response.json()) as T;
+      return JSON.parse(text) as T;
     } catch (parseError) {
-      // Provide context about content-type mismatch if applicable
-      const isJsonContentType = contentType.includes('application/json') || contentType === '';
-      const contentTypeHint = !isJsonContentType ? ` (content-type was '${contentType}')` : '';
-
+      // A non-JSON content-type (text/html, text/plain, …) is returned as-is
+      // rather than throwing — only fail when the body claimed to be JSON.
+      if (!looksJson) {
+        return text as T;
+      }
       throw new FetchError(
-        `Failed to parse JSON response${contentTypeHint}: ${(parseError as Error).message}`,
+        `Failed to parse JSON response (content-type '${contentType}'): ${(parseError as Error).message}`,
         { url, method, statusCode: response.status, cause: parseError as Error }
       );
+    }
+  }
+
+  /** Read a response body to text, rejecting once it exceeds MAX_RESPONSE_BYTES. */
+  private async readCappedText(response: Response, url: string, method: string): Promise<string> {
+    const body = response.body;
+    if (!body) {
+      return await response.text();
+    }
+    const reader = body.getReader();
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        size += value.byteLength;
+        if (size > MAX_RESPONSE_BYTES) {
+          await reader.cancel();
+          throw new FetchError(`Response body exceeds ${MAX_RESPONSE_BYTES} bytes`, {
+            url,
+            method,
+            statusCode: response.status,
+          });
+        }
+        chunks.push(Buffer.from(value));
+      }
+    }
+    return Buffer.concat(chunks).toString('utf-8');
+  }
+
+  /** Read a short snippet of a body for an error message (best-effort). */
+  private async safeReadSnippet(response: Response): Promise<string> {
+    try {
+      const text = await response.text();
+      const trimmed = text.trim();
+      return trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed;
+    } catch {
+      return '';
     }
   }
 
