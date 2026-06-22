@@ -73,7 +73,7 @@ throw new ParseError(
 );
 ```
 
-## Planned Constructs (from TODO.md)
+## Planned Constructs
 - `is` type checking: `assume .items is array`
 - Parallel execution: `run Step1, Step2 then Step3`
 - Conditional actions: `run Step1 then Step2 if condition`
