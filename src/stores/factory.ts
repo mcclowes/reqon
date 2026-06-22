@@ -19,6 +19,12 @@ export interface CreateStoreOptions {
   postgrest?: Omit<PostgRESTOptions, 'table'>;
   /** Logger instance */
   logger?: Logger;
+  /**
+   * Explicitly allow sql/nosql to fall back to a local file store. Without
+   * this, an unimplemented sql/nosql store hard-errors rather than silently
+   * writing JSON to disk (a data-loss trap).
+   */
+  allowFileFallback?: boolean;
 }
 
 /**
@@ -63,7 +69,16 @@ export function createStore(options: CreateStoreOptions): StoreAdapter {
         });
       }
       // TODO: Implement raw SQL adapter (pg, mysql2, etc.)
-      logger.warn(`SQL store not yet implemented, falling back to file store for '${options.name}'`);
+      if (!options.allowFileFallback) {
+        throw new Error(
+          `SQL store is not implemented. Configure a PostgREST/Supabase backend, or ` +
+            `opt into the local file fallback (enable development mode / allowFileFallback) ` +
+            `for store '${options.name}'.`
+        );
+      }
+      logger.warn(
+        `SQL store not yet implemented, falling back to file store for '${options.name}'`
+      );
       return new FileStore(options.name, {
         ...options.fileOptions,
         baseDir: options.baseDir ?? '.reqon-data/sql',
@@ -71,7 +86,16 @@ export function createStore(options: CreateStoreOptions): StoreAdapter {
 
     case 'nosql':
       // TODO: Implement NoSQL adapter
-      logger.warn(`NoSQL store not yet implemented, falling back to file store for '${options.name}'`);
+      if (!options.allowFileFallback) {
+        throw new Error(
+          `NoSQL store is not implemented. Configure a real backend, or opt into the ` +
+            `local file fallback (enable development mode / allowFileFallback) for ` +
+            `store '${options.name}'.`
+        );
+      }
+      logger.warn(
+        `NoSQL store not yet implemented, falling back to file store for '${options.name}'`
+      );
       return new FileStore(options.name, {
         ...options.fileOptions,
         baseDir: options.baseDir ?? '.reqon-data/nosql',
@@ -88,7 +112,7 @@ export function createStore(options: CreateStoreOptions): StoreAdapter {
  */
 export function resolveStoreType(
   dslType: 'sql' | 'nosql' | 'memory' | 'file' | 'postgrest',
-  developmentMode = true
+  developmentMode = false
 ): StoreType {
   // These types are used directly
   if (dslType === 'memory' || dslType === 'file' || dslType === 'postgrest') {

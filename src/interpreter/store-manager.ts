@@ -11,12 +11,13 @@
 import type { StoreDefinition } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
 import type { StoreAdapter } from '../stores/types.js';
-import { createStore, resolveStoreType, type StoreType } from '../stores/index.js';
+import { createStore, resolveStoreType } from '../stores/index.js';
+import { EXECUTION_DEFAULTS } from '../config/index.js';
 
 export interface StoreManagerConfig {
   /** Custom store adapters by name */
   customStores?: Record<string, StoreAdapter>;
-  /** Development mode - use file stores instead of sql/nosql (default: true) */
+  /** Development mode - use file stores instead of sql/nosql (default: false) */
   developmentMode?: boolean;
   /** Base directory for file stores (default: '.reqon-data') */
   dataDir?: string;
@@ -47,13 +48,16 @@ export class StoreManager {
     }
 
     // Use store factory to create appropriate adapter
-    const developmentMode = this.config.developmentMode ?? true;
+    const developmentMode = this.config.developmentMode ?? EXECUTION_DEFAULTS.DEVELOPMENT_MODE;
     const storeType = resolveStoreType(store.storeType, developmentMode);
 
     const adapter = createStore({
       type: storeType,
       name: store.target,
       baseDir: this.config.dataDir,
+      // In dev mode the type is already resolved to 'file'; this only matters
+      // if a raw sql/nosql type reaches the factory.
+      allowFileFallback: developmentMode,
     });
 
     ctx.stores.set(store.name, adapter);
