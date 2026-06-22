@@ -136,8 +136,13 @@ export const SCHEDULER_DEFAULTS = {
  * Default execution configuration
  */
 export const EXECUTION_DEFAULTS = {
-  /** Whether development mode is enabled by default (uses file stores) */
-  DEVELOPMENT_MODE: true,
+  /**
+   * Whether development mode is enabled by default. When true, sql/nosql
+   * stores fall back to local JSON files; default false so a mission that
+   * declares `store sql`/`nosql` errors loudly instead of silently writing
+   * to disk.
+   */
+  DEVELOPMENT_MODE: false,
   /** Whether to persist execution state by default */
   PERSIST_STATE: false,
 } as const;

@@ -36,6 +36,7 @@ Usage:
 Options:
   --dry-run            Run without making actual HTTP requests
   --verbose            Enable verbose logging
+  --dev                Development mode: let sql/nosql stores fall back to local JSON files
   --auth <file>        JSON file with auth credentials (supports env var interpolation)
   --env <file>         Path to .env file (default: .env in current directory)
   --output <path>      Export stores to JSON (file or directory)
@@ -83,6 +84,7 @@ Control Server:
   const filePath = args[0];
   const dryRun = args.includes('--dry-run');
   const verbose = args.includes('--verbose');
+  const devMode = args.includes('--dev');
   const daemon = args.includes('--daemon');
   const once = args.includes('--once');
   const webhookEnabled = args.includes('--webhook');
@@ -199,6 +201,7 @@ Control Server:
     const result = await fromPath(filePath, {
       dryRun,
       verbose,
+      developmentMode: devMode,
       auth: auth as Record<
         string,
         { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }

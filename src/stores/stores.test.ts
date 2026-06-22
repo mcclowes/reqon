@@ -152,21 +152,35 @@ describe('createStore factory', () => {
     expect(await newStore.get('key')).toEqual({ value: 1 });
   });
 
-  it('falls back to file for sql in dev mode', async () => {
+  it('hard-errors on sql without explicit file fallback', () => {
+    expect(() => createStore({ type: 'sql', name: 'test', baseDir: TEST_DIR })).toThrow(
+      /SQL store is not implemented/
+    );
+  });
+
+  it('hard-errors on nosql without explicit file fallback', () => {
+    expect(() => createStore({ type: 'nosql', name: 'test', baseDir: TEST_DIR })).toThrow(
+      /NoSQL store is not implemented/
+    );
+  });
+
+  it('falls back to file for sql when fallback is explicitly allowed', async () => {
     const store = createStore({
       type: 'sql',
       name: 'test',
       baseDir: TEST_DIR,
+      allowFileFallback: true,
     });
     await store.set('key', { value: 1 });
     expect(await store.get('key')).toEqual({ value: 1 });
   });
 
-  it('falls back to file for nosql in dev mode', async () => {
+  it('falls back to file for nosql when fallback is explicitly allowed', async () => {
     const store = createStore({
       type: 'nosql',
       name: 'test',
       baseDir: TEST_DIR,
+      allowFileFallback: true,
     });
     await store.set('key', { value: 1 });
     expect(await store.get('key')).toEqual({ value: 1 });
