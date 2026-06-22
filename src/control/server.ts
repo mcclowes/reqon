@@ -314,7 +314,10 @@ export class ControlServer {
    * Send JSON response
    */
   private sendJson(res: ServerResponse, status: number, data: unknown): void {
-    res.writeHead(status, { 'Content-Type': 'application/json' });
+    // Close the connection after each response. This localhost admin server has
+    // no need for keep-alive, and avoiding pooled sockets removes a client-side
+    // socket-reuse race (intermittent ECONNRESET on rapid sequential requests).
+    res.writeHead(status, { 'Content-Type': 'application/json', Connection: 'close' });
     res.end(JSON.stringify(data, null, 2));
   }
 
