@@ -91,6 +91,7 @@ import {
   FilePauseStore,
   createPauseManager,
 } from '../pause/index.js';
+import { sleep } from '../utils/async.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -221,6 +222,8 @@ export class MissionExecutor {
   private ctx: ExecutionContext;
   private errors: ExecutionError[] = [];
   private actionsRun: string[] = [];
+  /** Monotonic key generator for queued values lacking an id. */
+  private queueCounter = 0;
   private transforms: Map<string, TransformDefinition> = new Map();
   private rateLimiter: RateLimiter;
   private circuitBreaker: CircuitBreaker;
@@ -672,10 +675,27 @@ export class MissionExecutor {
       this.currentStageIndex = i;
 
       // Execute stage (parallel or sequential)
-      if (isParallelStage(stage)) {
-        await this.executeParallelStage(i, stage, actions, mission);
-      } else if (stage.action) {
-        await this.executeSequentialStage(i, stage.action, actions, mission);
+      try {
+        if (isParallelStage(stage)) {
+          await this.executeParallelStage(i, stage, actions, mission);
+        } else if (stage.action) {
+          await this.executeSequentialStage(i, stage.action, actions, mission);
+        }
+      } catch (error) {
+        // A jump directive redirects the pipeline to a named action's stage.
+        if (error instanceof JumpSignal) {
+          const targetIndex = mission.pipeline.stages.findIndex(
+            (s) => !isParallelStage(s) && s.action === error.action
+          );
+          if (targetIndex === -1) {
+            throw new Error(`Jump target action not found in pipeline: ${error.action}`);
+          }
+          this.log(`Jump to action '${error.action}' (stage ${targetIndex})`);
+          i = targetIndex - 1; // loop's i++ lands on the target stage
+          this.updateControlServerState();
+          continue;
+        }
+        throw error;
       }
 
       // Update control server with latest state after each stage
@@ -750,6 +770,12 @@ export class MissionExecutor {
         success: true,
       });
     } catch (error) {
+      // A jump directive is flow control, not a stage failure — let it bubble
+      // to the mission loop without polluting stage state.
+      if (error instanceof JumpSignal) {
+        throw error;
+      }
+
       // Mark stage as failed
       this.updateStageState(stageIndex, {
         status: 'failed',
@@ -904,13 +930,86 @@ export class MissionExecutor {
   private async executeAction(action: ActionDefinition): Promise<void> {
     this.log(`Executing action: ${action.name}`);
 
-    // Create a child context for this action with its own response scope
-    // This allows parallel actions to have independent response values
-    const actionCtx = childContext(this.ctx);
+    // Flow-control directives surface as thrown signals from a step (typically
+    // a `match` arm). Handle them at the action boundary: skip stops the rest
+    // of the action, queue stashes a value and stops, retry re-runs the whole
+    // action with backoff. Jump/Pause propagate to the mission loop.
+    const MAX_RETRY_FALLBACK = 3;
+    let attempt = 0;
 
-    for (const step of action.steps) {
-      await this.executeStep(step, action.name, actionCtx);
+    for (;;) {
+      // Create a child context for this action with its own response scope.
+      // This allows parallel actions to have independent response values.
+      const actionCtx = childContext(this.ctx);
+      try {
+        for (const step of action.steps) {
+          await this.executeStep(step, action.name, actionCtx);
+        }
+        return;
+      } catch (error) {
+        if (error instanceof SkipSignal) {
+          this.log(`Action ${action.name}: skip — remaining steps skipped`);
+          return;
+        }
+        if (error instanceof QueueSignal) {
+          await this.handleQueue(error);
+          return;
+        }
+        if (error instanceof RetrySignal) {
+          const maxAttempts = error.backoff?.maxAttempts ?? MAX_RETRY_FALLBACK;
+          attempt++;
+          if (attempt >= maxAttempts) {
+            throw new Error(`Action ${action.name} exhausted ${maxAttempts} retry attempt(s)`);
+          }
+          const delay = this.computeRetryDelay(error.backoff, attempt);
+          this.log(`Action ${action.name}: retry ${attempt}/${maxAttempts} in ${delay}ms`);
+          if (delay > 0) await sleep(delay);
+          continue;
+        }
+        // JumpSignal, PauseSignal, and real errors propagate to the caller.
+        throw error;
+      }
     }
+  }
+
+  /** Compute a retry backoff delay from a RetrySignal's backoff config. */
+  private computeRetryDelay(
+    backoff: { backoff: string; initialDelay: number } | undefined,
+    attempt: number
+  ): number {
+    const initial = backoff?.initialDelay ?? 0;
+    switch (backoff?.backoff) {
+      case 'exponential':
+        return initial * Math.pow(2, attempt - 1);
+      case 'linear':
+        return initial * attempt;
+      default:
+        return initial;
+    }
+  }
+
+  /** Push a queued value to its target store (queue directive). */
+  private async handleQueue(signal: QueueSignal): Promise<void> {
+    const target = signal.target;
+    if (!target) {
+      this.log('Queue directive without target — value discarded');
+      return;
+    }
+    const store = this.ctx.stores.get(target);
+    if (!store) {
+      throw new Error(`Queue target store not found: ${target}`);
+    }
+    const value = signal.value;
+    const record =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : { value };
+    const key =
+      typeof record.id === 'string' || typeof record.id === 'number'
+        ? String(record.id)
+        : `queued-${this.queueCounter++}`;
+    await store.set(key, record);
+    this.log(`Queued value to store '${target}' (key=${key})`);
   }
 
   private async executeStep(
@@ -1102,6 +1201,7 @@ export class MissionExecutor {
         ? (cmd) => this.handleDebugCommand(cmd as DebugCommand)
         : undefined,
       checkPause: this.config.controlServer ? () => this.checkPause() : undefined,
+      handleQueue: (signal) => this.handleQueue(signal),
     });
     await handler.execute(step);
   }

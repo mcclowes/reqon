@@ -4,6 +4,7 @@ import { evaluate } from '../evaluator.js';
 import { childContext, setVariable, getVariable } from '../context.js';
 import type { ExecutionContext } from '../context.js';
 import { StepError } from '../../errors/index.js';
+import { SkipSignal, QueueSignal } from '../signals.js';
 import type { DebugController, DebugSnapshot, DebugLocation } from '../../debug/index.js';
 
 /** Heartbeat interval for loop iterations */
@@ -23,6 +24,8 @@ export interface ForHandlerDeps extends StepHandlerDeps {
   handleDebugCommand?: (cmd: { type: string }) => void;
   /** Optional callback to check for pause requests (called every N iterations) */
   checkPause?: () => Promise<void>;
+  /** Handle a `queue` directive raised within a loop item. */
+  handleQueue?: (signal: QueueSignal) => Promise<void>;
 }
 
 /**
@@ -153,9 +156,22 @@ export class ForHandler implements StepHandler<ForStep> {
     const childCtx = childContext(this.deps.ctx);
     setVariable(childCtx, step.variable, item);
 
-    // Execute each inner step with child context
-    for (const innerStep of step.steps) {
-      await this.deps.executeStep(innerStep, this.deps.actionName, childCtx);
+    try {
+      // Execute each inner step with child context
+      for (const innerStep of step.steps) {
+        await this.deps.executeStep(innerStep, this.deps.actionName, childCtx);
+      }
+    } catch (error) {
+      // `skip` skips the rest of this item's steps; the loop continues.
+      if (error instanceof SkipSignal) {
+        return;
+      }
+      // `queue` stashes the item and moves on to the next iteration.
+      if (error instanceof QueueSignal) {
+        await this.deps.handleQueue?.(error);
+        return;
+      }
+      throw error;
     }
   }
 }

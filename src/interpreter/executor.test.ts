@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MissionExecutor } from './executor.js';
-import type { ReqonProgram, MissionDefinition, ActionDefinition, SourceDefinition, StoreDefinition, PipelineDefinition } from '../ast/nodes.js';
+import type {
+  ReqonProgram,
+  MissionDefinition,
+  ActionDefinition,
+  SourceDefinition,
+  StoreDefinition,
+  PipelineDefinition,
+} from '../ast/nodes.js';
 
 describe('MissionExecutor', () => {
   describe('basic validation', () => {
@@ -287,6 +294,201 @@ describe('MissionExecutor', () => {
     });
   });
 
+  describe('flow-control directives (skip/retry/jump/queue)', () => {
+    const lit = (value: unknown, dataType = 'string') =>
+      ({ type: 'Literal', value, dataType }) as unknown as import('vague-lang').Expression;
+
+    const match = (target: unknown, arms: unknown[]) =>
+      ({ type: 'MatchStep', target, arms }) as unknown as ActionStep;
+
+    const mission = (over: Partial<MissionDefinition>): ReqonProgram => ({
+      type: 'ReqonProgram',
+      statements: [
+        {
+          type: 'MissionDefinition',
+          name: 'FlowMission',
+          sources: [],
+          stores: [],
+          schemas: [],
+          transforms: [],
+          actions: [],
+          pipeline: { type: 'PipelineDefinition', stages: [] },
+          ...over,
+        } as MissionDefinition,
+      ],
+    });
+
+    it('skip stops the remaining steps of an action without failing', async () => {
+      const program = mission({
+        actions: [
+          {
+            type: 'ActionDefinition',
+            name: 'A',
+            steps: [
+              match(lit(1, 'number'), [{ schema: '_', flow: { type: 'skip' } }]),
+              // This would abort the mission if it ever ran.
+              match(lit(1, 'number'), [
+                { schema: '_', flow: { type: 'abort', message: 'should not reach' } },
+              ]),
+            ],
+          } as unknown as ActionDefinition,
+        ],
+        pipeline: {
+          type: 'PipelineDefinition',
+          stages: [{ action: 'A' }],
+        } as PipelineDefinition,
+      });
+
+      const result = await new MissionExecutor({ dryRun: true }).execute(program);
+
+      expect(result.success).toBe(true);
+      expect(result.actionsRun).toContain('A');
+    });
+
+    it('per-item skip continues the loop; queue stores the surviving items', async () => {
+      const program = mission({
+        stores: [
+          {
+            type: 'StoreDefinition',
+            name: 'q',
+            target: 'q',
+            storeType: 'memory',
+          } as StoreDefinition,
+        ],
+        actions: [
+          {
+            type: 'ActionDefinition',
+            name: 'A',
+            steps: [
+              {
+                type: 'ForStep',
+                variable: 'item',
+                collection: lit(
+                  [
+                    { id: 'a', skip: false },
+                    { id: 'b', skip: true },
+                    { id: 'c', skip: false },
+                  ],
+                  'array'
+                ),
+                steps: [
+                  match({ type: 'Identifier', name: 'item' }, [
+                    {
+                      schema: '_',
+                      guard: {
+                        type: 'BinaryExpression',
+                        operator: '==',
+                        left: { type: 'QualifiedName', parts: ['skip'] },
+                        right: { type: 'Literal', value: true, dataType: 'boolean' },
+                      },
+                      flow: { type: 'skip' },
+                    },
+                    { schema: '_', flow: { type: 'queue', target: 'q' } },
+                  ]),
+                ],
+              },
+            ],
+          } as unknown as ActionDefinition,
+        ],
+        pipeline: {
+          type: 'PipelineDefinition',
+          stages: [{ action: 'A' }],
+        } as PipelineDefinition,
+      });
+
+      const result = await new MissionExecutor({ dryRun: true }).execute(program);
+
+      expect(result.success).toBe(true);
+      const q = result.stores.get('q')!;
+      const rows = await q.list();
+      expect(rows.map((r) => r.id).sort()).toEqual(['a', 'c']);
+    });
+
+    it('retry re-runs the action and exhausts cleanly instead of crashing', async () => {
+      const program = mission({
+        actions: [
+          {
+            type: 'ActionDefinition',
+            name: 'A',
+            steps: [
+              match(lit(1, 'number'), [
+                {
+                  schema: '_',
+                  flow: {
+                    type: 'retry',
+                    backoff: { maxAttempts: 2, backoff: 'constant', initialDelay: 0 },
+                  },
+                },
+              ]),
+            ],
+          } as unknown as ActionDefinition,
+        ],
+        pipeline: {
+          type: 'PipelineDefinition',
+          stages: [{ action: 'A' }],
+        } as PipelineDefinition,
+      });
+
+      const result = await new MissionExecutor({ dryRun: true }).execute(program);
+
+      // Always-retrying arm exhausts its attempts; the failure is a clean
+      // "exhausted retry attempts" error, not an uncaught RetrySignal.
+      expect(result.success).toBe(false);
+      expect(result.errors.some((e) => /retry attempt/i.test(e.message))).toBe(true);
+    });
+
+    it('jump redirects the pipeline to the target action and skips intervening stages', async () => {
+      const program = mission({
+        stores: [
+          {
+            type: 'StoreDefinition',
+            name: 'q',
+            target: 'q',
+            storeType: 'memory',
+          } as StoreDefinition,
+        ],
+        actions: [
+          {
+            type: 'ActionDefinition',
+            name: 'A',
+            steps: [
+              match(lit(1, 'number'), [{ schema: '_', flow: { type: 'jump', action: 'C' } }]),
+            ],
+          } as unknown as ActionDefinition,
+          {
+            type: 'ActionDefinition',
+            name: 'B',
+            steps: [
+              match(lit(1, 'number'), [
+                { schema: '_', flow: { type: 'abort', message: 'B should be skipped' } },
+              ]),
+            ],
+          } as unknown as ActionDefinition,
+          {
+            type: 'ActionDefinition',
+            name: 'C',
+            steps: [
+              match(lit({ marker: true }, 'object'), [
+                { schema: '_', flow: { type: 'queue', target: 'q' } },
+              ]),
+            ],
+          } as unknown as ActionDefinition,
+        ],
+        pipeline: {
+          type: 'PipelineDefinition',
+          stages: [{ action: 'A' }, { action: 'B' }, { action: 'C' }],
+        } as PipelineDefinition,
+      });
+
+      const result = await new MissionExecutor({ dryRun: true }).execute(program);
+
+      expect(result.success).toBe(true);
+      expect(result.actionsRun).toContain('C');
+      expect(result.actionsRun).not.toContain('B');
+      expect(await result.stores.get('q')!.count()).toBe(1);
+    });
+  });
+
   describe('dry run mode', () => {
     it('executes in dry run mode without actual HTTP calls', async () => {
       const executor = new MissionExecutor({ dryRun: true, verbose: false });
@@ -317,6 +519,4 @@ describe('MissionExecutor', () => {
       expect(result.success).toBe(true);
     });
   });
-
 });
-
