@@ -450,4 +450,61 @@ describe('OAuth2AuthProvider', () => {
 
     globalThis.fetch = originalFetch;
   });
+
+  it('coalesces concurrent refreshes into a single network call (single-flight)', async () => {
+    const originalFetch = globalThis.fetch;
+    const provider = new OAuth2AuthProvider({
+      accessToken: 'old-token',
+      refreshToken: 'rotating-refresh-token',
+      tokenEndpoint: 'https://auth.example.com/token',
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+    });
+
+    let callCount = 0;
+    // Gate the in-flight refresh so all concurrent callers overlap on it
+    // before any of them resolves.
+    let releaseFetch!: () => void;
+    const fetchGate = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+
+    const fetchMock = vi.fn(async () => {
+      callCount += 1;
+      await fetchGate;
+      return new Response(
+        JSON.stringify({
+          access_token: 'new-token',
+          // Rotating refresh token: the old one is invalidated after first use
+          refresh_token: `rotated-${callCount}`,
+        }),
+        { status: 200 }
+      );
+    });
+    globalThis.fetch = fetchMock;
+
+    // 10 concurrent callers all see the token as expired and trigger a refresh
+    const pending = Promise.all(Array.from({ length: 10 }, () => provider.refreshToken()));
+
+    // Let all callers reach the single in-flight refresh, then release it
+    await Promise.resolve();
+    releaseFetch();
+    const results = await pending;
+
+    // Exactly one network call to the token endpoint
+    expect(callCount).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Every caller receives the same new access token
+    for (const token of results) {
+      expect(token).toBe('new-token');
+    }
+
+    // A subsequent refresh starts a fresh in-flight request
+    const after = await provider.refreshToken();
+    expect(after).toBe('new-token');
+    expect(callCount).toBe(2);
+
+    globalThis.fetch = originalFetch;
+  });
 });
