@@ -278,6 +278,7 @@ export class FetchParser extends ScheduleParser {
     let backoff: RetryConfig['backoff'] = 'exponential';
     let initialDelay = 1000;
     let maxDelay: number | undefined;
+    let timeout: number | undefined;
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
       const key = this.consume(TokenType.IDENTIFIER, 'Expected retry option').value;
@@ -297,6 +298,9 @@ export class FetchParser extends ScheduleParser {
         case 'maxDelay':
           maxDelay = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
           break;
+        case 'timeout':
+          timeout = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
       }
 
       this.match(TokenType.COMMA);
@@ -304,6 +308,6 @@ export class FetchParser extends ScheduleParser {
 
     this.consume(TokenType.RBRACE, "Expected '}'");
 
-    return { maxAttempts, backoff, initialDelay, maxDelay };
+    return { maxAttempts, backoff, initialDelay, maxDelay, timeout };
   }
 }

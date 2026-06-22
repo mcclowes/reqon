@@ -76,15 +76,51 @@ describe('HttpClient', () => {
     });
   });
 
+  describe('timeout', () => {
+    it('aborts a hung request after the configured timeout', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn((_url: RequestInfo | URL, opts?: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          opts?.signal?.addEventListener('abort', () => {
+            const err = new Error('aborted');
+            err.name = 'AbortError';
+            reject(err);
+          });
+        });
+      });
+
+      const promise = client.request(
+        { method: 'GET', path: '/slow' },
+        { maxAttempts: 1, backoff: 'constant', initialDelay: 1, timeout: 5000 }
+      );
+      const expectation = expect(promise).rejects.toThrow(/timed out/i);
+      await vi.advanceTimersByTimeAsync(5000);
+      await expectation;
+    });
+
+    it('does not abort a request that responds before the timeout', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn(
+        async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
+      );
+
+      const res = await client.request(
+        { method: 'GET', path: '/fast' },
+        { maxAttempts: 1, backoff: 'constant', initialDelay: 1, timeout: 5000 }
+      );
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe('headers', () => {
     it('sets default Content-Type and Accept headers', async () => {
       const client = new HttpClient({ baseUrl: 'https://api.example.com' });
       let capturedHeaders: Record<string, string> = {};
 
       globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-        capturedHeaders = Object.fromEntries(
-          Object.entries(init?.headers || {})
-        );
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
         return new Response(JSON.stringify({}), { status: 200 });
       });
 
@@ -102,9 +138,7 @@ describe('HttpClient', () => {
       let capturedHeaders: Record<string, string> = {};
 
       globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-        capturedHeaders = Object.fromEntries(
-          Object.entries(init?.headers || {})
-        );
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
         return new Response(JSON.stringify({}), { status: 200 });
       });
 
@@ -121,9 +155,7 @@ describe('HttpClient', () => {
       let capturedHeaders: Record<string, string> = {};
 
       globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-        capturedHeaders = Object.fromEntries(
-          Object.entries(init?.headers || {})
-        );
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
         return new Response(JSON.stringify({}), { status: 200 });
       });
 
@@ -145,9 +177,7 @@ describe('HttpClient', () => {
       let capturedHeaders: Record<string, string> = {};
 
       globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-        capturedHeaders = Object.fromEntries(
-          Object.entries(init?.headers || {})
-        );
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
         return new Response(JSON.stringify({}), { status: 200 });
       });
 
