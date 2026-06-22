@@ -271,6 +271,54 @@ describe('evaluate', () => {
 
       expect(evaluate(expr, ctx)).toBe(true);
     });
+
+    it('or returns the left operand value when truthy (x or default)', () => {
+      const ctx = createContext();
+      const expr: Expression = {
+        type: 'LogicalExpression',
+        operator: 'or',
+        left: { type: 'Literal', value: 'actual', dataType: 'string' },
+        right: { type: 'Literal', value: 'default', dataType: 'string' },
+      };
+
+      expect(evaluate(expr, ctx)).toBe('actual');
+    });
+
+    it('or returns the right operand value when left is falsy', () => {
+      const ctx = createContext();
+      const expr: Expression = {
+        type: 'LogicalExpression',
+        operator: 'or',
+        left: { type: 'Literal', value: '', dataType: 'string' },
+        right: { type: 'Literal', value: 'default', dataType: 'string' },
+      };
+
+      expect(evaluate(expr, ctx)).toBe('default');
+    });
+
+    it('and returns the right operand value when left is truthy', () => {
+      const ctx = createContext();
+      const expr: Expression = {
+        type: 'LogicalExpression',
+        operator: 'and',
+        left: { type: 'Literal', value: 1, dataType: 'number' },
+        right: { type: 'Literal', value: 'kept', dataType: 'string' },
+      };
+
+      expect(evaluate(expr, ctx)).toBe('kept');
+    });
+
+    it('and returns the falsy left operand value (passes it through)', () => {
+      const ctx = createContext();
+      const expr: Expression = {
+        type: 'LogicalExpression',
+        operator: 'and',
+        left: { type: 'Literal', value: 0, dataType: 'number' },
+        right: { type: 'Literal', value: 'unused', dataType: 'string' },
+      };
+
+      expect(evaluate(expr, ctx)).toBe(0);
+    });
   });
 
   describe('not expression', () => {
@@ -409,16 +457,18 @@ describe('evaluate', () => {
       const expr: Expression = {
         type: 'CallExpression',
         callee: 'length',
-        arguments: [{
-          type: 'OrderedSequenceType',
-          elements: [
-            { type: 'Literal', value: 1, dataType: 'number' },
-            { type: 'Literal', value: 2, dataType: 'number' },
-            { type: 'Literal', value: 3, dataType: 'number' },
-            { type: 'Literal', value: 4, dataType: 'number' },
-            { type: 'Literal', value: 5, dataType: 'number' },
-          ],
-        }],
+        arguments: [
+          {
+            type: 'OrderedSequenceType',
+            elements: [
+              { type: 'Literal', value: 1, dataType: 'number' },
+              { type: 'Literal', value: 2, dataType: 'number' },
+              { type: 'Literal', value: 3, dataType: 'number' },
+              { type: 'Literal', value: 4, dataType: 'number' },
+              { type: 'Literal', value: 5, dataType: 'number' },
+            ],
+          },
+        ],
       };
 
       expect(evaluate(expr, ctx)).toBe(5);
@@ -429,14 +479,16 @@ describe('evaluate', () => {
       const expr: Expression = {
         type: 'CallExpression',
         callee: 'sum',
-        arguments: [{
-          type: 'OrderedSequenceType',
-          elements: [
-            { type: 'Literal', value: 10, dataType: 'number' },
-            { type: 'Literal', value: 20, dataType: 'number' },
-            { type: 'Literal', value: 30, dataType: 'number' },
-          ],
-        }],
+        arguments: [
+          {
+            type: 'OrderedSequenceType',
+            elements: [
+              { type: 'Literal', value: 10, dataType: 'number' },
+              { type: 'Literal', value: 20, dataType: 'number' },
+              { type: 'Literal', value: 30, dataType: 'number' },
+            ],
+          },
+        ],
       };
 
       expect(evaluate(expr, ctx)).toBe(60);
@@ -447,14 +499,16 @@ describe('evaluate', () => {
       const expr: Expression = {
         type: 'CallExpression',
         callee: 'first',
-        arguments: [{
-          type: 'OrderedSequenceType',
-          elements: [
-            { type: 'Literal', value: 'a', dataType: 'string' },
-            { type: 'Literal', value: 'b', dataType: 'string' },
-            { type: 'Literal', value: 'c', dataType: 'string' },
-          ],
-        }],
+        arguments: [
+          {
+            type: 'OrderedSequenceType',
+            elements: [
+              { type: 'Literal', value: 'a', dataType: 'string' },
+              { type: 'Literal', value: 'b', dataType: 'string' },
+              { type: 'Literal', value: 'c', dataType: 'string' },
+            ],
+          },
+        ],
       };
 
       expect(evaluate(expr, ctx)).toBe('a');
@@ -465,14 +519,16 @@ describe('evaluate', () => {
       const expr: Expression = {
         type: 'CallExpression',
         callee: 'last',
-        arguments: [{
-          type: 'OrderedSequenceType',
-          elements: [
-            { type: 'Literal', value: 'a', dataType: 'string' },
-            { type: 'Literal', value: 'b', dataType: 'string' },
-            { type: 'Literal', value: 'c', dataType: 'string' },
-          ],
-        }],
+        arguments: [
+          {
+            type: 'OrderedSequenceType',
+            elements: [
+              { type: 'Literal', value: 'a', dataType: 'string' },
+              { type: 'Literal', value: 'b', dataType: 'string' },
+              { type: 'Literal', value: 'c', dataType: 'string' },
+            ],
+          },
+        ],
       };
 
       expect(evaluate(expr, ctx)).toBe('c');
@@ -688,7 +744,9 @@ describe('evaluate', () => {
         typeCheck: 'unknownType',
       };
 
-      expect(() => evaluate(expr as unknown as Expression, ctx)).toThrow('Unsupported operation: type check: unknownType');
+      expect(() => evaluate(expr as unknown as Expression, ctx)).toThrow(
+        'Unsupported operation: type check: unknownType'
+      );
     });
   });
 });
