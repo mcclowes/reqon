@@ -26,12 +26,10 @@ import {
   type Resource,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { z } from 'zod';
+import { resolveWithinWorkingDir as confinePath, resolveDryRun } from './sandbox.js';
 import { parse, execute, fromPath } from '../index.js';
-import {
-  createStore,
-  type StoreAdapter,
-  type StoreFilter,
-} from '../stores/index.js';
+import { createStore, type StoreAdapter, type StoreFilter } from '../stores/index.js';
 import type { ExecutorConfig, ExecutionResult } from '../interpreter/index.js';
 
 // Global store registry for cross-execution access
@@ -41,12 +39,44 @@ const storeRegistry = new Map<string, StoreAdapter>();
 interface ServerConfig {
   workingDirectory?: string;
   verbose?: boolean;
+  /**
+   * Allow missions to cause real network/filesystem effects. Off by default:
+   * an MCP server is driven by an LLM acting on untrusted input, so untrusted
+   * missions run in dryRun (no real fetches/writes) unless explicitly enabled.
+   */
+  allowEffects?: boolean;
 }
 
-let serverConfig: ServerConfig = {
+const serverConfig: ServerConfig = {
   workingDirectory: process.cwd(),
   verbose: false,
+  allowEffects: false,
 };
+
+/**
+ * Resolve an untrusted path against the configured working directory and
+ * assert it stays inside it. Blocks `../` / absolute-path escapes.
+ */
+function resolveWithinWorkingDir(p: string): string {
+  return confinePath(serverConfig.workingDirectory ?? process.cwd(), p);
+}
+
+// Argument schemas (validated against each tool's inputSchema via zod).
+const executeArgsSchema = z.object({
+  source: z.string(),
+  verbose: z.boolean().optional(),
+  dryRun: z.boolean().optional(),
+});
+const executeFileArgsSchema = z.object({
+  path: z.string(),
+  verbose: z.boolean().optional(),
+  dryRun: z.boolean().optional(),
+});
+const registerStoreArgsSchema = z.object({
+  name: z.string(),
+  type: z.enum(['memory', 'file']).optional(),
+  path: z.string().optional(),
+});
 
 /**
  * Format execution result for MCP response
@@ -81,13 +111,13 @@ function formatExecutionResult(result: ExecutionResult): string {
 /**
  * Create executor config
  */
-function createExecutorConfig(options?: {
-  verbose?: boolean;
-  dryRun?: boolean;
-}): ExecutorConfig {
+function createExecutorConfig(options?: { verbose?: boolean; dryRun?: boolean }): ExecutorConfig {
+  // Effects are opt-in at the server level. When disabled, force dryRun so an
+  // untrusted mission cannot reach the network or write to disk, regardless of
+  // what the caller requests.
   return {
     verbose: options?.verbose ?? serverConfig.verbose,
-    dryRun: options?.dryRun ?? false,
+    dryRun: resolveDryRun(serverConfig.allowEffects ?? false, options?.dryRun),
   };
 }
 
@@ -127,8 +157,7 @@ const tools: Tool[] = [
       properties: {
         path: {
           type: 'string',
-          description:
-            'Path to .reqon file or mission folder (relative to working directory)',
+          description: 'Path to .reqon file or mission folder (relative to working directory)',
         },
         verbose: {
           type: 'boolean',
@@ -161,8 +190,7 @@ const tools: Tool[] = [
   },
   {
     name: 'reqon.query_store',
-    description:
-      'Query data from a registered Reqon store. Returns matching records.',
+    description: 'Query data from a registered Reqon store. Returns matching records.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -194,8 +222,7 @@ const tools: Tool[] = [
   },
   {
     name: 'reqon.list_stores',
-    description:
-      'List all registered stores and their record counts.',
+    description: 'List all registered stores and their record counts.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -254,11 +281,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case 'reqon.execute': {
-        const { source, verbose, dryRun } = args as {
-          source: string;
-          verbose?: boolean;
-          dryRun?: boolean;
-        };
+        const { source, verbose, dryRun } = executeArgsSchema.parse(args);
 
         const config = createExecutorConfig({ verbose, dryRun });
         const result = await execute(source, config);
@@ -274,14 +297,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'reqon.execute_file': {
-        const { path, verbose, dryRun } = args as {
-          path: string;
-          verbose?: boolean;
-          dryRun?: boolean;
-        };
+        const { path, verbose, dryRun } = executeFileArgsSchema.parse(args);
 
+        const safePath = resolveWithinWorkingDir(path);
         const config = createExecutorConfig({ verbose, dryRun });
-        const result = await fromPath(path, config);
+        const result = await fromPath(safePath, config);
 
         return {
           content: [
@@ -392,11 +412,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'reqon.register_store': {
-        const { name, type = 'memory', path } = args as {
-          name: string;
-          type?: 'memory' | 'file';
-          path?: string;
-        };
+        const { name, type = 'memory', path } = registerStoreArgsSchema.parse(args);
 
         if (storeRegistry.has(name)) {
           return {
@@ -409,10 +425,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
 
+        // Confine a file store's base directory to the working directory.
+        const baseDir = resolveWithinWorkingDir(path ?? '.reqon-data');
         const store = createStore({
           type,
           name,
-          baseDir: path ?? '.reqon-data',
+          baseDir,
         });
 
         storeRegistry.set(name, store);
@@ -545,6 +563,9 @@ async function main() {
       serverConfig.workingDirectory = args[++i];
       process.chdir(serverConfig.workingDirectory);
     }
+    if (args[i] === '--allow-effects') {
+      serverConfig.allowEffects = true;
+    }
   }
 
   const transport = new StdioServerTransport();
@@ -552,6 +573,11 @@ async function main() {
 
   // Log to stderr so it doesn't interfere with MCP protocol on stdout
   console.error('Reqon MCP Server running on stdio');
+  console.error(
+    serverConfig.allowEffects
+      ? '  Effects ENABLED (--allow-effects): missions may make real network/filesystem calls.'
+      : '  Sandboxed: missions run in dryRun (no network/filesystem effects). Pass --allow-effects to enable.'
+  );
   if (serverConfig.verbose) {
     console.error(`  Working directory: ${serverConfig.workingDirectory}`);
   }
