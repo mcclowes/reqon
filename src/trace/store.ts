@@ -6,6 +6,7 @@
  */
 
 import { join } from 'node:path';
+import { safeJoin } from '../utils/path.js';
 import type { ExecutionTrace, TraceSnapshot } from './state.js';
 import {
   ensureDirectory,
@@ -63,7 +64,8 @@ export class FileTraceStore implements TraceStore {
   }
 
   private getTraceDir(id: string): string {
-    return join(this.baseDir, id);
+    // Confine the (DSL-influenced) trace id to the traces base directory.
+    return safeJoin(this.baseDir, id);
   }
 
   private getMetadataPath(id: string): string {

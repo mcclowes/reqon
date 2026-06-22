@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { safeJoin } from '../utils/path.js';
 import type { ExecutionState } from './state.js';
 import {
   ensureDirectory,
@@ -50,7 +50,7 @@ export class FileExecutionStore implements ExecutionStore {
   }
 
   private getFilePath(id: string): string {
-    return join(this.baseDir, `${id}.json`);
+    return safeJoin(this.baseDir, `${id}.json`);
   }
 
   private deserialize(parsed: Record<string, unknown>): ExecutionState {
@@ -59,14 +59,8 @@ export class FileExecutionStore implements ExecutionStore {
     if (parsed.checkpoint && typeof parsed.checkpoint === 'object') {
       restoreDates(parsed.checkpoint as Record<string, unknown>, ['createdAt']);
     }
-    restoreDatesInArray(
-      parsed.stages as Record<string, unknown>[],
-      ['startedAt', 'completedAt']
-    );
-    restoreDatesInArray(
-      parsed.errors as Record<string, unknown>[],
-      ['timestamp']
-    );
+    restoreDatesInArray(parsed.stages as Record<string, unknown>[], ['startedAt', 'completedAt']);
+    restoreDatesInArray(parsed.errors as Record<string, unknown>[], ['timestamp']);
 
     return parsed as unknown as ExecutionState;
   }

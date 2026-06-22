@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, rmSync, mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { FileStore } from './file.js';
 
 describe('FileStore', () => {
@@ -101,8 +101,8 @@ describe('FileStore', () => {
 
     const records = await store.list({ where: { active: true } });
     expect(records).toHaveLength(2);
-    expect(records.map(r => r.name)).toContain('Alice');
-    expect(records.map(r => r.name)).toContain('Charlie');
+    expect(records.map((r) => r.name)).toContain('Alice');
+    expect(records.map((r) => r.name)).toContain('Charlie');
   });
 
   it('should support limit and offset', async () => {
@@ -270,7 +270,12 @@ describe('FileStore', () => {
 
     it('should return file path', () => {
       const store = new FileStore('test-store', { baseDir: TEST_DIR });
-      expect(store.getFilePath()).toBe(join(TEST_DIR, 'test-store.json'));
+      // Path is resolved+confined to an absolute path (see safeJoin).
+      expect(store.getFilePath()).toBe(resolve(TEST_DIR, 'test-store.json'));
+    });
+
+    it('should reject store names that escape the base directory', () => {
+      expect(() => new FileStore('../escape', { baseDir: TEST_DIR })).toThrow();
     });
   });
 });

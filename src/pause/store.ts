@@ -5,7 +5,7 @@
  * enabling resumption after extended periods.
  */
 
-import { join } from 'node:path';
+import { safeJoin } from '../utils/path.js';
 import type { PauseState } from './state.js';
 import {
   ensureDirectory,
@@ -58,7 +58,7 @@ export class FilePauseStore implements PauseStore {
   }
 
   private getFilePath(id: string): string {
-    return join(this.baseDir, `${id}.json`);
+    return safeJoin(this.baseDir, `${id}.json`);
   }
 
   private deserialize(parsed: Record<string, unknown>): PauseState {
