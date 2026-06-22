@@ -6,10 +6,20 @@ import type { SchedulerCallbacks, ScheduleEvent } from './types.js';
 // Mock fs operations
 vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(async () => {
-    throw new Error('ENOENT');
+    const err = new Error('ENOENT') as NodeJS.ErrnoException;
+    err.code = 'ENOENT';
+    throw err;
   }),
   writeFile: vi.fn(async () => {}),
   mkdir: vi.fn(async () => {}),
+  access: vi.fn(async () => {}),
+  rename: vi.fn(async () => {}),
+  unlink: vi.fn(async () => {}),
+  open: vi.fn(async () => ({
+    writeFile: vi.fn(async () => {}),
+    sync: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
+  })),
 }));
 
 describe('Scheduler', () => {
@@ -558,9 +568,7 @@ describe('Scheduler', () => {
 
       verboseScheduler.register(mission, '/path/mission.vague');
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('every 5 minutes')
-      );
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('every 5 minutes'));
 
       consoleSpy.mockRestore();
     });
