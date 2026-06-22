@@ -1,9 +1,15 @@
 import { writeFile } from 'node:fs/promises';
-import { writeFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { StoreAdapter, StoreFilter } from './types.js';
 import { applyStoreFilter } from './types.js';
-import { ensureDirectory, readJsonFile, serialize } from '../utils/file.js';
+import {
+  ensureDirectory,
+  readJsonFile,
+  serialize,
+  writeFileAtomic,
+  writeFileAtomicSync,
+} from '../utils/file.js';
 import { safeJoin } from '../utils/path.js';
 
 export interface FileStoreOptions {
@@ -136,7 +142,7 @@ export class FileStore implements StoreAdapter {
   private async writeToDisk(): Promise<void> {
     const obj = Object.fromEntries(this.data);
     const content = serialize(obj, this.options.pretty);
-    await writeFile(this.filePath, content, 'utf-8');
+    await writeFileAtomic(this.filePath, content);
     this.dirty = false;
   }
 
@@ -144,7 +150,7 @@ export class FileStore implements StoreAdapter {
   private writeToDiskSync(): void {
     const obj = Object.fromEntries(this.data);
     const content = serialize(obj, this.options.pretty);
-    writeFileSync(this.filePath, content, 'utf-8');
+    writeFileAtomicSync(this.filePath, content);
     this.dirty = false;
   }
 
