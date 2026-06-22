@@ -299,6 +299,8 @@ export interface RetryConfig {
   backoff: 'exponential' | 'linear' | 'constant';
   initialDelay: number; // ms
   maxDelay?: number; // ms
+  /** Per-attempt request timeout in ms; aborts a request that hangs */
+  timeout?: number;
 }
 
 // for invoice in invoices_cache where .partial == true { ... }

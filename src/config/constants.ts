@@ -22,6 +22,8 @@ export const HTTP_RETRY_DEFAULTS = {
   MAX_DELAY_MS: 30000,
   /** Backoff strategy: 'exponential', 'linear', or 'constant' */
   BACKOFF: 'exponential' as const,
+  /** Per-attempt request timeout in milliseconds (aborts a hung request) */
+  TIMEOUT_MS: 30000,
 } as const;
 
 /**

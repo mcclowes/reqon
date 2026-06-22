@@ -1,5 +1,5 @@
 import type { RetryConfig } from '../ast/nodes.js';
-import type { RateLimiter, RateLimitInfo } from '../auth/types.js';
+import type { RateLimiter } from '../auth/types.js';
 import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
 import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
 import { sleep } from '../utils/async.js';
@@ -14,6 +14,8 @@ export interface HttpClientConfig {
   circuitBreaker?: CircuitBreaker;
   /** Source name for rate limit and circuit breaker tracking */
   sourceName?: string;
+  /** Default per-request timeout in ms (overridden by RetryConfig.timeout) */
+  timeout?: number;
 }
 
 export interface AuthProvider {
@@ -42,10 +44,7 @@ export class HttpClient {
     this.config = config;
   }
 
-  async request<T = unknown>(
-    req: HttpRequest,
-    retry?: RetryConfig
-  ): Promise<HttpResponse<T>> {
+  async request<T = unknown>(req: HttpRequest, retry?: RetryConfig): Promise<HttpResponse<T>> {
     const url = this.buildUrl(req.path, req.query);
     const headers = await this.buildHeaders(req.headers);
 
@@ -59,6 +58,7 @@ export class HttpClient {
     const backoff = retry?.backoff ?? HTTP_RETRY_DEFAULTS.BACKOFF;
     const initialDelay = retry?.initialDelay ?? HTTP_RETRY_DEFAULTS.INITIAL_DELAY_MS;
     const maxDelay = retry?.maxDelay ?? HTTP_RETRY_DEFAULTS.MAX_DELAY_MS;
+    const timeout = retry?.timeout ?? this.config.timeout ?? HTTP_RETRY_DEFAULTS.TIMEOUT_MS;
 
     let lastError: Error | null = null;
 
@@ -77,7 +77,9 @@ export class HttpClient {
             throw new CircuitBreakerError(
               this.config.sourceName,
               req.path,
-              this.config.circuitBreaker.getStatus(this.config.sourceName, req.path).nextAttemptTime?.getTime() ?? 0 - Date.now()
+              this.config.circuitBreaker
+                .getStatus(this.config.sourceName, req.path)
+                .nextAttemptTime?.getTime() ?? 0 - Date.now()
             );
           }
         }
@@ -87,7 +89,7 @@ export class HttpClient {
           await this.config.rateLimiter.waitForCapacity(this.config.sourceName, req.path);
         }
 
-        const response = await fetch(url, fetchOptions);
+        const response = await this.fetchWithTimeout(url, fetchOptions, timeout, req.method);
 
         // Extract and record rate limit info from response headers
         const responseHeaders: Record<string, string> = {};
@@ -106,17 +108,15 @@ export class HttpClient {
             }
           }
 
-          this.config.rateLimiter.recordResponse(
-            this.config.sourceName,
-            rateLimitInfo,
-            req.path
-          );
+          this.config.rateLimiter.recordResponse(this.config.sourceName, rateLimitInfo, req.path);
         }
 
         // Handle rate limiting
         if (response.status === 429) {
           const retryAfter = response.headers.get('Retry-After');
-          const delay = retryAfter ? parseInt(retryAfter, 10) * 1000 : this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+          const delay = retryAfter
+            ? parseInt(retryAfter, 10) * 1000
+            : this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
           await sleep(delay);
           continue;
         }
@@ -125,7 +125,11 @@ export class HttpClient {
         if (response.status >= 500) {
           // Record failure in circuit breaker
           if (this.config.circuitBreaker && this.config.sourceName) {
-            this.config.circuitBreaker.recordFailure(this.config.sourceName, req.path, response.status);
+            this.config.circuitBreaker.recordFailure(
+              this.config.sourceName,
+              req.path,
+              response.status
+            );
           }
 
           if (attempt < maxAttempts) {
@@ -166,7 +170,12 @@ export class HttpClient {
 
         // Record network errors in circuit breaker
         if (this.config.circuitBreaker && this.config.sourceName) {
-          this.config.circuitBreaker.recordFailure(this.config.sourceName, req.path, undefined, true);
+          this.config.circuitBreaker.recordFailure(
+            this.config.sourceName,
+            req.path,
+            undefined,
+            true
+          );
         }
 
         if (attempt < maxAttempts) {
@@ -180,6 +189,39 @@ export class HttpClient {
   }
 
   /**
+   * Run a fetch with a per-attempt timeout. Aborts the request (freeing the
+   * connection and rate-limiter slot) if it exceeds `timeoutMs`, surfacing a
+   * retryable FetchError rather than hanging forever.
+   */
+  private async fetchWithTimeout(
+    url: string,
+    options: RequestInit,
+    timeoutMs: number,
+    method: string
+  ): Promise<Response> {
+    if (!timeoutMs || timeoutMs <= 0) {
+      return fetch(url, options);
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        throw new FetchError(`Request timed out after ${timeoutMs}ms`, {
+          url,
+          method,
+          cause: error as Error,
+        });
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * Safely parse response body, handling non-JSON responses gracefully.
    * Attempts JSON parsing first, providing helpful errors on failure.
    */
@@ -188,13 +230,11 @@ export class HttpClient {
 
     // Always attempt JSON parsing - many APIs don't set content-type correctly
     try {
-      return await response.json() as T;
+      return (await response.json()) as T;
     } catch (parseError) {
       // Provide context about content-type mismatch if applicable
       const isJsonContentType = contentType.includes('application/json') || contentType === '';
-      const contentTypeHint = !isJsonContentType
-        ? ` (content-type was '${contentType}')`
-        : '';
+      const contentTypeHint = !isJsonContentType ? ` (content-type was '${contentType}')` : '';
 
       throw new FetchError(
         `Failed to parse JSON response${contentTypeHint}: ${(parseError as Error).message}`,
@@ -216,7 +256,9 @@ export class HttpClient {
     return url;
   }
 
-  private async buildHeaders(requestHeaders?: Record<string, string>): Promise<Record<string, string>> {
+  private async buildHeaders(
+    requestHeaders?: Record<string, string>
+  ): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
@@ -315,7 +357,7 @@ export class OAuth2AuthProvider implements AuthProvider {
       }),
     });
 
-    const data = await response.json() as { access_token: string; refresh_token?: string };
+    const data = (await response.json()) as { access_token: string; refresh_token?: string };
     this.accessToken = data.access_token;
     if (data.refresh_token) {
       this.refreshTokenValue = data.refresh_token;
