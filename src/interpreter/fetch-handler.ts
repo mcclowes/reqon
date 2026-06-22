@@ -161,10 +161,18 @@ export class FetchHandler {
   /**
    * Record a sync checkpoint after successful fetch.
    */
-  async recordCheckpoint(key: string, step: FetchStep, data: unknown): Promise<void> {
+  async recordCheckpoint(
+    key: string,
+    step: FetchStep,
+    data: unknown,
+    fallbackTime?: Date
+  ): Promise<void> {
     if (!this.deps.syncStore) return;
 
-    let syncedAt = new Date();
+    // Prefer the data's own clock; otherwise fall back to when the request was
+    // issued (not now), so records written server-side during the fetch are
+    // re-fetched next run rather than skipped on clock skew.
+    let syncedAt = fallbackTime ?? new Date();
 
     // If updateFrom is specified, extract the timestamp from response
     if (step.since?.updateFrom && data && typeof data === 'object') {
