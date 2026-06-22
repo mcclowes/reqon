@@ -3,11 +3,8 @@ import { writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { StoreAdapter, StoreFilter } from './types.js';
 import { applyStoreFilter } from './types.js';
-import {
-  ensureDirectory,
-  readJsonFile,
-  serialize,
-} from '../utils/file.js';
+import { ensureDirectory, readJsonFile, serialize } from '../utils/file.js';
+import { safeJoin } from '../utils/path.js';
 
 export interface FileStoreOptions {
   /** Base directory for data files (default: '.reqon-data') */
@@ -64,7 +61,7 @@ export class FileStore implements StoreAdapter {
    */
   constructor(name: string, options: FileStoreOptions = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
-    this.filePath = join(this.options.baseDir, `${name}.json`);
+    this.filePath = safeJoin(this.options.baseDir, `${name}.json`);
     // Lazy initialization - init() is called on first operation
   }
 
