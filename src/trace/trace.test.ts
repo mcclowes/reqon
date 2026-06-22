@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   parseDuration,
   formatDuration,
@@ -8,8 +8,11 @@ import {
 } from '../pause/state.js';
 import { MemoryPauseStore } from '../pause/store.js';
 import { createExecutionTrace, safeClone, truncateForTrace, generateSnapshotId } from './state.js';
-import { MemoryTraceStore } from './store.js';
+import { MemoryTraceStore, FileTraceStore } from './store.js';
 import { TraceReplayer } from './replay.js';
+import { existsSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { TraceSnapshot } from './state.js';
 
 describe('Trace State', () => {
   it('creates execution trace', () => {
@@ -111,6 +114,70 @@ describe('MemoryTraceStore', () => {
     const latest = await store.findLatest('TestMission');
     expect(latest).not.toBeNull();
     expect(latest!.id).toBe('exec-2');
+  });
+});
+
+describe('FileTraceStore consistency', () => {
+  const DIR = '.reqon-test-traces';
+  let store: FileTraceStore;
+
+  const snap = (index: number): TraceSnapshot =>
+    ({
+      id: generateSnapshotId('exec-1', index),
+      index,
+      timestamp: new Date(),
+      mission: 'M',
+      action: 'A',
+      stepIndex: index,
+      stepType: 'fetch',
+      phase: 'before',
+      variables: {},
+      stores: {},
+    }) as unknown as TraceSnapshot;
+
+  beforeEach(() => {
+    rmSync(DIR, { recursive: true, force: true });
+    store = new FileTraceStore(DIR);
+  });
+
+  afterEach(() => {
+    rmSync(DIR, { recursive: true, force: true });
+  });
+
+  it('saves and loads exactly the committed snapshots', async () => {
+    const trace = createExecutionTrace('exec-1', 'M', 'full');
+    trace.snapshots.push(snap(0), snap(1));
+    await store.save(trace);
+
+    const loaded = await store.load('exec-1');
+    expect(loaded!.snapshots).toHaveLength(2);
+    expect(loaded!.snapshots.map((s) => s.index)).toEqual([0, 1]);
+  });
+
+  it('concurrent appends do not collide on the same index', async () => {
+    await store.save(createExecutionTrace('exec-1', 'M', 'full'));
+
+    await Promise.all([
+      store.appendSnapshot('exec-1', snap(0)),
+      store.appendSnapshot('exec-1', snap(0)),
+      store.appendSnapshot('exec-1', snap(0)),
+    ]);
+
+    const loaded = await store.load('exec-1');
+    expect(loaded!.snapshots).toHaveLength(3);
+    // Each append got a distinct file index 0,1,2.
+    expect(existsSync(join(DIR, 'exec-1', 'snapshot_000002.json'))).toBe(true);
+  });
+
+  it('load throws on an inconsistent trace (count claims more than on disk)', async () => {
+    await store.save(createExecutionTrace('exec-1', 'M', 'full'));
+    // Corrupt metadata to claim a snapshot that was never written.
+    const metaPath = join(DIR, 'exec-1', 'metadata.json');
+    const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+    meta.snapshotCount = 5;
+    writeFileSync(metaPath, JSON.stringify(meta));
+
+    await expect(store.load('exec-1')).rejects.toThrow(/inconsistent/i);
   });
 });
 

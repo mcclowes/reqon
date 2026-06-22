@@ -57,6 +57,8 @@ export interface TraceStore {
 export class FileTraceStore implements TraceStore {
   private baseDir: string;
   private initialized: Promise<void>;
+  /** Per-trace append serialization to prevent concurrent index collisions. */
+  private appendChain: Map<string, Promise<unknown>> = new Map();
 
   constructor(baseDir = '.reqon-data/traces') {
     this.baseDir = baseDir;
@@ -106,15 +108,30 @@ export class FileTraceStore implements TraceStore {
       metadata: trace.metadata,
       snapshotCount: trace.snapshots.length,
     };
-    await writeJsonFile(this.getMetadataPath(trace.id), metadata);
-
-    // Save each snapshot separately for efficient random access
+    // Write all snapshots first, then metadata last. Metadata's snapshotCount
+    // acts as a commit pointer: a crash mid-save leaves either no metadata or
+    // the previous one, never a metadata that claims more snapshots than exist.
     for (let i = 0; i < trace.snapshots.length; i++) {
       await writeJsonFile(this.getSnapshotPath(trace.id, i), trace.snapshots[i]);
     }
+    await writeJsonFile(this.getMetadataPath(trace.id), metadata);
   }
 
   async appendSnapshot(traceId: string, snapshot: TraceSnapshot): Promise<void> {
+    // Serialize appends per trace so two concurrent calls can't compute the
+    // same next index and clobber each other's snapshot file.
+    const run = (this.appendChain.get(traceId) ?? Promise.resolve()).then(() =>
+      this.doAppendSnapshot(traceId, snapshot)
+    );
+    // Keep the chain alive even if this append rejects.
+    this.appendChain.set(
+      traceId,
+      run.catch(() => {})
+    );
+    return run;
+  }
+
+  private async doAppendSnapshot(traceId: string, snapshot: TraceSnapshot): Promise<void> {
     await this.initialized;
     const traceDir = this.getTraceDir(traceId);
     await ensureDirectory(traceDir);
@@ -128,10 +145,11 @@ export class FileTraceStore implements TraceStore {
       snapshotCount = metadata.snapshotCount;
     }
 
-    // Save the new snapshot
+    // Write the snapshot first, then commit the new count to metadata so a
+    // crash between the two leaves an uncommitted (ignored) snapshot, never a
+    // count that points past what's on disk.
     await writeJsonFile(this.getSnapshotPath(traceId, snapshotCount), snapshot);
 
-    // Update metadata with new count
     if (metadata) {
       metadata.snapshotCount = snapshotCount + 1;
       await writeJsonFile(metadataPath, metadata);
@@ -141,24 +159,25 @@ export class FileTraceStore implements TraceStore {
   async load(id: string): Promise<ExecutionTrace | null> {
     await this.initialized;
 
-    const metadata = await this.getMetadata(id);
-    if (!metadata) return null;
+    const raw = await this.readMetadataRaw(id);
+    if (!raw) return null;
+    const { snapshotCount, metadata } = raw;
 
-    // Load all snapshots
+    // Load exactly the committed number of snapshots, by index. Globbing
+    // snapshot_*.json would silently include a half-written extra file or
+    // miss nothing about a gap; loading by the committed count guarantees the
+    // replayed trace matches what save/append actually committed.
     const snapshots: TraceSnapshot[] = [];
-    const snapshotFiles = await listFiles(this.getTraceDir(id), '.json');
-
-    for (const file of snapshotFiles) {
-      if (file.includes('snapshot_')) {
-        const parsed = await readJsonFile<Record<string, unknown>>(file);
-        if (parsed) {
-          snapshots.push(this.deserializeSnapshot(parsed));
-        }
+    for (let i = 0; i < snapshotCount; i++) {
+      const parsed = await readJsonFile<Record<string, unknown>>(this.getSnapshotPath(id, i));
+      if (!parsed) {
+        throw new Error(
+          `Trace ${id} is inconsistent: metadata claims ${snapshotCount} snapshots ` +
+            `but snapshot ${i} is missing.`
+        );
       }
+      snapshots.push(this.deserializeSnapshot(parsed));
     }
-
-    // Sort by index
-    snapshots.sort((a, b) => a.index - b.index);
 
     return {
       ...metadata,
@@ -218,13 +237,25 @@ export class FileTraceStore implements TraceStore {
   }
 
   async getMetadata(id: string): Promise<Omit<ExecutionTrace, 'snapshots'> | null> {
+    const raw = await this.readMetadataRaw(id);
+    return raw ? raw.metadata : null;
+  }
+
+  /** Read the metadata file, returning the committed snapshot count and the
+   * trace metadata (snapshotCount stripped). */
+  private async readMetadataRaw(
+    id: string
+  ): Promise<{ snapshotCount: number; metadata: Omit<ExecutionTrace, 'snapshots'> } | null> {
     await this.initialized;
     const parsed = await readJsonFile<Record<string, unknown>>(this.getMetadataPath(id));
     if (!parsed) return null;
 
     restoreDates(parsed, ['startedAt', 'completedAt']);
-    const { snapshotCount: _snapshotCount, ...rest } = parsed;
-    return rest as unknown as Omit<ExecutionTrace, 'snapshots'>;
+    const { snapshotCount, ...rest } = parsed;
+    return {
+      snapshotCount: typeof snapshotCount === 'number' ? snapshotCount : 0,
+      metadata: rest as unknown as Omit<ExecutionTrace, 'snapshots'>,
+    };
   }
 }
 
