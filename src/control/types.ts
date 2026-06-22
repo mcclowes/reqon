@@ -17,6 +17,12 @@ export interface ControlServerConfig {
   host?: string;
   /** Enable verbose logging */
   verbose?: boolean;
+  /**
+   * Shared secret required on state-changing endpoints (/pause, /resume) and
+   * /status. When set, requests must present `Authorization: Bearer <secret>`
+   * or they are rejected with 401.
+   */
+  authToken?: string;
 }
 
 /**

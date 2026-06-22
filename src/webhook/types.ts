@@ -54,7 +54,7 @@ export interface WebhookEvent {
 export interface WebhookServerConfig {
   /** Port to listen on (default: 3000) */
   port?: number;
-  /** Host to bind to (default: '0.0.0.0') */
+  /** Host to bind to (default: '127.0.0.1' — loopback only) */
   host?: string;
   /** Base URL for webhook endpoints (e.g., 'https://example.com/webhooks') */
   baseUrl?: string;
@@ -62,6 +62,14 @@ export interface WebhookServerConfig {
   defaultTimeout?: number;
   /** Enable verbose logging */
   verbose?: boolean;
+  /**
+   * Shared secret required on inbound webhook requests. When set, a request
+   * must present it via `Authorization: Bearer <secret>`, `X-Webhook-Token`,
+   * or a `token` query param, or it is rejected with 401.
+   */
+  secret?: string;
+  /** Maximum accepted request body size in bytes (default 1 MiB) */
+  maxBodyBytes?: number;
 }
 
 /**

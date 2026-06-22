@@ -93,6 +93,38 @@ describe('ControlServer', () => {
     });
   });
 
+  describe('security', () => {
+    it('rejects a cross-origin request with 403', async () => {
+      await server.start();
+      const res = await fetch(`http://localhost:${TEST_PORT}/pause`, {
+        method: 'POST',
+        headers: { Origin: 'http://evil.example.com' },
+      });
+      expect(res.status).toBe(403);
+      expect(server.isPauseRequested()).toBe(false);
+    });
+
+    it('requires the shared secret on state-changing endpoints when configured', async () => {
+      const secured = new ControlServer({ port: 13099, authToken: 's3cret' });
+      try {
+        await secured.start();
+
+        const unauth = await fetch('http://localhost:13099/pause', { method: 'POST' });
+        expect(unauth.status).toBe(401);
+        expect(secured.isPauseRequested()).toBe(false);
+
+        const authed = await fetch('http://localhost:13099/pause', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer s3cret' },
+        });
+        expect(authed.ok).toBe(true);
+        expect(secured.isPauseRequested()).toBe(true);
+      } finally {
+        await secured.stop();
+      }
+    });
+  });
+
   describe('status endpoint', () => {
     it('returns basic status when no execution state', async () => {
       await server.start();

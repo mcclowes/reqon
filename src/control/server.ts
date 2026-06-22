@@ -46,6 +46,7 @@ export class ControlServer {
       port: config.port ?? DEFAULTS.PORT,
       host: config.host ?? DEFAULTS.HOST,
       verbose: config.verbose ?? false,
+      authToken: config.authToken ?? '',
     };
     this.callbacks = callbacks;
   }
@@ -56,8 +57,18 @@ export class ControlServer {
   async start(): Promise<void> {
     if (this.running) return;
 
+    // Warn loudly if exposing a state-changing server beyond loopback with no
+    // shared secret configured.
+    if (!this.isLoopback(this.config.host) && !this.config.authToken) {
+      console.warn(
+        `[Control] WARNING: binding to ${this.config.host} with no authToken — ` +
+          `/pause, /resume, and /status are exposed without authentication.`
+      );
+    }
+
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => this.handleRequest(req, res));
+      this.server.setTimeout(30000);
 
       this.server.on('error', (error) => {
         reject(error);
@@ -141,10 +152,9 @@ export class ControlServer {
     const path = url.pathname ?? '/';
     const method = req.method ?? 'GET';
 
-    // Set CORS headers for flexibility
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // No wildcard CORS. Same-origin reads only; we never reflect ACAO so a
+    // browser on another origin can't read /status.
+    res.setHeader('Vary', 'Origin');
 
     // Handle preflight
     if (method === 'OPTIONS') {
@@ -153,15 +163,27 @@ export class ControlServer {
       return;
     }
 
+    // CSRF defense: reject any request that carries a cross-origin Origin
+    // header (server-to-server clients and curl send none). Combined with the
+    // loopback bind, this stops a web page the operator visits from POSTing
+    // /pause or /resume to their local control server.
+    if (this.hasCrossOriginHeader(req)) {
+      this.sendJson(res, 403, { error: 'Cross-origin request rejected' });
+      return;
+    }
+
     try {
       // Route requests
       if (path === '/health' || path === '/_health') {
         this.handleHealth(res);
       } else if (path === '/status') {
+        if (!this.authorized(req, res)) return;
         this.handleStatus(res);
       } else if (path === '/pause' && method === 'POST') {
+        if (!this.authorized(req, res)) return;
         this.handlePause(res);
       } else if (path === '/resume' && method === 'POST') {
+        if (!this.authorized(req, res)) return;
         this.handleResume(res);
       } else {
         this.sendJson(res, 404, { error: 'Not found', path });
@@ -169,6 +191,43 @@ export class ControlServer {
     } catch (error) {
       this.sendJson(res, 500, { error: (error as Error).message });
     }
+  }
+
+  /** True if a host string is a loopback address. */
+  private isLoopback(host: string): boolean {
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
+
+  /** True if the request carries an Origin header pointing at another origin. */
+  private hasCrossOriginHeader(req: IncomingMessage): boolean {
+    const origin = req.headers.origin;
+    if (!origin || typeof origin !== 'string') return false;
+    const host = req.headers.host;
+    try {
+      const originHost = new URL(origin).host;
+      return originHost !== host;
+    } catch {
+      // Unparseable Origin — treat as cross-origin (reject).
+      return true;
+    }
+  }
+
+  /**
+   * Enforce the shared-secret token on protected endpoints. When no token is
+   * configured, allow (the loopback bind + CSRF check are the baseline) but
+   * warn so operators know /status state is exposed locally.
+   */
+  private authorized(req: IncomingMessage, res: ServerResponse): boolean {
+    if (!this.config.authToken) {
+      return true;
+    }
+    const header = req.headers.authorization;
+    const expected = `Bearer ${this.config.authToken}`;
+    if (header !== expected) {
+      this.sendJson(res, 401, { error: 'Unauthorized' });
+      return false;
+    }
+    return true;
   }
 
   /**
