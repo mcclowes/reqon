@@ -343,6 +343,90 @@ describe('HttpClient', () => {
     });
   });
 
+  describe('idempotency / non-idempotent retries', () => {
+    it('does not retry a POST on 5xx', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      let callCount = 0;
+      globalThis.fetch = vi.fn(async () => {
+        callCount++;
+        return new Response(JSON.stringify({ error: 'boom' }), { status: 503 });
+      });
+
+      const result = await client.request(
+        { method: 'POST', path: '/payments', body: { amount: 100 } },
+        { maxAttempts: 3, backoff: 'constant', initialDelay: 10 }
+      );
+
+      expect(callCount).toBe(1);
+      expect(result.status).toBe(503);
+    });
+
+    it('does not retry a POST on a network error', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      globalThis.fetch = vi.fn(async () => {
+        throw new Error('socket hang up');
+      });
+
+      await expect(
+        client.request(
+          { method: 'POST', path: '/payments', body: { amount: 100 } },
+          { maxAttempts: 3, backoff: 'constant', initialDelay: 10 }
+        )
+      ).rejects.toThrow('socket hang up');
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      vi.useFakeTimers();
+    });
+
+    it('retries a POST that carries an idempotency key and sends the header', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      let callCount = 0;
+      let sentKey: string | null = null;
+      globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, opts?: RequestInit) => {
+        callCount++;
+        const headers = new Headers(opts?.headers);
+        sentKey = headers.get('Idempotency-Key');
+        if (callCount < 2) {
+          return new Response(JSON.stringify({ error: 'boom' }), { status: 503 });
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      });
+
+      const promise = client.request(
+        { method: 'POST', path: '/payments', body: { amount: 100 }, idempotencyKey: 'pay-123' },
+        { maxAttempts: 3, backoff: 'constant', initialDelay: 100 }
+      );
+      await vi.advanceTimersByTimeAsync(150);
+      const result = await promise;
+
+      expect(callCount).toBe(2);
+      expect(result.status).toBe(200);
+      expect(sentKey).toBe('pay-123');
+    });
+
+    it('still retries an idempotent PUT on 5xx', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      let callCount = 0;
+      globalThis.fetch = vi.fn(async () => {
+        callCount++;
+        if (callCount < 2) {
+          return new Response(JSON.stringify({ error: 'boom' }), { status: 500 });
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      });
+
+      const promise = client.request(
+        { method: 'PUT', path: '/items/1', body: { name: 'x' } },
+        { maxAttempts: 3, backoff: 'constant', initialDelay: 100 }
+      );
+      await vi.advanceTimersByTimeAsync(150);
+      const result = await promise;
+
+      expect(callCount).toBe(2);
+      expect(result.status).toBe(200);
+    });
+  });
+
   describe('response handling', () => {
     it('parses JSON response body', async () => {
       const client = new HttpClient({ baseUrl: 'https://api.example.com' });

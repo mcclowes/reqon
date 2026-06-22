@@ -29,7 +29,16 @@ export interface HttpRequest {
   body?: unknown;
   headers?: Record<string, string>;
   query?: Record<string, string>;
+  /**
+   * Opt a non-idempotent request (POST/PATCH) into automatic retries by
+   * supplying an idempotency key. Sent as the `Idempotency-Key` header so the
+   * server can dedup a re-sent write.
+   */
+  idempotencyKey?: string;
 }
+
+/** HTTP methods that are safe to retry automatically (idempotent per RFC 7231). */
+const IDEMPOTENT_METHODS: ReadonlySet<HttpRequest['method']> = new Set(['GET', 'PUT', 'DELETE']);
 
 export interface HttpResponse<T = unknown> {
   status: number;
@@ -46,13 +55,22 @@ export class HttpClient {
 
   async request<T = unknown>(req: HttpRequest, retry?: RetryConfig): Promise<HttpResponse<T>> {
     const url = this.buildUrl(req.path, req.query);
-    const headers = await this.buildHeaders(req.headers);
+    const requestHeaders = { ...req.headers };
+    if (req.idempotencyKey) {
+      requestHeaders['Idempotency-Key'] = req.idempotencyKey;
+    }
+    const headers = await this.buildHeaders(requestHeaders);
 
     const fetchOptions: RequestInit = {
       method: req.method,
       headers,
       body: req.body ? JSON.stringify(req.body) : undefined,
     };
+
+    // Auto-retry only idempotent verbs, or any verb carrying an idempotency key.
+    // A blind retry of POST/PATCH can re-send a write the server already
+    // committed (timeout / dropped socket after commit), duplicating data.
+    const retriable = IDEMPOTENT_METHODS.has(req.method) || Boolean(req.idempotencyKey);
 
     const maxAttempts = retry?.maxAttempts ?? HTTP_RETRY_DEFAULTS.MAX_ATTEMPTS;
     const backoff = retry?.backoff ?? HTTP_RETRY_DEFAULTS.BACKOFF;
@@ -135,11 +153,13 @@ export class HttpClient {
             );
           }
 
-          if (attempt < maxAttempts) {
+          if (retriable && attempt < maxAttempts) {
             const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
             await sleep(delay);
             continue;
           }
+          // Non-idempotent without an idempotency key: do not re-send a write
+          // that the server may have already committed. Return the 5xx instead.
         }
 
         // Handle 401 - try token refresh (at most once per request)
@@ -151,8 +171,8 @@ export class HttpClient {
         ) {
           hasRefreshed = true;
           await this.config.auth.refreshToken();
-          // Rebuild headers with new token
-          const newHeaders = await this.buildHeaders(req.headers);
+          // Rebuild headers with new token (preserving the idempotency key)
+          const newHeaders = await this.buildHeaders(requestHeaders);
           fetchOptions.headers = newHeaders;
           continue;
         }
@@ -185,6 +205,13 @@ export class HttpClient {
             undefined,
             true
           );
+        }
+
+        // A network error on a non-idempotent write is ambiguous: the request
+        // may have reached the server and committed before the socket dropped.
+        // Surface the error rather than blindly re-sending a duplicate write.
+        if (!retriable) {
+          throw lastError;
         }
 
         if (attempt < maxAttempts) {
