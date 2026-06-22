@@ -61,6 +61,9 @@ export class HttpClient {
     const timeout = retry?.timeout ?? this.config.timeout ?? HTTP_RETRY_DEFAULTS.TIMEOUT_MS;
 
     let lastError: Error | null = null;
+    // Refresh the token at most once per request to avoid burning a fresh
+    // rotating refresh token on every 401 retry attempt.
+    let hasRefreshed = false;
 
     // Check circuit breaker before attempting requests
     if (this.config.circuitBreaker && this.config.sourceName) {
@@ -139,8 +142,14 @@ export class HttpClient {
           }
         }
 
-        // Handle 401 - try token refresh
-        if (response.status === 401 && this.config.auth?.refreshToken && attempt < maxAttempts) {
+        // Handle 401 - try token refresh (at most once per request)
+        if (
+          response.status === 401 &&
+          this.config.auth?.refreshToken &&
+          !hasRefreshed &&
+          attempt < maxAttempts
+        ) {
+          hasRefreshed = true;
           await this.config.auth.refreshToken();
           // Rebuild headers with new token
           const newHeaders = await this.buildHeaders(req.headers);
@@ -322,6 +331,8 @@ export class OAuth2AuthProvider implements AuthProvider {
   private tokenEndpoint?: string;
   private clientId?: string;
   private clientSecret?: string;
+  /** Single-flight guard: coalesces concurrent refreshes into one in-flight request */
+  private refreshPromise: Promise<string> | null = null;
 
   constructor(config: {
     accessToken: string;
@@ -342,6 +353,23 @@ export class OAuth2AuthProvider implements AuthProvider {
   }
 
   async refreshToken(): Promise<string> {
+    // Deduplicate concurrent refresh requests. With rotating refresh tokens,
+    // letting many in-flight requests each POST to the token endpoint would
+    // 400 invalid_grant all but one and kill the session.
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = this.doRefresh();
+
+    try {
+      return await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
+  }
+
+  private async doRefresh(): Promise<string> {
     if (!this.refreshTokenValue || !this.tokenEndpoint) {
       throw new Error('Cannot refresh token: missing refresh token or endpoint');
     }
