@@ -489,6 +489,89 @@ describe('MissionExecutor', () => {
     });
   });
 
+  describe('incremental sync checkpoint deferral', () => {
+    interface RecordedSync {
+      key: string;
+      syncedAt: Date;
+      recordCount?: number;
+    }
+
+    const makeSyncStore = (recorded: RecordedSync[]) => ({
+      getLastSync: async () => new Date(0),
+      getCheckpoint: async () => null,
+      recordSync: async (c: RecordedSync) => {
+        recorded.push(c);
+      },
+      list: async () => [],
+      clear: async () => {},
+      clearAll: async () => {},
+    });
+
+    const fetchStep = () =>
+      ({
+        type: 'FetchStep',
+        method: 'GET',
+        path: { type: 'Literal', value: '/items', dataType: 'string' },
+        source: 'api',
+        since: { type: 'lastSync', key: 'ck' },
+      }) as unknown as import('../ast/nodes.js').ActionStep;
+
+    const storeStep = () =>
+      ({
+        type: 'StoreStep',
+        target: 'out',
+        source: { type: 'Identifier', name: 'response' },
+        options: {},
+      }) as unknown as import('../ast/nodes.js').ActionStep;
+
+    const abortStep = () =>
+      ({
+        type: 'MatchStep',
+        target: { type: 'Literal', value: 1, dataType: 'number' },
+        arms: [{ schema: '_', flow: { type: 'abort', message: 'boom' } }],
+      }) as unknown as import('../ast/nodes.js').ActionStep;
+
+    const syncProgram = (steps: unknown[]): ReqonProgram => ({
+      type: 'ReqonProgram',
+      statements: [
+        {
+          type: 'MissionDefinition',
+          name: 'SyncMission',
+          sources: [
+            { type: 'SourceDefinition', name: 'api', config: { base: 'https://api.example.com' } },
+          ],
+          stores: [{ type: 'StoreDefinition', name: 'out', target: 'out', storeType: 'memory' }],
+          schemas: [],
+          transforms: [],
+          actions: [{ type: 'ActionDefinition', name: 'A', steps }],
+          pipeline: { type: 'PipelineDefinition', stages: [{ action: 'A' }] },
+        } as unknown as MissionDefinition,
+      ],
+    });
+
+    it('advances the checkpoint after a successful store', async () => {
+      const recorded: RecordedSync[] = [];
+      const result = await new MissionExecutor({
+        dryRun: true,
+        syncStore: makeSyncStore(recorded),
+      }).execute(syncProgram([fetchStep(), storeStep()]));
+
+      expect(result.success).toBe(true);
+      expect(recorded.map((r) => r.key)).toEqual(['ck']);
+    });
+
+    it('does NOT advance the checkpoint when the action fails before storing', async () => {
+      const recorded: RecordedSync[] = [];
+      const result = await new MissionExecutor({
+        dryRun: true,
+        syncStore: makeSyncStore(recorded),
+      }).execute(syncProgram([fetchStep(), abortStep(), storeStep()]));
+
+      expect(result.success).toBe(false);
+      expect(recorded).toHaveLength(0);
+    });
+  });
+
   describe('dry run mode', () => {
     it('executes in dry run mode without actual HTTP calls', async () => {
       const executor = new MissionExecutor({ dryRun: true, verbose: false });

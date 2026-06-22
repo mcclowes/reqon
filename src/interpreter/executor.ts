@@ -224,6 +224,12 @@ export class MissionExecutor {
   private actionsRun: string[] = [];
   /** Monotonic key generator for queued values lacking an id. */
   private queueCounter = 0;
+  /**
+   * Sync checkpoints deferred until data is durably stored. Advancing the
+   * checkpoint before a successful store would silently drop unstored records
+   * on a crash between fetch and store.
+   */
+  private pendingCheckpoints: Array<() => Promise<void>> = [];
   private transforms: Map<string, TransformDefinition> = new Map();
   private rateLimiter: RateLimiter;
   private circuitBreaker: CircuitBreaker;
@@ -938,6 +944,9 @@ export class MissionExecutor {
     let attempt = 0;
 
     for (;;) {
+      // Each attempt starts fresh — discard any checkpoints from a prior
+      // (retried) attempt so a re-run's fetch doesn't double-record.
+      this.pendingCheckpoints = [];
       // Create a child context for this action with its own response scope.
       // This allows parallel actions to have independent response values.
       const actionCtx = childContext(this.ctx);
@@ -945,20 +954,25 @@ export class MissionExecutor {
         for (const step of action.steps) {
           await this.executeStep(step, action.name, actionCtx);
         }
+        // Flush checkpoints for fetches that completed without a later store.
+        await this.flushPendingCheckpoints();
         return;
       } catch (error) {
         if (error instanceof SkipSignal) {
           this.log(`Action ${action.name}: skip — remaining steps skipped`);
+          await this.flushPendingCheckpoints();
           return;
         }
         if (error instanceof QueueSignal) {
           await this.handleQueue(error);
+          await this.flushPendingCheckpoints();
           return;
         }
         if (error instanceof RetrySignal) {
           const maxAttempts = error.backoff?.maxAttempts ?? MAX_RETRY_FALLBACK;
           attempt++;
           if (attempt >= maxAttempts) {
+            this.pendingCheckpoints = [];
             throw new Error(`Action ${action.name} exhausted ${maxAttempts} retry attempt(s)`);
           }
           const delay = this.computeRetryDelay(error.backoff, attempt);
@@ -966,7 +980,9 @@ export class MissionExecutor {
           if (delay > 0) await sleep(delay);
           continue;
         }
-        // JumpSignal, PauseSignal, and real errors propagate to the caller.
+        // JumpSignal, PauseSignal, and real errors propagate; discard
+        // checkpoints for data that was never durably stored.
+        this.pendingCheckpoints = [];
         throw error;
       }
     }
@@ -1170,12 +1186,29 @@ export class MissionExecutor {
         : undefined,
     });
 
+    // Capture when the request began; used as the checkpoint fallback time so
+    // a sync without an explicit update field never advances past records
+    // written during the fetch.
+    const fetchStartedAt = new Date();
     const result = await fetchHandler.execute(step);
     ctx.response = result.data;
 
-    // Update sync checkpoint after successful fetch
+    // Defer the sync checkpoint until the fetched data is durably stored.
     if (result.checkpointKey && this.syncStore) {
-      await fetchHandler.recordCheckpoint(result.checkpointKey, step, result.data);
+      const key = result.checkpointKey;
+      const data = result.data;
+      this.pendingCheckpoints.push(() =>
+        fetchHandler.recordCheckpoint(key, step, data, fetchStartedAt)
+      );
+    }
+  }
+
+  /** Flush deferred sync checkpoints (called after a successful store / action). */
+  private async flushPendingCheckpoints(): Promise<void> {
+    const pending = this.pendingCheckpoints;
+    this.pendingCheckpoints = [];
+    for (const record of pending) {
+      await record();
     }
   }
 
@@ -1237,6 +1270,8 @@ export class MissionExecutor {
         : undefined,
     });
     await handler.execute(step);
+    // Data is now durably stored — safe to advance any pending sync checkpoint.
+    await this.flushPendingCheckpoints();
   }
 
   private async executeMatch(
