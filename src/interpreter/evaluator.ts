@@ -176,10 +176,13 @@ export function evaluate(
     case 'LogicalExpression': {
       const left = evaluate(expr.left, ctx, current);
 
+      // Return operand values (like JS &&/||), not coerced booleans, so
+      // idioms like `x or default` work. Short-circuit: only evaluate the
+      // right operand when the left doesn't already decide the result.
       if (expr.operator === 'and') {
-        return left ? evaluate(expr.right, ctx, current) : false;
+        return left ? evaluate(expr.right, ctx, current) : left;
       } else {
-        return left ? true : evaluate(expr.right, ctx, current);
+        return left ? left : evaluate(expr.right, ctx, current);
       }
     }
 
