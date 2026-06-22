@@ -75,7 +75,7 @@ describe('Configuration Constants', () => {
   describe('WEBHOOK_DEFAULTS', () => {
     it('has sensible default values', () => {
       expect(WEBHOOK_DEFAULTS.PORT).toBe(3000);
-      expect(WEBHOOK_DEFAULTS.HOST).toBe('0.0.0.0');
+      expect(WEBHOOK_DEFAULTS.HOST).toBe('127.0.0.1');
       expect(WEBHOOK_DEFAULTS.DEFAULT_TIMEOUT_MS).toBe(300000);
       expect(WEBHOOK_DEFAULTS.CLEANUP_INTERVAL_MS).toBe(60000);
     });

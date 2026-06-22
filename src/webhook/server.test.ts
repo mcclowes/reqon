@@ -66,6 +66,56 @@ describe('WebhookServer', () => {
     });
   });
 
+  describe('security', () => {
+    it('rejects an unauthenticated request when a secret is configured', async () => {
+      const secured = new WebhookServer(
+        { port: 13900, secret: 'hook-secret', verbose: false },
+        new MemoryWebhookStore()
+      );
+      try {
+        await secured.start();
+        const reg = await secured.register('exec-1', { path: '/cb', expectedEvents: 1 });
+
+        const unauth = await fetch('http://localhost:13900/cb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        expect(unauth.status).toBe(401);
+
+        const authed = await fetch('http://localhost:13900/cb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer hook-secret' },
+          body: '{}',
+        });
+        expect(authed.ok).toBe(true);
+        expect(reg.path).toBe('/cb');
+      } finally {
+        await secured.stop();
+      }
+    });
+
+    it('rejects an over-limit request body with 413', async () => {
+      const limited = new WebhookServer(
+        { port: 13901, maxBodyBytes: 64, verbose: false },
+        new MemoryWebhookStore()
+      );
+      try {
+        await limited.start();
+        await limited.register('exec-2', { path: '/cb', expectedEvents: 1 });
+
+        const res = await fetch('http://localhost:13901/cb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blob: 'x'.repeat(500) }),
+        });
+        expect(res.status).toBe(413);
+      } finally {
+        await limited.stop();
+      }
+    });
+  });
+
   describe('unregister', () => {
     it('should unregister a webhook endpoint', async () => {
       const registration = await server.register('exec-123');

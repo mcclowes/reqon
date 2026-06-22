@@ -90,12 +90,16 @@ export const CIRCUIT_BREAKER_DEFAULTS = {
 export const WEBHOOK_DEFAULTS = {
   /** Default port for webhook server */
   PORT: 3000,
-  /** Default host binding */
-  HOST: '0.0.0.0',
+  /** Default host binding — loopback only; opt into 0.0.0.0 explicitly. */
+  HOST: '127.0.0.1',
   /** Default timeout for wait steps (5 minutes in ms) */
   DEFAULT_TIMEOUT_MS: 300000,
   /** Cleanup interval for expired registrations (1 minute in ms) */
   CLEANUP_INTERVAL_MS: 60000,
+  /** Maximum accepted request body size in bytes (1 MiB) */
+  MAX_BODY_BYTES: 1024 * 1024,
+  /** Idle socket timeout in ms; drops slow-drip connections */
+  SOCKET_TIMEOUT_MS: 30000,
 } as const;
 
 // ============================================

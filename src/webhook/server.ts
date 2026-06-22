@@ -53,6 +53,8 @@ export class WebhookServer {
       baseUrl: config.baseUrl ?? `http://localhost:${config.port ?? WEBHOOK_DEFAULTS.PORT}`,
       defaultTimeout: config.defaultTimeout ?? WEBHOOK_DEFAULTS.DEFAULT_TIMEOUT_MS,
       verbose: config.verbose ?? false,
+      secret: config.secret ?? '',
+      maxBodyBytes: config.maxBodyBytes ?? WEBHOOK_DEFAULTS.MAX_BODY_BYTES,
     };
     this.store = store ?? new MemoryWebhookStore();
     this.callbacks = callbacks;
@@ -64,8 +66,17 @@ export class WebhookServer {
   async start(): Promise<void> {
     if (this.running) return;
 
+    // Warn loudly if exposing an unauthenticated webhook server off-host.
+    if (!this.isLoopback(this.config.host) && !this.config.secret) {
+      console.warn(
+        `[Webhook] WARNING: binding to ${this.config.host} with no secret — ` +
+          `anyone who can reach the port can inject events.`
+      );
+    }
+
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => this.handleRequest(req, res));
+      this.server.setTimeout(WEBHOOK_DEFAULTS.SOCKET_TIMEOUT_MS);
 
       this.server.on('error', (error) => {
         reject(error);
@@ -76,7 +87,10 @@ export class WebhookServer {
         this.log(`Webhook server listening on ${this.config.host}:${this.config.port}`);
 
         // Start cleanup interval
-        this.cleanupInterval = setInterval(() => this.cleanup(), WEBHOOK_DEFAULTS.CLEANUP_INTERVAL_MS);
+        this.cleanupInterval = setInterval(
+          () => this.cleanup(),
+          WEBHOOK_DEFAULTS.CLEANUP_INTERVAL_MS
+        );
 
         resolve();
       });
@@ -96,7 +110,7 @@ export class WebhookServer {
     }
 
     // Cancel all pending waits
-    for (const [id, pending] of this.pendingWaits) {
+    for (const [, pending] of this.pendingWaits) {
       clearTimeout(pending.timeoutId);
       pending.resolve({
         success: false,
@@ -164,10 +178,7 @@ export class WebhookServer {
   /**
    * Wait for webhook events
    */
-  async waitForEvents(
-    registrationId: string,
-    timeout?: number
-  ): Promise<WaitResult> {
+  async waitForEvents(registrationId: string, timeout?: number): Promise<WaitResult> {
     const registration = await this.store.getRegistration(registrationId);
     if (!registration) {
       return {
@@ -184,7 +195,7 @@ export class WebhookServer {
     }
 
     // Wait for more events
-    const waitTimeout = timeout ?? (registration.expiresAt.getTime() - Date.now());
+    const waitTimeout = timeout ?? registration.expiresAt.getTime() - Date.now();
 
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
@@ -274,12 +285,32 @@ export class WebhookServer {
       return;
     }
 
-    // Parse request body
-    let rawBody = '';
-    let body: unknown = null;
+    // Require the shared secret if one is configured.
+    if (this.config.secret && !this.authorized(req, url.query)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
+      return;
+    }
 
+    // Read the request body with a hard size cap to prevent an OOM from a
+    // large or slow-drip POST.
+    let rawBody = '';
     try {
       rawBody = await this.readBody(req);
+    } catch (error) {
+      if ((error as { code?: string }).code === 'BODY_TOO_LARGE') {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Request body too large' }));
+        return;
+      }
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Failed to read request body' }));
+      return;
+    }
+
+    // Parse request body
+    let body: unknown = null;
+    try {
       if (rawBody) {
         const contentType = req.headers['content-type'] ?? '';
         if (contentType.includes('application/json')) {
@@ -290,7 +321,7 @@ export class WebhookServer {
           body = rawBody;
         }
       }
-    } catch (error) {
+    } catch {
       body = rawBody;
     }
 
@@ -311,7 +342,9 @@ export class WebhookServer {
     registration.receivedEvents++;
     await this.store.saveRegistration(registration);
 
-    this.log(`Webhook received: ${path} (${registration.receivedEvents}/${registration.expectedEvents})`);
+    this.log(
+      `Webhook received: ${path} (${registration.receivedEvents}/${registration.expectedEvents})`
+    );
     this.callbacks.onWebhookReceived?.(event);
 
     // Check if all expected events received
@@ -330,28 +363,64 @@ export class WebhookServer {
 
     // Send response
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      success: true,
-      eventId: event.id,
-      received: registration.receivedEvents,
-      expected: registration.expectedEvents,
-    }));
+    res.end(
+      JSON.stringify({
+        success: true,
+        eventId: event.id,
+        received: registration.receivedEvents,
+        expected: registration.expectedEvents,
+      })
+    );
   }
 
   /**
    * Read request body
    */
   private readBody(req: IncomingMessage): Promise<string> {
+    const limit = this.config.maxBodyBytes;
     return new Promise((resolve, reject) => {
-      let data = '';
-      req.on('data', (chunk) => {
-        data += chunk;
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let aborted = false;
+      req.on('data', (chunk: Buffer) => {
+        if (aborted) return;
+        size += chunk.length;
+        if (size > limit) {
+          // Stop accumulating (memory stays bounded) and reject; the handler
+          // responds 413. We don't destroy the socket here so the response
+          // can flush first.
+          aborted = true;
+          const err = new Error('Request body too large') as Error & { code: string };
+          err.code = 'BODY_TOO_LARGE';
+          reject(err);
+          return;
+        }
+        chunks.push(chunk);
       });
       req.on('end', () => {
-        resolve(data);
+        resolve(Buffer.concat(chunks).toString('utf-8'));
       });
       req.on('error', reject);
     });
+  }
+
+  /** True if a host string is a loopback address. */
+  private isLoopback(host: string): boolean {
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
+
+  /**
+   * Validate the shared secret from Authorization bearer, X-Webhook-Token
+   * header, or a `token` query param.
+   */
+  private authorized(req: IncomingMessage, query: Record<string, unknown>): boolean {
+    const secret = this.config.secret;
+    const auth = req.headers.authorization;
+    if (auth === `Bearer ${secret}`) return true;
+    const tokenHeader = req.headers['x-webhook-token'];
+    if (tokenHeader === secret) return true;
+    if (typeof query.token === 'string' && query.token === secret) return true;
+    return false;
   }
 
   /**
