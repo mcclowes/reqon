@@ -344,7 +344,8 @@ describe('HttpClient', () => {
   });
 
   describe('idempotency / non-idempotent retries', () => {
-    it('does not retry a POST on 5xx', async () => {
+    it('does not retry a POST on 5xx (and surfaces it as an error)', async () => {
+      vi.useRealTimers();
       const client = new HttpClient({ baseUrl: 'https://api.example.com' });
       let callCount = 0;
       globalThis.fetch = vi.fn(async () => {
@@ -352,13 +353,17 @@ describe('HttpClient', () => {
         return new Response(JSON.stringify({ error: 'boom' }), { status: 503 });
       });
 
-      const result = await client.request(
-        { method: 'POST', path: '/payments', body: { amount: 100 } },
-        { maxAttempts: 3, backoff: 'constant', initialDelay: 10 }
-      );
+      // A non-idempotent POST is not retried on 5xx, and a non-2xx response is
+      // an error rather than data (it must not be persisted as a record).
+      await expect(
+        client.request(
+          { method: 'POST', path: '/payments', body: { amount: 100 } },
+          { maxAttempts: 3, backoff: 'constant', initialDelay: 10 }
+        )
+      ).rejects.toThrow(/HTTP 503/);
 
       expect(callCount).toBe(1);
-      expect(result.status).toBe(503);
+      vi.useFakeTimers();
     });
 
     it('does not retry a POST on a network error', async () => {
@@ -474,6 +479,57 @@ describe('HttpClient', () => {
       });
 
       expect(capturedBody).toBe(JSON.stringify({ name: 'Test', email: 'test@example.com' }));
+    });
+
+    it('throws on a 4xx response instead of returning the error body as data', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      let callCount = 0;
+      globalThis.fetch = vi.fn(async () => {
+        callCount++;
+        return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+      });
+
+      await expect(
+        client.request(
+          { method: 'GET', path: '/missing' },
+          { maxAttempts: 3, backoff: 'constant', initialDelay: 1 }
+        )
+      ).rejects.toThrow(/HTTP 404/);
+      // 4xx is definitive — not retried.
+      expect(callCount).toBe(1);
+      vi.useFakeTimers();
+    });
+
+    it('returns null for a 204 No Content response', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      globalThis.fetch = vi.fn(async () => new Response(null, { status: 204 }));
+
+      const result = await client.request({ method: 'DELETE', path: '/users/1' });
+      expect(result.status).toBe(204);
+      expect(result.data).toBeNull();
+    });
+
+    it('returns null for an empty 200 body', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      globalThis.fetch = vi.fn(async () => new Response('', { status: 200 }));
+
+      const result = await client.request({ method: 'GET', path: '/empty' });
+      expect(result.data).toBeNull();
+    });
+
+    it('returns raw text for a non-JSON content type', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      globalThis.fetch = vi.fn(
+        async () =>
+          new Response('<html>ok</html>', {
+            status: 200,
+            headers: { 'content-type': 'text/html' },
+          })
+      );
+
+      const result = await client.request<string>({ method: 'GET', path: '/page' });
+      expect(result.data).toBe('<html>ok</html>');
     });
   });
 });
