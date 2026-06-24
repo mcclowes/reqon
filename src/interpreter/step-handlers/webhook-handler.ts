@@ -79,7 +79,26 @@ export class WebhookHandler {
       webhookPath: registration.path,
     };
 
-    // Wait for webhook events
+    // Wait for webhook events. The registration must be torn down on every
+    // exit path (timeout, filter throw, store failure, retry signal) or it
+    // leaks the server-side handle — hence the try/finally below.
+    try {
+      return await this.waitAndProcess(step, registration, webhookUrl, timeout, ctx, log, emit);
+    } finally {
+      await webhookServer.unregister(registration.id);
+    }
+  }
+
+  private async waitAndProcess(
+    step: WebhookStep,
+    registration: WebhookRegistration,
+    webhookUrl: string,
+    timeout: number,
+    ctx: ExecutionContext,
+    log: (message: string) => void,
+    emit: WebhookHandlerDeps['emit']
+  ): Promise<WebhookHandlerResult> {
+    const webhookServer = this.deps.webhookServer;
     const result = await webhookServer.waitForEvents(registration.id, timeout);
 
     if (result.timedOut) {
@@ -156,9 +175,7 @@ export class WebhookHandler {
       storedTo: step.storage?.target,
     });
 
-    // Clean up registration
-    await webhookServer.unregister(registration.id);
-
+    // Registration teardown happens in the caller's finally block.
     return {
       registration,
       events,
