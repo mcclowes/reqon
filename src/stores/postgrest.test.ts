@@ -317,19 +317,79 @@ describe('PostgRESTStore', () => {
   });
 
   describe('clear', () => {
-    it('deletes all records using not.is.null filter', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-      });
+    it('refuses a full-table delete unless explicitly opted in', async () => {
+      await expect(store.clear()).rejects.toThrow(/full-table delete/i);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
 
-      await store.clear();
+    it('deletes all records when allowFullTableClear is enabled', async () => {
+      const clearable = new PostgRESTStore({ ...defaultOptions, allowFullTableClear: true });
+      mockFetch.mockResolvedValueOnce({ ok: true });
+
+      await clearable.clear();
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://test.supabase.co/rest/v1/users?id=not.is.null',
-        expect.objectContaining({
-          method: 'DELETE',
-        })
+        expect.objectContaining({ method: 'DELETE' })
       );
+    });
+  });
+
+  describe('filter injection hardening', () => {
+    const injections = [
+      'or',
+      'id,or=(admin.eq.true)',
+      'id.gt.0',
+      'or=(id.gt.0)',
+      'select',
+      'foo)',
+      '',
+    ];
+
+    for (const field of injections) {
+      it(`rejects unsafe filter field name: ${JSON.stringify(field)}`, async () => {
+        await expect(store.list({ where: { [field]: 'x' } })).rejects.toThrow(PostgRESTError);
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it(`rejects unsafe count field name: ${JSON.stringify(field)}`, async () => {
+        await expect(store.count({ where: { [field]: 'x' } })).rejects.toThrow(PostgRESTError);
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+    }
+
+    it('allows ordinary identifier field names', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+      await store.list({ where: { user_id: 'abc' } });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('user_id=eq.abc'),
+        expect.any(Object)
+      );
+    });
+
+    it('quotes and escapes string values containing PostgREST syntax', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+      await store.list({ where: { name: 'a,b(c)"d' } });
+
+      const url = mockFetch.mock.calls[0][0] as string;
+      const decoded = decodeURIComponent(url);
+      // Reserved chars must be wrapped in a quoted operand so they can't be
+      // parsed as list/group syntax.
+      expect(decoded).toContain('name=eq."a,b(c)\\"d"');
+    });
+  });
+
+  describe('request timeouts', () => {
+    it('passes an abort signal to every request', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+
+      await store.list();
+
+      const init = mockFetch.mock.calls[0][1] as RequestInit;
+      expect(init.signal).toBeInstanceOf(AbortSignal);
     });
   });
 
