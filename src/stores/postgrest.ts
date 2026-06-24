@@ -11,7 +11,34 @@ export interface PostgRESTOptions {
   primaryKey?: string;
   /** Optional schema (for Supabase, typically 'public') */
   schema?: string;
+  /**
+   * Per-request timeout in milliseconds (default: 30000). Every request is
+   * aborted after this elapses so a hung connection can't stall a mission.
+   */
+  timeoutMs?: number;
+  /**
+   * Opt-in guard for {@link PostgRESTStore.clear}, which issues a full-table
+   * DELETE. Defaults to false so a misconfigured store (e.g. a `sql` type
+   * resolving here by mistake) can't wipe a table.
+   */
+  allowFullTableClear?: boolean;
 }
+
+/** PostgREST query parameters that are operators/modifiers, not columns. */
+const RESERVED_QUERY_KEYS = new Set([
+  'or',
+  'and',
+  'not',
+  'select',
+  'order',
+  'limit',
+  'offset',
+  'on_conflict',
+  'columns',
+]);
+
+/** A bare, safe column identifier: no operators, separators, or grouping. */
+const SAFE_FIELD = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * PostgREST-compatible store adapter.
@@ -30,18 +57,20 @@ export class PostgRESTStore implements StoreAdapter {
   private baseUrl: string;
   private headers: Record<string, string>;
   private primaryKey: string;
+  private timeoutMs: number;
 
   constructor(private options: PostgRESTOptions) {
     // Normalize URL (remove trailing slash)
     const url = options.url.replace(/\/$/, '');
     this.baseUrl = `${url}/${options.table}`;
     this.primaryKey = options.primaryKey ?? 'id';
+    this.timeoutMs = options.timeoutMs ?? 30000;
 
     this.headers = {
       'Content-Type': 'application/json',
-      'apikey': options.apiKey,
-      'Authorization': `Bearer ${options.apiKey}`,
-      'Prefer': 'return=representation',
+      apikey: options.apiKey,
+      Authorization: `Bearer ${options.apiKey}`,
+      Prefer: 'return=representation',
     };
 
     if (options.schema) {
@@ -50,10 +79,60 @@ export class PostgRESTStore implements StoreAdapter {
     }
   }
 
+  /** fetch wrapper that aborts the request once {@link timeoutMs} elapses. */
+  private async request(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(this.timeoutMs) });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        throw new PostgRESTError(`Request timed out after ${this.timeoutMs}ms`, 0);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Reject a where-clause field unless it is a plain column identifier. This
+   * stops a key such as `or` or `id,or=(...)` from being concatenated into the
+   * query string and reinterpreted as a PostgREST operator.
+   */
+  private validateField(field: string): void {
+    if (!SAFE_FIELD.test(field) || RESERVED_QUERY_KEYS.has(field.toLowerCase())) {
+      throw new PostgRESTError(`Unsafe filter field name: ${JSON.stringify(field)}`, 0);
+    }
+  }
+
+  /**
+   * Render a where-clause value as a PostgREST operand. Strings containing
+   * reserved characters are wrapped in a quoted operand (with `"` and `\`
+   * escaped) so they can't be parsed as list/group syntax.
+   */
+  private formatFilterValue(value: unknown): string {
+    if (value === null) return 'is.null';
+    if (typeof value === 'number' || typeof value === 'boolean') return `eq.${value}`;
+    if (typeof value === 'string') {
+      if (/[,.()"\\:]|\s/.test(value)) {
+        return `eq."${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+      }
+      return `eq.${value}`;
+    }
+    // Complex values: JSON-encode, then quote as a string operand.
+    const json = JSON.stringify(value);
+    return `eq."${json.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }
+
+  /** Append a validated, escaped where clause to the given params. */
+  private applyWhere(params: URLSearchParams, where: Record<string, unknown>): void {
+    for (const [field, value] of Object.entries(where)) {
+      this.validateField(field);
+      params.append(field, this.formatFilterValue(value));
+    }
+  }
+
   async get(key: string): Promise<Record<string, unknown> | null> {
     const url = `${this.baseUrl}?${this.primaryKey}=eq.${encodeURIComponent(key)}&limit=1`;
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'GET',
       headers: this.headers,
     });
@@ -70,11 +149,11 @@ export class PostgRESTStore implements StoreAdapter {
     // Upsert using PostgREST's on_conflict resolution
     const record = { ...value, [this.primaryKey]: key };
 
-    const response = await fetch(this.baseUrl, {
+    const response = await this.request(this.baseUrl, {
       method: 'POST',
       headers: {
         ...this.headers,
-        'Prefer': 'resolution=merge-duplicates,return=representation',
+        Prefer: 'resolution=merge-duplicates,return=representation',
       },
       body: JSON.stringify(record),
     });
@@ -88,7 +167,7 @@ export class PostgRESTStore implements StoreAdapter {
   async update(key: string, value: Partial<Record<string, unknown>>): Promise<void> {
     const url = `${this.baseUrl}?${this.primaryKey}=eq.${encodeURIComponent(key)}`;
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'PATCH',
       headers: this.headers,
       body: JSON.stringify(value),
@@ -103,7 +182,7 @@ export class PostgRESTStore implements StoreAdapter {
   async delete(key: string): Promise<void> {
     const url = `${this.baseUrl}?${this.primaryKey}=eq.${encodeURIComponent(key)}`;
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'DELETE',
       headers: this.headers,
     });
@@ -119,18 +198,7 @@ export class PostgRESTStore implements StoreAdapter {
 
     // Apply where clause
     if (filter?.where) {
-      for (const [field, value] of Object.entries(filter.where)) {
-        if (value === null) {
-          params.append(field, 'is.null');
-        } else if (typeof value === 'string') {
-          params.append(field, `eq.${value}`);
-        } else if (typeof value === 'number' || typeof value === 'boolean') {
-          params.append(field, `eq.${value}`);
-        } else {
-          // For complex values, try JSON
-          params.append(field, `eq.${JSON.stringify(value)}`);
-        }
-      }
+      this.applyWhere(params, filter.where);
     }
 
     // Apply pagination
@@ -144,7 +212,7 @@ export class PostgRESTStore implements StoreAdapter {
     const queryString = params.toString();
     const url = queryString ? `${this.baseUrl}?${queryString}` : this.baseUrl;
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'GET',
       headers: this.headers,
     });
@@ -158,11 +226,18 @@ export class PostgRESTStore implements StoreAdapter {
   }
 
   async clear(): Promise<void> {
+    if (!this.options.allowFullTableClear) {
+      throw new PostgRESTError(
+        'Refusing full-table delete: set allowFullTableClear to enable clear()',
+        0
+      );
+    }
+
     // Delete all records - PostgREST requires a filter, so we use a always-true condition
     // This deletes where primary key is not null (i.e., all records)
     const url = `${this.baseUrl}?${this.primaryKey}=not.is.null`;
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'DELETE',
       headers: this.headers,
     });
@@ -179,11 +254,11 @@ export class PostgRESTStore implements StoreAdapter {
   async bulkInsert(records: Record<string, unknown>[]): Promise<void> {
     if (records.length === 0) return;
 
-    const response = await fetch(this.baseUrl, {
+    const response = await this.request(this.baseUrl, {
       method: 'POST',
       headers: {
         ...this.headers,
-        'Prefer': 'resolution=merge-duplicates',
+        Prefer: 'resolution=merge-duplicates',
       },
       body: JSON.stringify(records),
     });
@@ -202,22 +277,16 @@ export class PostgRESTStore implements StoreAdapter {
     params.append('select', 'count');
 
     if (filter?.where) {
-      for (const [field, value] of Object.entries(filter.where)) {
-        if (value === null) {
-          params.append(field, 'is.null');
-        } else {
-          params.append(field, `eq.${value}`);
-        }
-      }
+      this.applyWhere(params, filter.where);
     }
 
     const url = `${this.baseUrl}?${params.toString()}`;
 
-    const response = await fetch(url, {
+    const response = await this.request(url, {
       method: 'GET',
       headers: {
         ...this.headers,
-        'Prefer': 'count=exact',
+        Prefer: 'count=exact',
       },
     });
 
