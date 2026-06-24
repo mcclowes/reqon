@@ -38,7 +38,9 @@ export class WebhookServer {
   private store: WebhookStore;
   private callbacks: WebhookServerCallbacks;
   private server?: Server;
-  private pendingWaits: Map<string, PendingWait> = new Map();
+  // Multiple concurrent waiters may await the same registration; each gets its
+  // own entry so a second waiter can't clobber the first's timer/promise.
+  private pendingWaits: Map<string, Set<PendingWait>> = new Map();
   private cleanupInterval?: ReturnType<typeof setInterval>;
   private running = false;
 
@@ -110,13 +112,15 @@ export class WebhookServer {
     }
 
     // Cancel all pending waits
-    for (const [, pending] of this.pendingWaits) {
-      clearTimeout(pending.timeoutId);
-      pending.resolve({
-        success: false,
-        events: [],
-        error: 'Server shutting down',
-      });
+    for (const [, waiters] of this.pendingWaits) {
+      for (const pending of waiters) {
+        clearTimeout(pending.timeoutId);
+        pending.resolve({
+          success: false,
+          events: [],
+          error: 'Server shutting down',
+        });
+      }
     }
     this.pendingWaits.clear();
 
@@ -198,8 +202,9 @@ export class WebhookServer {
     const waitTimeout = timeout ?? registration.expiresAt.getTime() - Date.now();
 
     return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
-        this.pendingWaits.delete(registrationId);
+      const pending: PendingWait = { registrationId, resolve, timeoutId: undefined! };
+      pending.timeoutId = setTimeout(() => {
+        this.removePendingWait(registrationId, pending);
         this.store.getEvents(registrationId).then((events) => {
           resolve({
             success: events.length >= registration.expectedEvents,
@@ -209,12 +214,23 @@ export class WebhookServer {
         });
       }, waitTimeout);
 
-      this.pendingWaits.set(registrationId, {
-        registrationId,
-        resolve,
-        timeoutId,
-      });
+      let waiters = this.pendingWaits.get(registrationId);
+      if (!waiters) {
+        waiters = new Set();
+        this.pendingWaits.set(registrationId, waiters);
+      }
+      waiters.add(pending);
     });
+  }
+
+  /** Remove a single waiter, dropping the registration's set when empty. */
+  private removePendingWait(registrationId: string, pending: PendingWait): void {
+    const waiters = this.pendingWaits.get(registrationId);
+    if (!waiters) return;
+    waiters.delete(pending);
+    if (waiters.size === 0) {
+      this.pendingWaits.delete(registrationId);
+    }
   }
 
   /**
@@ -224,10 +240,12 @@ export class WebhookServer {
     await this.store.deleteRegistration(registrationId);
     await this.store.deleteEvents(registrationId);
 
-    // Cancel pending wait if any
-    const pending = this.pendingWaits.get(registrationId);
-    if (pending) {
-      clearTimeout(pending.timeoutId);
+    // Cancel any pending waits for this registration.
+    const waiters = this.pendingWaits.get(registrationId);
+    if (waiters) {
+      for (const pending of waiters) {
+        clearTimeout(pending.timeoutId);
+      }
       this.pendingWaits.delete(registrationId);
     }
 
@@ -352,12 +370,14 @@ export class WebhookServer {
       const events = await this.store.getEvents(registration.id);
       this.callbacks.onRegistrationComplete?.(registration, events);
 
-      // Resolve pending wait
-      const pending = this.pendingWaits.get(registration.id);
-      if (pending) {
-        clearTimeout(pending.timeoutId);
+      // Resolve every pending waiter for this registration.
+      const waiters = this.pendingWaits.get(registration.id);
+      if (waiters) {
         this.pendingWaits.delete(registration.id);
-        pending.resolve({ success: true, events });
+        for (const pending of waiters) {
+          clearTimeout(pending.timeoutId);
+          pending.resolve({ success: true, events });
+        }
       }
     }
 

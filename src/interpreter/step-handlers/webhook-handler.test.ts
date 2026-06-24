@@ -18,23 +18,28 @@ describe('WebhookHandler', () => {
     pendingEvents = new Map();
 
     mockWebhookServer = {
-      register: vi.fn(async (executionId: string, options: {
-        path?: string;
-        timeout: number;
-        expectedEvents: number;
-        filter?: string;
-      }): Promise<WebhookRegistration> => {
-        const reg: WebhookRegistration = {
-          id: `webhook-${Date.now()}`,
-          executionId,
-          path: options.path ?? `/hooks/${executionId}`,
-          createdAt: new Date(),
-          timeout: options.timeout,
-          expectedEvents: options.expectedEvents,
-        };
-        registrations.set(reg.id, reg);
-        return reg;
-      }),
+      register: vi.fn(
+        async (
+          executionId: string,
+          options: {
+            path?: string;
+            timeout: number;
+            expectedEvents: number;
+            filter?: string;
+          }
+        ): Promise<WebhookRegistration> => {
+          const reg: WebhookRegistration = {
+            id: `webhook-${Date.now()}`,
+            executionId,
+            path: options.path ?? `/hooks/${executionId}`,
+            createdAt: new Date(),
+            timeout: options.timeout,
+            expectedEvents: options.expectedEvents,
+          };
+          registrations.set(reg.id, reg);
+          return reg;
+        }
+      ),
 
       unregister: vi.fn(async (id: string) => {
         registrations.delete(id);
@@ -64,7 +69,9 @@ describe('WebhookHandler', () => {
   describe('webhook registration', () => {
     it('registers webhook with default options', async () => {
       // Setup events to prevent timeout
-      pendingEvents.set('webhook-', [{ id: 'evt-1', body: { data: 'test' }, receivedAt: new Date() }]);
+      pendingEvents.set('webhook-', [
+        { id: 'evt-1', body: { data: 'test' }, receivedAt: new Date() },
+      ]);
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
         events: [{ id: 'evt-1', body: { data: 'test' }, receivedAt: new Date() }],
         timedOut: false,
@@ -99,9 +106,12 @@ describe('WebhookHandler', () => {
       const handler = new WebhookHandler(deps);
       await handler.execute(step);
 
-      expect(mockWebhookServer.register).toHaveBeenCalledWith('exec-123', expect.objectContaining({
-        path: '/custom/webhook/path',
-      }));
+      expect(mockWebhookServer.register).toHaveBeenCalledWith(
+        'exec-123',
+        expect.objectContaining({
+          path: '/custom/webhook/path',
+        })
+      );
     });
 
     it('registers webhook with custom timeout', async () => {
@@ -118,9 +128,12 @@ describe('WebhookHandler', () => {
       const handler = new WebhookHandler(deps);
       await handler.execute(step);
 
-      expect(mockWebhookServer.register).toHaveBeenCalledWith('exec-123', expect.objectContaining({
-        timeout: 60000,
-      }));
+      expect(mockWebhookServer.register).toHaveBeenCalledWith(
+        'exec-123',
+        expect.objectContaining({
+          timeout: 60000,
+        })
+      );
     });
 
     it('registers webhook with expected events count', async () => {
@@ -141,9 +154,12 @@ describe('WebhookHandler', () => {
       const handler = new WebhookHandler(deps);
       await handler.execute(step);
 
-      expect(mockWebhookServer.register).toHaveBeenCalledWith('exec-123', expect.objectContaining({
-        expectedEvents: 3,
-      }));
+      expect(mockWebhookServer.register).toHaveBeenCalledWith(
+        'exec-123',
+        expect.objectContaining({
+          expectedEvents: 3,
+        })
+      );
     });
   });
 
@@ -223,12 +239,8 @@ describe('WebhookHandler', () => {
       const handler = new WebhookHandler(deps);
       await handler.execute(step);
 
-      expect(deps.log).toHaveBeenCalledWith(
-        expect.stringContaining('Waiting for webhook:')
-      );
-      expect(deps.log).toHaveBeenCalledWith(
-        expect.stringContaining('timeout: 60000ms')
-      );
+      expect(deps.log).toHaveBeenCalledWith(expect.stringContaining('Waiting for webhook:'));
+      expect(deps.log).toHaveBeenCalledWith(expect.stringContaining('timeout: 60000ms'));
     });
   });
 
@@ -245,7 +257,9 @@ describe('WebhookHandler', () => {
       };
 
       const handler = new WebhookHandler(deps);
-      await expect(handler.execute(step)).rejects.toThrow('Webhook timeout: no events received within 5000ms');
+      await expect(handler.execute(step)).rejects.toThrow(
+        'Webhook timeout: no events received within 5000ms'
+      );
     });
 
     it('throws RetrySignal when retryOnTimeout is configured', async () => {
@@ -322,14 +336,14 @@ describe('WebhookHandler', () => {
       const result = await handler.execute(step);
 
       expect(result.events).toHaveLength(2);
-      expect(result.events.every(e => (e.body as Record<string, unknown>).type === 'success')).toBe(true);
+      expect(
+        result.events.every((e) => (e.body as Record<string, unknown>).type === 'success')
+      ).toBe(true);
     });
 
     it('includes all events if filter throws error', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [
-          { id: 'evt-1', body: { data: 'test' }, receivedAt: new Date() },
-        ],
+        events: [{ id: 'evt-1', body: { data: 'test' }, receivedAt: new Date() }],
         timedOut: false,
       }));
 
@@ -423,7 +437,9 @@ describe('WebhookHandler', () => {
       const handler = new WebhookHandler(deps);
       await handler.execute(step);
 
-      expect(deps.log).toHaveBeenCalledWith("Warning: Store 'nonExistentStore' not found for webhook storage");
+      expect(deps.log).toHaveBeenCalledWith(
+        "Warning: Store 'nonExistentStore' not found for webhook storage"
+      );
     });
 
     it('logs when storing events', async () => {
@@ -431,9 +447,7 @@ describe('WebhookHandler', () => {
       deps.ctx.stores.set('events', store);
 
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [
-          { id: 'evt-abc', body: { test: true }, receivedAt: new Date() },
-        ],
+        events: [{ id: 'evt-abc', body: { test: true }, receivedAt: new Date() }],
         timedOut: false,
       }));
 
@@ -466,6 +480,42 @@ describe('WebhookHandler', () => {
       const result = await handler.execute(step);
 
       expect(mockWebhookServer.unregister).toHaveBeenCalledWith(result.registration.id);
+    });
+
+    it('unregisters webhook even when processing throws (timeout with no events)', async () => {
+      mockWebhookServer.waitForEvents = vi.fn(async () => ({
+        events: [],
+        timedOut: true,
+      }));
+
+      const step: WebhookStep = { type: 'WebhookStep' };
+      const handler = new WebhookHandler(deps);
+
+      await expect(handler.execute(step)).rejects.toThrow();
+      expect(mockWebhookServer.unregister).toHaveBeenCalledTimes(1);
+    });
+
+    it('unregisters webhook when a downstream store.set fails', async () => {
+      const failingStore = {
+        set: vi.fn(async () => {
+          throw new Error('store unavailable');
+        }),
+      };
+      deps.ctx.stores.set('events', failingStore as never);
+
+      mockWebhookServer.waitForEvents = vi.fn(async () => ({
+        events: [{ id: 'evt-1', body: { a: 1 }, receivedAt: new Date() }],
+        timedOut: false,
+      }));
+
+      const step: WebhookStep = {
+        type: 'WebhookStep',
+        storage: { target: 'events' },
+      };
+      const handler = new WebhookHandler(deps);
+
+      await expect(handler.execute(step)).rejects.toThrow('store unavailable');
+      expect(mockWebhookServer.unregister).toHaveBeenCalledTimes(1);
     });
   });
 

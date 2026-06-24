@@ -116,6 +116,43 @@ describe('WebhookServer', () => {
     });
   });
 
+  describe('concurrent waiters', () => {
+    it('resolves every concurrent waiter on the same registration (no clobber)', async () => {
+      const concurrent = new WebhookServer(
+        { port: 13902, verbose: false },
+        new MemoryWebhookStore()
+      );
+      try {
+        await concurrent.start();
+        const reg = await concurrent.register('exec-concurrent', {
+          path: '/cb',
+          expectedEvents: 1,
+        });
+
+        // Two independent waiters on the same registration.
+        const first = concurrent.waitForEvents(reg.id, 5000);
+        const second = concurrent.waitForEvents(reg.id, 5000);
+
+        const res = await fetch('http://localhost:13902/cb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ok: true }),
+        });
+        expect(res.ok).toBe(true);
+
+        // Before the fix, the second waiter clobbered the first's map entry,
+        // leaving the first promise hanging forever. Both must resolve.
+        const [a, b] = await Promise.all([first, second]);
+        expect(a.success).toBe(true);
+        expect(a.events).toHaveLength(1);
+        expect(b.success).toBe(true);
+        expect(b.events).toHaveLength(1);
+      } finally {
+        await concurrent.stop();
+      }
+    });
+  });
+
   describe('unregister', () => {
     it('should unregister a webhook endpoint', async () => {
       const registration = await server.register('exec-123');
