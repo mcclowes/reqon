@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import type { Expression } from 'vague-lang';
 import { ReqonLexer } from '../lexer/index.js';
 import { ReqonExpressionParser } from './expressions.js';
+import type { IsExpression } from './expressions.js';
 import type { ReqonToken } from '../lexer/tokens.js';
 
 describe('ReqonExpressionParser', () => {
@@ -433,59 +435,63 @@ describe('ReqonExpressionParser', () => {
   });
 
   describe('is type checking expressions', () => {
+    // The parser emits Reqon's IsExpression but types the result as vague-lang's
+    // Expression union (which omits IsExpression), so view it through that union.
+    const asIs = (expr: Expression): Expression | IsExpression => expr;
+
     it('parses is array', () => {
-      const expr = parseExpr('items is array');
+      const expr = asIs(parseExpr('items is array'));
 
       expect(expr.type).toBe('IsExpression');
       if (expr.type === 'IsExpression') {
-        expect((expr as any).operand).toMatchObject({ type: 'Identifier', name: 'items' });
-        expect((expr as any).typeCheck).toBe('array');
+        expect(expr.operand).toMatchObject({ type: 'Identifier', name: 'items' });
+        expect(expr.typeCheck).toBe('array');
       }
     });
 
     it('parses is string', () => {
-      const expr = parseExpr('.name is string');
+      const expr = asIs(parseExpr('.name is string'));
 
       expect(expr.type).toBe('IsExpression');
       if (expr.type === 'IsExpression') {
-        expect((expr as any).typeCheck).toBe('string');
+        expect(expr.typeCheck).toBe('string');
       }
     });
 
     it('parses is number', () => {
-      const expr = parseExpr('value is number');
+      const expr = asIs(parseExpr('value is number'));
 
       expect(expr.type).toBe('IsExpression');
       if (expr.type === 'IsExpression') {
-        expect((expr as any).typeCheck).toBe('number');
+        expect(expr.typeCheck).toBe('number');
       }
     });
 
     it('parses is object', () => {
-      const expr = parseExpr('data is object');
+      const expr = asIs(parseExpr('data is object'));
 
       expect(expr.type).toBe('IsExpression');
       if (expr.type === 'IsExpression') {
-        expect((expr as any).typeCheck).toBe('object');
+        expect(expr.typeCheck).toBe('object');
       }
     });
 
     it('parses is boolean', () => {
-      const expr = parseExpr('flag is boolean');
+      const expr = asIs(parseExpr('flag is boolean'));
 
       expect(expr.type).toBe('IsExpression');
       if (expr.type === 'IsExpression') {
-        expect((expr as any).typeCheck).toBe('boolean');
+        expect(expr.typeCheck).toBe('boolean');
       }
     });
 
     it('parses is with property access', () => {
-      const expr = parseExpr('response.items is array');
+      const expr = asIs(parseExpr('response.items is array'));
 
       expect(expr.type).toBe('IsExpression');
       if (expr.type === 'IsExpression') {
-        expect((expr as any).operand.type).toBe('QualifiedName');
-        expect((expr as any).typeCheck).toBe('array');
+        expect(expr.operand.type).toBe('QualifiedName');
+        expect(expr.typeCheck).toBe('array');
       }
     });
   });

@@ -43,12 +43,9 @@ export class StoreHandler implements StepHandler<StoreStep> {
   async execute(step: StoreStep): Promise<void> {
     const store = this.deps.ctx.stores.get(step.target);
     if (!store) {
-      throw new RuntimeError(
-        `Store not found: ${step.target}`,
-        { line: 1, column: 1 },
-        undefined,
-        { stepType: 'store' }
-      );
+      throw new RuntimeError(`Store not found: ${step.target}`, { line: 1, column: 1 }, undefined, {
+        stepType: 'store',
+      });
     }
 
     const source = evaluate(step.source, this.deps.ctx);
@@ -92,11 +89,17 @@ export class StoreHandler implements StepHandler<StoreStep> {
       }
     }
 
-    this.deps.log(`Stored ${items.length} ${items.length === 1 ? 'item' : 'items'} to ${step.target}`);
+    this.deps.log(
+      `Stored ${items.length} ${items.length === 1 ? 'item' : 'items'} to ${step.target}`
+    );
     this.emitStoreEvent(step, operation, items.length);
   }
 
-  private async storeOne(step: StoreStep, store: StoreAdapter, record: Record<string, unknown>): Promise<void> {
+  private async storeOne(
+    step: StoreStep,
+    store: StoreAdapter,
+    record: Record<string, unknown>
+  ): Promise<void> {
     const key = this.getRecordKey(step, record);
     const operation = step.options.upsert ? 'upsert' : 'set';
 

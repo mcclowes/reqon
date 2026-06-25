@@ -48,17 +48,25 @@ export async function runLexerBenchmarks(): Promise<void> {
 
   // Large generated DSL (50 actions)
   const largeDsl50 = generateLargeDSL(50);
-  suite.addSync('large-50-actions', () => {
-    const lexer = new ReqonLexer(largeDsl50);
-    return lexer.tokenize();
-  }, { iterations: 500 });
+  suite.addSync(
+    'large-50-actions',
+    () => {
+      const lexer = new ReqonLexer(largeDsl50);
+      return lexer.tokenize();
+    },
+    { iterations: 500 }
+  );
 
   // Large generated DSL (100 actions) - stress test
   const largeDsl100 = generateLargeDSL(100);
-  suite.addSync('large-100-actions', () => {
-    const lexer = new ReqonLexer(largeDsl100);
-    return lexer.tokenize();
-  }, { iterations: 100, warmupIterations: 10 });
+  suite.addSync(
+    'large-100-actions',
+    () => {
+      const lexer = new ReqonLexer(largeDsl100);
+      return lexer.tokenize();
+    },
+    { iterations: 100, warmupIterations: 10 }
+  );
 
   suite.print();
 }

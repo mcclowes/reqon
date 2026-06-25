@@ -149,13 +149,7 @@ describe('StoreHandler', () => {
     });
 
     it('logs count when storing multiple items', async () => {
-      deps.ctx.response = [
-        { id: '1' },
-        { id: '2' },
-        { id: '3' },
-        { id: '4' },
-        { id: '5' },
-      ];
+      deps.ctx.response = [{ id: '1' }, { id: '2' }, { id: '3' }, { id: '4' }, { id: '5' }];
 
       const step: StoreStep = {
         type: 'StoreStep',

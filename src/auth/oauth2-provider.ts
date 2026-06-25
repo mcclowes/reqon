@@ -18,11 +18,7 @@ export class OAuth2AuthProvider implements AuthProvider {
   private refreshBuffer: number;
   private refreshPromise: Promise<string> | null = null;
 
-  constructor(options: {
-    connectionId: string;
-    store: TokenStore;
-    config: OAuth2Config;
-  }) {
+  constructor(options: { connectionId: string; store: TokenStore; config: OAuth2Config }) {
     this.connectionId = options.connectionId;
     this.store = options.store;
     this.config = options.config;

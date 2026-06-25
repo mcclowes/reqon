@@ -7,7 +7,6 @@ import type {
   ScheduledJob,
   SchedulerState,
   ScheduleEvent,
-  SchedulerCallbacks,
   SchedulerConfig,
   ScheduledMission,
 } from './types.js';
@@ -154,7 +153,7 @@ export class Scheduler {
       // Check if job should run
       if (shouldRunNow(schedule, job.lastRun, this.config.checkInterval)) {
         // Check if already running
-        if (job.isRunning && (schedule.skipIfRunning !== false)) {
+        if (job.isRunning && schedule.skipIfRunning !== false) {
           this.emitEvent({
             type: 'skipped',
             jobId: job.id,

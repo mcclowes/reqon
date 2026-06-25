@@ -1,12 +1,4 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  parseDuration,
-  formatDuration,
-  createPauseState,
-  isPauseExpired,
-  getRemainingTime,
-} from '../pause/state.js';
-import { MemoryPauseStore } from '../pause/store.js';
 import { createExecutionTrace, safeClone, truncateForTrace, generateSnapshotId } from './state.js';
 import { MemoryTraceStore, FileTraceStore } from './store.js';
 import { TraceReplayer } from './replay.js';

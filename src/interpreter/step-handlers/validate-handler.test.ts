@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ValidateStep, ValidationConstraint } from '../../ast/nodes.js';
+import type { ValidateStep } from '../../ast/nodes.js';
 import type { Expression } from 'vague-lang';
 import { ValidateHandler } from './validate-handler.js';
 import { createContext, setVariable } from '../context.js';
@@ -24,6 +24,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>=',
@@ -33,6 +34,7 @@ describe('ValidateHandler', () => {
             severity: 'error',
           },
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '!=',
@@ -57,6 +59,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>',
@@ -80,6 +83,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: { type: 'Identifier', name: 'enabled' } as Expression,
             severity: 'error',
           },
@@ -100,6 +104,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>=',
@@ -124,6 +129,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>',
@@ -147,6 +153,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>',
@@ -157,6 +164,7 @@ describe('ValidateHandler', () => {
             message: 'First constraint failed',
           },
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>',
@@ -183,6 +191,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>=',
@@ -208,6 +217,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>',
@@ -233,6 +243,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>',
@@ -243,6 +254,7 @@ describe('ValidateHandler', () => {
             message: 'a is low',
           },
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '>',
@@ -272,6 +284,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '!=',
@@ -282,6 +295,7 @@ describe('ValidateHandler', () => {
             message: 'Required field missing',
           },
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '!=',
@@ -311,6 +325,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'myData' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'BinaryExpression',
               operator: '<=',
@@ -337,6 +352,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'LogicalExpression',
               operator: 'and',
@@ -371,6 +387,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'LogicalExpression',
               operator: 'or',
@@ -405,6 +422,7 @@ describe('ValidateHandler', () => {
         target: { type: 'Identifier', name: 'response' } as Expression,
         constraints: [
           {
+            type: 'ValidationConstraint',
             condition: {
               type: 'NotExpression',
               operand: { type: 'Identifier', name: 'deleted' },

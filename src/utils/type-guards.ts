@@ -23,10 +23,7 @@ export function isObject(value: unknown): value is object {
  * Type guard to check if a value is an array of a specific type.
  * Performs runtime check on each element using the provided guard.
  */
-export function isArrayOf<T>(
-  value: unknown,
-  guard: (item: unknown) => item is T
-): value is T[] {
+export function isArrayOf<T>(value: unknown, guard: (item: unknown) => item is T): value is T[] {
   return Array.isArray(value) && value.every(guard);
 }
 
@@ -95,10 +92,7 @@ export function getNestedProperty(value: unknown, path: string[]): unknown {
  * Check if an object has a specific property.
  * Narrows the type to include that property.
  */
-export function hasProperty<K extends string>(
-  value: unknown,
-  key: K
-): value is Record<K, unknown> {
+export function hasProperty<K extends string>(value: unknown, key: K): value is Record<K, unknown> {
   return isRecord(value) && key in value;
 }
 

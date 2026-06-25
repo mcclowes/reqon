@@ -1,5 +1,5 @@
 import SwaggerParser from '@apidevtools/swagger-parser';
-import type { OpenAPI, OpenAPIV3, OpenAPIV3_1 } from 'openapi-types';
+import type { OpenAPIV3, OpenAPIV3_1 } from 'openapi-types';
 
 export type OpenAPISpec = OpenAPIV3.Document | OpenAPIV3_1.Document;
 
@@ -28,7 +28,7 @@ export async function loadOAS(specPath: string, forceReload = false): Promise<OA
     return specCache.get(specPath)!;
   }
 
-  const api = await SwaggerParser.dereference(specPath) as OpenAPISpec;
+  const api = (await SwaggerParser.dereference(specPath)) as OpenAPISpec;
 
   const baseUrl = extractBaseUrl(api);
   const operations = extractOperations(api);
@@ -98,9 +98,7 @@ export function resolveOperation(source: OASSource, operationId: string): OASOpe
   const operation = source.operations.get(operationId);
   if (!operation) {
     const available = Array.from(source.operations.keys()).slice(0, 5).join(', ');
-    throw new Error(
-      `Operation '${operationId}' not found in OAS spec. Available: ${available}...`
-    );
+    throw new Error(`Operation '${operationId}' not found in OAS spec. Available: ${available}...`);
   }
   return operation;
 }

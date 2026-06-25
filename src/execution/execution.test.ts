@@ -6,7 +6,6 @@ import {
   canResume,
   getProgress,
   getExecutionSummary,
-  type ExecutionState,
 } from './state.js';
 import { FileExecutionStore, MemoryExecutionStore } from './store.js';
 

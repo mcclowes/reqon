@@ -1,12 +1,7 @@
 import { join } from 'node:path';
 import type { SyncCheckpoint } from './state.js';
 import { EPOCH } from './state.js';
-import {
-  ensureParentDirectory,
-  writeJsonFile,
-  readJsonFile,
-  restoreDates,
-} from '../utils/file.js';
+import { ensureParentDirectory, writeJsonFile, readJsonFile, restoreDates } from '../utils/file.js';
 
 /**
  * Sync store interface - persists sync checkpoints

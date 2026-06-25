@@ -89,7 +89,10 @@ function ternary(condition: Expression, consequent: Expression, alternate: Expre
   return { type: 'TernaryExpression', condition, consequent, alternate } as Expression;
 }
 
-function matchExpr(value: Expression, arms: Array<{ pattern: Expression; result: Expression }>): Expression {
+function matchExpr(
+  value: Expression,
+  arms: Array<{ pattern: Expression; result: Expression }>
+): Expression {
   return { type: 'MatchExpression', value, arms } as Expression;
 }
 
@@ -222,11 +225,7 @@ export async function runEvaluatorBenchmarks(): Promise<void> {
   // Ternary expressions
   suite.addSync('ternary-simple', () => {
     return evaluate(
-      ternary(
-        binary(identifier('a'), '>', literal(5)),
-        literal('yes'),
-        literal('no')
-      ),
+      ternary(binary(identifier('a'), '>', literal(5)), literal('yes'), literal('no')),
       ctx
     );
   });
@@ -236,11 +235,7 @@ export async function runEvaluatorBenchmarks(): Promise<void> {
       ternary(
         binary(identifier('a'), '>', literal(50)),
         literal('high'),
-        ternary(
-          binary(identifier('a'), '>', literal(20)),
-          literal('medium'),
-          literal('low')
-        )
+        ternary(binary(identifier('a'), '>', literal(20)), literal('medium'), literal('low'))
       ),
       ctx
     );
@@ -287,13 +282,17 @@ export async function runEvaluatorBenchmarks(): Promise<void> {
   const stressSuite = new BenchmarkSuite('Evaluator Stress Tests');
 
   // Many sequential evaluations
-  stressSuite.addSync('100-sequential-evals', () => {
-    let result: unknown;
-    for (let i = 0; i < 100; i++) {
-      result = evaluate(binary(identifier('a'), '+', literal(i)), ctx);
-    }
-    return result;
-  }, { iterations: 100 });
+  stressSuite.addSync(
+    '100-sequential-evals',
+    () => {
+      let result: unknown;
+      for (let i = 0; i < 100; i++) {
+        result = evaluate(binary(identifier('a'), '+', literal(i)), ctx);
+      }
+      return result;
+    },
+    { iterations: 100 }
+  );
 
   // Complex nested expression
   const deeplyNestedExpr = binary(

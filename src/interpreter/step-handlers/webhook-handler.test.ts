@@ -7,6 +7,20 @@ import type { WebhookServer, WebhookRegistration, WebhookEvent } from '../../web
 import { MemoryStore } from '../../stores/memory.js';
 import { RetrySignal } from '../signals.js';
 
+/** Build a fully-shaped WebhookEvent from the test-relevant fields. */
+function makeEvent(partial: { id: string; body: unknown }): WebhookEvent {
+  return {
+    id: partial.id,
+    registrationId: 'reg-1',
+    receivedAt: new Date(),
+    method: 'POST',
+    headers: {},
+    body: partial.body,
+    rawBody: JSON.stringify(partial.body),
+    query: {},
+  };
+}
+
 describe('WebhookHandler', () => {
   let deps: WebhookHandlerDeps;
   let mockWebhookServer: WebhookServer;
@@ -33,8 +47,10 @@ describe('WebhookHandler', () => {
             executionId,
             path: options.path ?? `/hooks/${executionId}`,
             createdAt: new Date(),
-            timeout: options.timeout,
+            expiresAt: new Date(Date.now() + options.timeout),
             expectedEvents: options.expectedEvents,
+            receivedEvents: 0,
+            filter: options.filter,
           };
           registrations.set(reg.id, reg);
           return reg;
@@ -49,7 +65,7 @@ describe('WebhookHandler', () => {
         return `https://webhooks.example.com${reg.path}`;
       }),
 
-      waitForEvents: vi.fn(async (id: string, timeout: number) => {
+      waitForEvents: vi.fn(async (id: string, _timeout: number) => {
         const events = pendingEvents.get(id) ?? [];
         return {
           events,
@@ -69,11 +85,10 @@ describe('WebhookHandler', () => {
   describe('webhook registration', () => {
     it('registers webhook with default options', async () => {
       // Setup events to prevent timeout
-      pendingEvents.set('webhook-', [
-        { id: 'evt-1', body: { data: 'test' }, receivedAt: new Date() },
-      ]);
+      pendingEvents.set('webhook-', [makeEvent({ id: 'evt-1', body: { data: 'test' } })]);
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: { data: 'test' }, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: { data: 'test' } })],
+        success: true,
         timedOut: false,
       }));
 
@@ -94,7 +109,8 @@ describe('WebhookHandler', () => {
 
     it('registers webhook with custom path', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: {}, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: {} })],
+        success: true,
         timedOut: false,
       }));
 
@@ -116,7 +132,8 @@ describe('WebhookHandler', () => {
 
     it('registers webhook with custom timeout', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: {}, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: {} })],
+        success: true,
         timedOut: false,
       }));
 
@@ -139,10 +156,11 @@ describe('WebhookHandler', () => {
     it('registers webhook with expected events count', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
         events: [
-          { id: 'evt-1', body: {}, receivedAt: new Date() },
-          { id: 'evt-2', body: {}, receivedAt: new Date() },
-          { id: 'evt-3', body: {}, receivedAt: new Date() },
+          makeEvent({ id: 'evt-1', body: {} }),
+          makeEvent({ id: 'evt-2', body: {} }),
+          makeEvent({ id: 'evt-3', body: {} }),
         ],
+        success: true,
         timedOut: false,
       }));
 
@@ -167,7 +185,8 @@ describe('WebhookHandler', () => {
     it('waits for webhook events and sets response for single event', async () => {
       const eventBody = { status: 'complete', result: 42 };
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: eventBody, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: eventBody })],
+        success: true,
         timedOut: false,
       }));
 
@@ -185,9 +204,10 @@ describe('WebhookHandler', () => {
     it('sets response as array for multiple events', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
         events: [
-          { id: 'evt-1', body: { seq: 1 }, receivedAt: new Date() },
-          { id: 'evt-2', body: { seq: 2 }, receivedAt: new Date() },
+          makeEvent({ id: 'evt-1', body: { seq: 1 } }),
+          makeEvent({ id: 'evt-2', body: { seq: 2 } }),
         ],
+        success: true,
         timedOut: false,
       }));
 
@@ -207,7 +227,8 @@ describe('WebhookHandler', () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => {
         capturedResponse = deps.ctx.response;
         return {
-          events: [{ id: 'evt-1', body: {}, receivedAt: new Date() }],
+          events: [makeEvent({ id: 'evt-1', body: {} })],
+          success: true,
           timedOut: false,
         };
       });
@@ -226,7 +247,8 @@ describe('WebhookHandler', () => {
 
     it('logs waiting message', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: {}, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: {} })],
+        success: true,
         timedOut: false,
       }));
 
@@ -248,6 +270,7 @@ describe('WebhookHandler', () => {
     it('throws error on timeout with no events', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
         events: [],
+        success: false,
         timedOut: true,
       }));
 
@@ -265,6 +288,7 @@ describe('WebhookHandler', () => {
     it('throws RetrySignal when retryOnTimeout is configured', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
         events: [],
+        success: false,
         timedOut: true,
       }));
 
@@ -294,7 +318,8 @@ describe('WebhookHandler', () => {
 
     it('returns partial results on timeout if some events received', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: { partial: true }, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: { partial: true } })],
+        success: false,
         timedOut: true,
       }));
 
@@ -315,10 +340,11 @@ describe('WebhookHandler', () => {
     it('filters events based on eventFilter expression', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
         events: [
-          { id: 'evt-1', body: { type: 'success', value: 10 }, receivedAt: new Date() },
-          { id: 'evt-2', body: { type: 'error', value: 0 }, receivedAt: new Date() },
-          { id: 'evt-3', body: { type: 'success', value: 20 }, receivedAt: new Date() },
+          makeEvent({ id: 'evt-1', body: { type: 'success', value: 10 } }),
+          makeEvent({ id: 'evt-2', body: { type: 'error', value: 0 } }),
+          makeEvent({ id: 'evt-3', body: { type: 'success', value: 20 } }),
         ],
+        success: true,
         timedOut: false,
       }));
 
@@ -343,7 +369,8 @@ describe('WebhookHandler', () => {
 
     it('includes all events if filter throws error', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: { data: 'test' }, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: { data: 'test' } })],
+        success: true,
         timedOut: false,
       }));
 
@@ -371,9 +398,10 @@ describe('WebhookHandler', () => {
 
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
         events: [
-          { id: 'evt-001', body: { data: 'event1' }, receivedAt: new Date() },
-          { id: 'evt-002', body: { data: 'event2' }, receivedAt: new Date() },
+          makeEvent({ id: 'evt-001', body: { data: 'event1' } }),
+          makeEvent({ id: 'evt-002', body: { data: 'event2' } }),
         ],
+        success: true,
         timedOut: false,
       }));
 
@@ -400,9 +428,8 @@ describe('WebhookHandler', () => {
       deps.ctx.stores.set('webhookEvents', store);
 
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [
-          { id: 'evt-1', body: { orderId: 'ORD-123', status: 'shipped' }, receivedAt: new Date() },
-        ],
+        events: [makeEvent({ id: 'evt-1', body: { orderId: 'ORD-123', status: 'shipped' } })],
+        success: true,
         timedOut: false,
       }));
 
@@ -423,7 +450,8 @@ describe('WebhookHandler', () => {
 
     it('logs warning when store not found', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: {}, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: {} })],
+        success: true,
         timedOut: false,
       }));
 
@@ -447,7 +475,8 @@ describe('WebhookHandler', () => {
       deps.ctx.stores.set('events', store);
 
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-abc', body: { test: true }, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-abc', body: { test: true } })],
+        success: true,
         timedOut: false,
       }));
 
@@ -468,7 +497,8 @@ describe('WebhookHandler', () => {
   describe('cleanup', () => {
     it('unregisters webhook after completion', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: {}, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: {} })],
+        success: true,
         timedOut: false,
       }));
 
@@ -485,6 +515,7 @@ describe('WebhookHandler', () => {
     it('unregisters webhook even when processing throws (timeout with no events)', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
         events: [],
+        success: false,
         timedOut: true,
       }));
 
@@ -504,7 +535,8 @@ describe('WebhookHandler', () => {
       deps.ctx.stores.set('events', failingStore as never);
 
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: { a: 1 }, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: { a: 1 } })],
+        success: true,
         timedOut: false,
       }));
 
@@ -522,7 +554,8 @@ describe('WebhookHandler', () => {
   describe('result structure', () => {
     it('returns complete result with registration, events, and URL', async () => {
       mockWebhookServer.waitForEvents = vi.fn(async () => ({
-        events: [{ id: 'evt-1', body: { success: true }, receivedAt: new Date() }],
+        events: [makeEvent({ id: 'evt-1', body: { success: true } })],
+        success: true,
         timedOut: false,
       }));
 

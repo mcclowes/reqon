@@ -163,7 +163,9 @@ export class SourceManager {
     }
 
     if (!baseUrl) {
-      throw new Error(`Source ${source.name} has no base URL (provide 'base' or OAS spec with servers)`);
+      throw new Error(
+        `Source ${source.name} has no base URL (provide 'base' or OAS spec with servers)`
+      );
     }
 
     return baseUrl;

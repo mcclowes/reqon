@@ -1,0 +1,7 @@
+{
+  // Emit config: the base tsconfig.json now includes tests (so they are
+  // type-checked and lintable), but tests and benchmarks must never be emitted
+  // to dist. `npm run build` uses this config; typecheck/eslint use the base.
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "dist", "src/benchmark/**/*", "src/**/*.test.ts"]
+}

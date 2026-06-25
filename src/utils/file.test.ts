@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, rmSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { rmSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic, writeFileAtomicSync, writeJsonFile, readJsonFile } from './file.js';
 

@@ -108,52 +108,38 @@ describe('Schema Matcher', () => {
 
     it('finds matching schema in order', () => {
       const successValue = { data: { id: 1 }, status: 'ok' };
-      const result = findMatchingSchema(
-        successValue,
-        schemas,
-        ['SuccessResponse', 'ErrorResponse']
-      );
+      const result = findMatchingSchema(successValue, schemas, [
+        'SuccessResponse',
+        'ErrorResponse',
+      ]);
       expect(result).toBe('SuccessResponse');
     });
 
     it('finds second schema if first does not match', () => {
       const errorValue = { error: 'Not found', code: 404 };
-      const result = findMatchingSchema(
-        errorValue,
-        schemas,
-        ['SuccessResponse', 'ErrorResponse']
-      );
+      const result = findMatchingSchema(errorValue, schemas, ['SuccessResponse', 'ErrorResponse']);
       expect(result).toBe('ErrorResponse');
     });
 
     it('returns undefined if no schema matches', () => {
       const value = { random: 'value' };
-      const result = findMatchingSchema(
-        value,
-        schemas,
-        ['SuccessResponse', 'ErrorResponse']
-      );
+      const result = findMatchingSchema(value, schemas, ['SuccessResponse', 'ErrorResponse']);
       expect(result).toBeUndefined();
     });
 
     it('handles wildcard pattern', () => {
       const value = { random: 'value' };
-      const result = findMatchingSchema(
-        value,
-        schemas,
-        ['SuccessResponse', 'ErrorResponse', '_']
-      );
+      const result = findMatchingSchema(value, schemas, ['SuccessResponse', 'ErrorResponse', '_']);
       expect(result).toBe('_');
     });
 
     it('respects schema order (first match wins)', () => {
       // Create a schema that matches both
       const ambiguousValue = { data: {}, status: 'ok', error: 'msg', code: 500 };
-      const result = findMatchingSchema(
-        ambiguousValue,
-        schemas,
-        ['SuccessResponse', 'ErrorResponse']
-      );
+      const result = findMatchingSchema(ambiguousValue, schemas, [
+        'SuccessResponse',
+        'ErrorResponse',
+      ]);
       expect(result).toBe('SuccessResponse'); // First match wins
     });
   });

@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { MissionExecutor } from './executor.js';
 import type {
   ReqonProgram,
   MissionDefinition,
   ActionDefinition,
+  ActionStep,
   SourceDefinition,
   StoreDefinition,
   PipelineDefinition,
@@ -108,8 +109,10 @@ describe('MissionExecutor', () => {
       expect(result.success).toBe(true);
     });
 
-    it('executes named mission when specified', async () => {
-      const executor = new MissionExecutor({ dryRun: true, missionName: 'SecondMission' });
+    it('executes the first mission when several are defined', async () => {
+      // execute() runs the first MissionDefinition in the program; there is no
+      // mission-selection config, so the first one always wins.
+      const executor = new MissionExecutor({ dryRun: true });
       const program: ReqonProgram = {
         type: 'ReqonProgram',
         statements: [
@@ -141,9 +144,8 @@ describe('MissionExecutor', () => {
       expect(result.success).toBe(true);
     });
 
-    it('falls back to first mission when named mission not found', async () => {
-      // The executor falls back to the first mission if named mission is not found
-      const executor = new MissionExecutor({ dryRun: true, missionName: 'NonExistent' });
+    it('runs the only mission in a single-mission program', async () => {
+      const executor = new MissionExecutor({ dryRun: true });
       const program: ReqonProgram = {
         type: 'ReqonProgram',
         statements: [

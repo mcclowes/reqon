@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { MatchStep, ActionStep, FlowDirective, MatchArm } from '../../ast/nodes.js';
+import type { MatchStep, ActionStep } from '../../ast/nodes.js';
 import type { Expression, SchemaDefinition } from 'vague-lang';
 import { MatchHandler, type MatchHandlerDeps } from './match-handler.js';
 import { createContext, setVariable } from '../context.js';
@@ -41,7 +41,13 @@ describe('MatchHandler', () => {
     ctx.schemas.set('PaginatedResponse', {
       name: 'PaginatedResponse',
       fields: [
-        { name: 'items', fieldType: { type: 'CollectionType', elementType: { type: 'PrimitiveType', name: 'any' } } },
+        {
+          name: 'items',
+          fieldType: {
+            type: 'CollectionType',
+            elementType: { type: 'PrimitiveType', name: 'any' },
+          },
+        },
         { name: 'nextPage', fieldType: { type: 'PrimitiveType', name: 'string' }, optional: true },
       ],
     } as unknown as SchemaDefinition);
@@ -67,13 +73,21 @@ describe('MatchHandler', () => {
           {
             schema: 'SuccessResponse',
             steps: [
-              { type: 'LetStep', name: 'result', value: { type: 'Literal', value: 'success', dataType: 'string' } } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'result',
+                value: { type: 'Literal', value: 'success', dataType: 'string' },
+              } as ActionStep,
             ],
           },
           {
             schema: 'ErrorResponse',
             steps: [
-              { type: 'LetStep', name: 'result', value: { type: 'Literal', value: 'error', dataType: 'string' } } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'result',
+                value: { type: 'Literal', value: 'error', dataType: 'string' },
+              } as ActionStep,
             ],
           },
         ],
@@ -101,7 +115,11 @@ describe('MatchHandler', () => {
           {
             schema: 'ErrorResponse',
             steps: [
-              { type: 'LetStep', name: 'errorCode', value: { type: 'Identifier', name: 'code' } } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'errorCode',
+                value: { type: 'Identifier', name: 'code' },
+              } as ActionStep,
             ],
           },
         ],
@@ -132,7 +150,11 @@ describe('MatchHandler', () => {
           {
             schema: '_',
             steps: [
-              { type: 'LetStep', name: 'fallback', value: { type: 'Literal', value: true, dataType: 'boolean' } } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'fallback',
+                value: { type: 'Literal', value: true, dataType: 'boolean' },
+              } as ActionStep,
             ],
           },
         ],
@@ -412,7 +434,11 @@ describe('MatchHandler', () => {
               schema: 'SuccessResponse',
               flow: { type: 'continue' },
               steps: [
-                { type: 'LetStep', name: 'x', value: { type: 'Literal', value: 1, dataType: 'number' } } as ActionStep,
+                {
+                  type: 'LetStep',
+                  name: 'x',
+                  value: { type: 'Literal', value: 1, dataType: 'number' },
+                } as ActionStep,
               ],
             },
           ],
@@ -438,9 +464,21 @@ describe('MatchHandler', () => {
           {
             schema: 'SuccessResponse',
             steps: [
-              { type: 'LetStep', name: 'step1', value: { type: 'Literal', value: 1, dataType: 'number' } } as ActionStep,
-              { type: 'LetStep', name: 'step2', value: { type: 'Literal', value: 2, dataType: 'number' } } as ActionStep,
-              { type: 'LetStep', name: 'step3', value: { type: 'Literal', value: 3, dataType: 'number' } } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'step1',
+                value: { type: 'Literal', value: 1, dataType: 'number' },
+              } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'step2',
+                value: { type: 'Literal', value: 2, dataType: 'number' },
+              } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'step3',
+                value: { type: 'Literal', value: 3, dataType: 'number' },
+              } as ActionStep,
             ],
           },
         ],
@@ -456,10 +494,12 @@ describe('MatchHandler', () => {
       deps.ctx.response = { status: 'processed', data: {} };
 
       let capturedCtx: ExecutionContext | null = null;
-      deps.executeStep = vi.fn(async (step: ActionStep, actionName: string, ctx: ExecutionContext) => {
-        capturedCtx = ctx;
-        executedSteps.push(step);
-      });
+      deps.executeStep = vi.fn(
+        async (step: ActionStep, actionName: string, ctx: ExecutionContext) => {
+          capturedCtx = ctx;
+          executedSteps.push(step);
+        }
+      );
 
       const step: MatchStep = {
         type: 'MatchStep',
@@ -468,7 +508,11 @@ describe('MatchHandler', () => {
           {
             schema: 'SuccessResponse',
             steps: [
-              { type: 'LetStep', name: 'x', value: { type: 'Literal', value: 1, dataType: 'number' } } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'x',
+                value: { type: 'Literal', value: 1, dataType: 'number' },
+              } as ActionStep,
             ],
           },
         ],
@@ -512,7 +556,11 @@ describe('MatchHandler', () => {
           {
             schema: 'SuccessResponse',
             steps: [
-              { type: 'LetStep', name: 'matched', value: { type: 'Literal', value: true, dataType: 'boolean' } } as ActionStep,
+              {
+                type: 'LetStep',
+                name: 'matched',
+                value: { type: 'Literal', value: true, dataType: 'boolean' },
+              } as ActionStep,
             ],
           },
         ],

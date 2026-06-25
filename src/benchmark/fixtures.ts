@@ -188,12 +188,13 @@ mission "expressions"
 
 // Large: stress test with many actions and stores
 export function generateLargeDSL(actionCount: number = 20): string {
-  const stores = Array.from(
-    { length: actionCount },
-    (_, i) => `  store store${i} in memory`
-  ).join('\n');
+  const stores = Array.from({ length: actionCount }, (_, i) => `  store store${i} in memory`).join(
+    '\n'
+  );
 
-  const actions = Array.from({ length: actionCount }, (_, i) => `
+  const actions = Array.from(
+    { length: actionCount },
+    (_, i) => `
   action action${i}
     fetch "/endpoint${i}" from api with
       pagination: offset
@@ -209,12 +210,10 @@ export function generateLargeDSL(actionCount: number = 20): string {
         assume value${i} is number
       store mapped in store${i} with key: mapped.id
     end
-`).join('\n');
+`
+  ).join('\n');
 
-  const runSequence = Array.from(
-    { length: actionCount },
-    (_, i) => `action${i}`
-  ).join(', ');
+  const runSequence = Array.from({ length: actionCount }, (_, i) => `action${i}`).join(', ');
 
   return `
 mission "large-stress-test"

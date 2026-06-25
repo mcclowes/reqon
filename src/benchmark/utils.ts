@@ -35,10 +35,7 @@ export function hrTimeMs(): number {
 /**
  * Run a synchronous benchmark
  */
-export function benchmarkSync<T>(
-  fn: () => T,
-  options: BenchmarkOptions = {}
-): BenchmarkResult {
+export function benchmarkSync<T>(fn: () => T, options: BenchmarkOptions = {}): BenchmarkResult {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const samples: number[] = [];
 
@@ -156,11 +153,7 @@ export class BenchmarkSuite {
     return this;
   }
 
-  async addAsync<T>(
-    name: string,
-    fn: () => Promise<T>,
-    options?: BenchmarkOptions
-  ): Promise<this> {
+  async addAsync<T>(name: string, fn: () => Promise<T>, options?: BenchmarkOptions): Promise<this> {
     const result = await benchmarkAsync(fn, { ...options, name });
     this.results.push(result);
     return this;

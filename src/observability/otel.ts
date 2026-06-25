@@ -8,7 +8,7 @@
  * For production use, consider using the official @opentelemetry packages.
  */
 
-import type { ObservabilityEvent, EventType, EventEmitter } from './events.js';
+import type { ObservabilityEvent } from './events.js';
 import type { LogEntry, LogOutput } from './logger.js';
 
 /** OTLP-compatible span structure */
@@ -196,7 +196,7 @@ export class OTelEventAdapter {
    * Process an observability event and update spans
    */
   processEvent(event: ObservabilityEvent): void {
-    const { type, payload } = event;
+    const { type } = event;
 
     // Map event types to span operations
     switch (type) {
@@ -347,7 +347,11 @@ export class OTelEventAdapter {
   private addEventToCurrentSpan(event: ObservabilityEvent): void {
     const spanId = this.spanStack[this.spanStack.length - 1];
     if (spanId) {
-      this.spanBuilder.addEvent(spanId, event.type, event.payload as Record<string, string | number | boolean>);
+      this.spanBuilder.addEvent(
+        spanId,
+        event.type,
+        event.payload as Record<string, string | number | boolean>
+      );
     }
   }
 
@@ -488,9 +492,7 @@ export class OTelLogOutput implements LogOutput {
 /**
  * Create an event listener that builds OTel spans
  */
-export function createOTelListener(
-  config?: OTLPExporterConfig
-): {
+export function createOTelListener(config?: OTLPExporterConfig): {
   adapter: OTelEventAdapter;
   handler: (event: ObservabilityEvent) => void;
   flush: () => Promise<void>;

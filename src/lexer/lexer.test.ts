@@ -190,8 +190,9 @@ describe('ReqonLexer', () => {
       const tokens = lexer.tokenize();
 
       // Should have: MISSION, NEWLINE, IDENTIFIER, EOF
-      expect(tokens.filter((t: Token) => t.type !== TokenType.NEWLINE && t.type !== TokenType.EOF))
-        .toHaveLength(2);
+      expect(
+        tokens.filter((t: Token) => t.type !== TokenType.NEWLINE && t.type !== TokenType.EOF)
+      ).toHaveLength(2);
       expect(tokens[0].type).toBe(ReqonTokenType.MISSION);
       expect(tokens[2].type).toBe(TokenType.IDENTIFIER);
       expect(tokens[2].value).toBe('TestMission');

@@ -17,15 +17,14 @@ export class ValidateHandler implements StepHandler<ValidateStep> {
       const result = evaluate(constraint.condition, this.deps.ctx, target);
 
       if (!result) {
-        const message = constraint.message ?? `Validation failed: ${JSON.stringify(constraint.condition)}`;
+        const message =
+          constraint.message ?? `Validation failed: ${JSON.stringify(constraint.condition)}`;
 
         if (constraint.severity === 'error') {
-          throw new ValidationError(
-            message,
-            { line: 1, column: 1 },
-            undefined,
-            { constraint: JSON.stringify(constraint.condition), severity: 'error' }
-          );
+          throw new ValidationError(message, { line: 1, column: 1 }, undefined, {
+            constraint: JSON.stringify(constraint.condition),
+            severity: 'error',
+          });
         } else {
           this.deps.log(`Warning: ${message}`);
         }

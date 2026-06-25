@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { CLIDebugger } from './cli-debugger.js';
 import type { DebugSnapshot } from './controller.js';
 
@@ -17,28 +17,34 @@ describe('CLIDebugger', () => {
     it('inherits BaseDebugController behavior', () => {
       debugger_.mode = 'step';
 
-      expect(debugger_.shouldPause({
-        action: 'TestAction',
-        stepIndex: 0,
-        stepType: 'fetch',
-      })).toBe(true);
+      expect(
+        debugger_.shouldPause({
+          action: 'TestAction',
+          stepIndex: 0,
+          stepType: 'fetch',
+        })
+      ).toBe(true);
     });
 
     it('respects breakpoints', () => {
       debugger_.mode = 'run';
       debugger_.addBreakpoint('FetchData:0');
 
-      expect(debugger_.shouldPause({
-        action: 'FetchData',
-        stepIndex: 0,
-        stepType: 'fetch',
-      })).toBe(true);
+      expect(
+        debugger_.shouldPause({
+          action: 'FetchData',
+          stepIndex: 0,
+          stepType: 'fetch',
+        })
+      ).toBe(true);
 
-      expect(debugger_.shouldPause({
-        action: 'FetchData',
-        stepIndex: 1,
-        stepType: 'store',
-      })).toBe(false);
+      expect(
+        debugger_.shouldPause({
+          action: 'FetchData',
+          stepIndex: 1,
+          stepType: 'store',
+        })
+      ).toBe(false);
     });
   });
 

@@ -1,4 +1,4 @@
-import type { SchemaDefinition, FieldDefinition, FieldType } from 'vague-lang';
+import type { SchemaDefinition, FieldType } from 'vague-lang';
 
 /**
  * Check if a value matches a schema definition.
@@ -100,7 +100,6 @@ function matchesFieldType(value: unknown, fieldType: FieldType): boolean {
  * Check if a value matches a primitive type
  */
 function matchesPrimitiveType(value: unknown, typeName: string): boolean {
-
   switch (typeName) {
     case 'string':
       return typeof value === 'string';

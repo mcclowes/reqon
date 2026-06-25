@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, rmSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { FileStore } from './file.js';
 
@@ -167,7 +167,7 @@ describe('FileStore', () => {
       const filePath = store.getFilePath();
       const content = JSON.parse(readFileSync(filePath, 'utf-8'));
       content['1'].name = 'Modified';
-      require('fs').writeFileSync(filePath, JSON.stringify(content));
+      writeFileSync(filePath, JSON.stringify(content));
 
       // Reload and check
       await store.reload();

@@ -111,10 +111,7 @@ function generateUsers(count: number): Record<string, unknown>[] {
   return users;
 }
 
-function generateOrders(
-  count: number,
-  userCount: number
-): Record<string, unknown>[] {
+function generateOrders(count: number, userCount: number): Record<string, unknown>[] {
   const orders: Record<string, unknown>[] = [];
   const statuses = ['pending', 'completed', 'cancelled'];
 
@@ -155,9 +152,13 @@ export async function runE2EBenchmarks(): Promise<void> {
   });
 
   const largeDsl20 = generateLargeDSL(20);
-  parseSuite.addSync('large-20-actions', () => {
-    return parse(largeDsl20);
-  }, { iterations: 500 });
+  parseSuite.addSync(
+    'large-20-actions',
+    () => {
+      return parse(largeDsl20);
+    },
+    { iterations: 500 }
+  );
 
   parseSuite.print();
 
@@ -168,88 +169,104 @@ export async function runE2EBenchmarks(): Promise<void> {
   const smallUsers = generateUsers(100);
   const smallOrders = generateOrders(200, 100);
 
-  await execSuite.addAsync('store-processing-100-items', async () => {
-    const inputStore = new MemoryStore('input');
-    for (const user of smallUsers) {
-      await inputStore.set(user.id as string, user);
-    }
+  await execSuite.addAsync(
+    'store-processing-100-items',
+    async () => {
+      const inputStore = new MemoryStore('input');
+      for (const user of smallUsers) {
+        await inputStore.set(user.id as string, user);
+      }
 
-    const outputStore = new MemoryStore('output');
+      const outputStore = new MemoryStore('output');
 
-    await execute(STORE_ONLY_DSL, {
-      dryRun: true,
-      stores: {
-        input: inputStore,
-        output: outputStore,
-      },
-    });
-  }, { iterations: 100, warmupIterations: 10 });
+      await execute(STORE_ONLY_DSL, {
+        dryRun: true,
+        stores: {
+          input: inputStore,
+          output: outputStore,
+        },
+      });
+    },
+    { iterations: 100, warmupIterations: 10 }
+  );
 
   // Medium dataset (500 items)
   const mediumUsers = generateUsers(500);
   const mediumOrders = generateOrders(1000, 500);
 
-  await execSuite.addAsync('store-processing-500-items', async () => {
-    const inputStore = new MemoryStore('input');
-    for (const user of mediumUsers) {
-      await inputStore.set(user.id as string, user);
-    }
+  await execSuite.addAsync(
+    'store-processing-500-items',
+    async () => {
+      const inputStore = new MemoryStore('input');
+      for (const user of mediumUsers) {
+        await inputStore.set(user.id as string, user);
+      }
 
-    const outputStore = new MemoryStore('output');
+      const outputStore = new MemoryStore('output');
 
-    await execute(STORE_ONLY_DSL, {
-      dryRun: true,
-      stores: {
-        input: inputStore,
-        output: outputStore,
-      },
-    });
-  }, { iterations: 50, warmupIterations: 5 });
+      await execute(STORE_ONLY_DSL, {
+        dryRun: true,
+        stores: {
+          input: inputStore,
+          output: outputStore,
+        },
+      });
+    },
+    { iterations: 50, warmupIterations: 5 }
+  );
 
   // Complex processing with multiple stores
-  await execSuite.addAsync('complex-processing-100-users-200-orders', async () => {
-    const usersStore = new MemoryStore('users');
-    const ordersStore = new MemoryStore('orders');
-    const reportsStore = new MemoryStore('reports');
+  await execSuite.addAsync(
+    'complex-processing-100-users-200-orders',
+    async () => {
+      const usersStore = new MemoryStore('users');
+      const ordersStore = new MemoryStore('orders');
+      const reportsStore = new MemoryStore('reports');
 
-    for (const user of smallUsers) {
-      await usersStore.set(user.id as string, user);
-    }
-    for (const order of smallOrders) {
-      await ordersStore.set(order.id as string, order);
-    }
+      for (const user of smallUsers) {
+        await usersStore.set(user.id as string, user);
+      }
+      for (const order of smallOrders) {
+        await ordersStore.set(order.id as string, order);
+      }
 
-    await execute(COMPLEX_STORE_DSL, {
-      dryRun: true,
-      stores: {
-        users: usersStore,
-        orders: ordersStore,
-        reports: reportsStore,
-      },
-    });
-  }, { iterations: 50, warmupIterations: 5 });
+      await execute(COMPLEX_STORE_DSL, {
+        dryRun: true,
+        stores: {
+          users: usersStore,
+          orders: ordersStore,
+          reports: reportsStore,
+        },
+      });
+    },
+    { iterations: 50, warmupIterations: 5 }
+  );
 
-  await execSuite.addAsync('complex-processing-500-users-1000-orders', async () => {
-    const usersStore = new MemoryStore('users');
-    const ordersStore = new MemoryStore('orders');
-    const reportsStore = new MemoryStore('reports');
+  await execSuite.addAsync(
+    'complex-processing-500-users-1000-orders',
+    async () => {
+      const usersStore = new MemoryStore('users');
+      const ordersStore = new MemoryStore('orders');
+      const reportsStore = new MemoryStore('reports');
 
-    for (const user of mediumUsers) {
-      await usersStore.set(user.id as string, user);
-    }
-    for (const order of mediumOrders) {
-      await ordersStore.set(order.id as string, order);
-    }
+      for (const user of mediumUsers) {
+        await usersStore.set(user.id as string, user);
+      }
+      for (const order of mediumOrders) {
+        await ordersStore.set(order.id as string, order);
+      }
 
-    await execute(COMPLEX_STORE_DSL, {
-      dryRun: true,
-      stores: {
-        users: usersStore,
-        orders: ordersStore,
-        reports: reportsStore,
-      },
-    });
-  }, { iterations: 20, warmupIterations: 3 });
+      await execute(COMPLEX_STORE_DSL, {
+        dryRun: true,
+        stores: {
+          users: usersStore,
+          orders: ordersStore,
+          reports: reportsStore,
+        },
+      });
+    },
+    { iterations: 20, warmupIterations: 3 }
+  );
 
   execSuite.print();
 

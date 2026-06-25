@@ -63,10 +63,14 @@ export async function runParserBenchmarks(): Promise<void> {
     return parser.parse();
   });
 
-  suite.addSync('large-50-actions', () => {
-    const parser = new ReqonParser([...large50Tokens]);
-    return parser.parse();
-  }, { iterations: 500 });
+  suite.addSync(
+    'large-50-actions',
+    () => {
+      const parser = new ReqonParser([...large50Tokens]);
+      return parser.parse();
+    },
+    { iterations: 500 }
+  );
 
   suite.print();
 

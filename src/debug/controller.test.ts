@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { BaseDebugController, type DebugLocation, type DebugSnapshot, type DebugCommand } from './controller.js';
+import {
+  BaseDebugController,
+  type DebugLocation,
+  type DebugSnapshot,
+  type DebugCommand,
+} from './controller.js';
 
 /** Test implementation of BaseDebugController */
 class TestDebugController extends BaseDebugController {
@@ -165,18 +170,22 @@ describe('BaseDebugController', () => {
       controller.addBreakpoint('SpecificAction:3');
 
       // Should not pause at other locations
-      expect(controller.shouldPause({
-        action: 'OtherAction',
-        stepIndex: 0,
-        stepType: 'fetch',
-      })).toBe(false);
+      expect(
+        controller.shouldPause({
+          action: 'OtherAction',
+          stepIndex: 0,
+          stepType: 'fetch',
+        })
+      ).toBe(false);
 
       // Should pause at breakpoint
-      expect(controller.shouldPause({
-        action: 'SpecificAction',
-        stepIndex: 3,
-        stepType: 'map',
-      })).toBe(true);
+      expect(
+        controller.shouldPause({
+          action: 'SpecificAction',
+          stepIndex: 3,
+          stepType: 'map',
+        })
+      ).toBe(true);
     });
   });
 

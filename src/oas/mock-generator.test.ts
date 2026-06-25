@@ -53,7 +53,10 @@ describe('generateMockData', () => {
     });
 
     it('uses enum first value', () => {
-      const schema: OpenAPIV3.SchemaObject = { type: 'string', enum: ['active', 'inactive', 'pending'] };
+      const schema: OpenAPIV3.SchemaObject = {
+        type: 'string',
+        enum: ['active', 'inactive', 'pending'],
+      };
       const result = generateMockData(schema);
       expect(result).toBe('active');
     });
@@ -225,10 +228,7 @@ describe('generateMockData', () => {
 
     it('handles oneOf by using first schema', () => {
       const schema: OpenAPIV3.SchemaObject = {
-        oneOf: [
-          { type: 'string' },
-          { type: 'number' },
-        ],
+        oneOf: [{ type: 'string' }, { type: 'number' }],
       };
       const result = generateMockData(schema);
       expect(typeof result).toBe('string');
@@ -236,10 +236,7 @@ describe('generateMockData', () => {
 
     it('handles anyOf by using first schema', () => {
       const schema: OpenAPIV3.SchemaObject = {
-        anyOf: [
-          { type: 'boolean' },
-          { type: 'string' },
-        ],
+        anyOf: [{ type: 'boolean' }, { type: 'string' }],
       };
       const result = generateMockData(schema);
       expect(result).toBe(true);
