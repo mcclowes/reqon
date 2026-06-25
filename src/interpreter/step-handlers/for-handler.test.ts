@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ForStep, ActionStep } from '../../ast/nodes.js';
 import type { Expression } from 'vague-lang';
 import { ForHandler, type ForHandlerDeps } from './for-handler.js';
-import { createContext, setVariable, childContext } from '../context.js';
+import { createContext, setVariable } from '../context.js';
 import type { ExecutionContext } from '../context.js';
 import { MemoryStore } from '../../stores/memory.js';
 
@@ -17,11 +17,13 @@ describe('ForHandler', () => {
     deps = {
       ctx,
       log: vi.fn(),
-      executeStep: vi.fn(async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
-        // Capture the item variable from the context
-        const item = stepCtx.variables.get('item');
-        executedSteps.push({ step, item });
-      }),
+      executeStep: vi.fn(
+        async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
+          // Capture the item variable from the context
+          const item = stepCtx.variables.get('item');
+          executedSteps.push({ step, item });
+        }
+      ),
       actionName: 'testAction',
     };
   });
@@ -81,10 +83,12 @@ describe('ForHandler', () => {
       };
 
       // Update deps to capture 'user' variable
-      deps.executeStep = vi.fn(async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
-        const item = stepCtx.variables.get('user');
-        executedSteps.push({ step, item });
-      });
+      deps.executeStep = vi.fn(
+        async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
+          const item = stepCtx.variables.get('user');
+          executedSteps.push({ step, item });
+        }
+      );
 
       const handler = new ForHandler(deps);
       await handler.execute(step);
@@ -106,14 +110,20 @@ describe('ForHandler', () => {
         variable: 'record',
         collection: { type: 'Identifier', name: 'testStore' } as Expression,
         steps: [
-          { type: 'LetStep', name: 'x', value: { type: 'Identifier', name: 'record' } } as ActionStep,
+          {
+            type: 'LetStep',
+            name: 'x',
+            value: { type: 'Identifier', name: 'record' },
+          } as ActionStep,
         ],
       };
 
-      deps.executeStep = vi.fn(async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
-        const item = stepCtx.variables.get('record');
-        executedSteps.push({ step, item });
-      });
+      deps.executeStep = vi.fn(
+        async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
+          const item = stepCtx.variables.get('record');
+          executedSteps.push({ step, item });
+        }
+      );
 
       const handler = new ForHandler(deps);
       await handler.execute(step);
@@ -143,10 +153,12 @@ describe('ForHandler', () => {
         ],
       };
 
-      deps.executeStep = vi.fn(async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
-        const item = stepCtx.variables.get('user');
-        executedSteps.push({ step, item });
-      });
+      deps.executeStep = vi.fn(
+        async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
+          const item = stepCtx.variables.get('user');
+          executedSteps.push({ step, item });
+        }
+      );
 
       const handler = new ForHandler(deps);
       await handler.execute(step);
@@ -174,14 +186,20 @@ describe('ForHandler', () => {
           right: { type: 'Literal', value: 22, dataType: 'number' },
         } as Expression,
         steps: [
-          { type: 'LetStep', name: 'x', value: { type: 'Identifier', name: 'person' } } as ActionStep,
+          {
+            type: 'LetStep',
+            name: 'x',
+            value: { type: 'Identifier', name: 'person' },
+          } as ActionStep,
         ],
       };
 
-      deps.executeStep = vi.fn(async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
-        const item = stepCtx.variables.get('person');
-        executedSteps.push({ step, item });
-      });
+      deps.executeStep = vi.fn(
+        async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
+          const item = stepCtx.variables.get('person');
+          executedSteps.push({ step, item });
+        }
+      );
 
       const handler = new ForHandler(deps);
       await handler.execute(step);
@@ -224,9 +242,11 @@ describe('ForHandler', () => {
       const contexts: ExecutionContext[] = [];
       setVariable(deps.ctx, 'items', [1, 2, 3]);
 
-      deps.executeStep = vi.fn(async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
-        contexts.push(stepCtx);
-      });
+      deps.executeStep = vi.fn(
+        async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
+          contexts.push(stepCtx);
+        }
+      );
 
       const step: ForStep = {
         type: 'ForStep',
@@ -257,9 +277,11 @@ describe('ForHandler', () => {
       setVariable(deps.ctx, 'items', [{ id: '1' }]);
 
       let capturedCtx: ExecutionContext | null = null;
-      deps.executeStep = vi.fn(async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
-        capturedCtx = stepCtx;
-      });
+      deps.executeStep = vi.fn(
+        async (step: ActionStep, actionName: string, stepCtx: ExecutionContext) => {
+          capturedCtx = stepCtx;
+        }
+      );
 
       const step: ForStep = {
         type: 'ForStep',
@@ -292,9 +314,21 @@ describe('ForHandler', () => {
         variable: 'item',
         collection: { type: 'Identifier', name: 'items' } as Expression,
         steps: [
-          { type: 'LetStep', name: 'a', value: { type: 'Literal', value: 1, dataType: 'number' } } as ActionStep,
-          { type: 'LetStep', name: 'b', value: { type: 'Literal', value: 2, dataType: 'number' } } as ActionStep,
-          { type: 'LetStep', name: 'c', value: { type: 'Literal', value: 3, dataType: 'number' } } as ActionStep,
+          {
+            type: 'LetStep',
+            name: 'a',
+            value: { type: 'Literal', value: 1, dataType: 'number' },
+          } as ActionStep,
+          {
+            type: 'LetStep',
+            name: 'b',
+            value: { type: 'Literal', value: 2, dataType: 'number' },
+          } as ActionStep,
+          {
+            type: 'LetStep',
+            name: 'c',
+            value: { type: 'Literal', value: 3, dataType: 'number' },
+          } as ActionStep,
         ],
       };
 
@@ -324,11 +358,7 @@ describe('ForHandler', () => {
     });
 
     it('logs filtered count when condition is present', async () => {
-      setVariable(deps.ctx, 'items', [
-        { active: true },
-        { active: false },
-        { active: true },
-      ]);
+      setVariable(deps.ctx, 'items', [{ active: true }, { active: false }, { active: true }]);
 
       const step: ForStep = {
         type: 'ForStep',

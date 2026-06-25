@@ -1,4 +1,4 @@
-import { TokenType, type Expression, type QualifiedName, type MatchArm, type Token } from 'vague-lang';
+import { TokenType, type Expression, type QualifiedName, type MatchArm } from 'vague-lang';
 import { ReqonTokenType } from '../lexer/tokens.js';
 import { ReqonParserBase } from './base.js';
 
@@ -160,7 +160,16 @@ export class ReqonExpressionParser extends ReqonParserBase {
   parseComparison(): Expression {
     let left = this.parseRange();
 
-    while (this.checkAny(TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE, TokenType.DOUBLE_EQUALS, ReqonTokenType.NOT_EQUALS)) {
+    while (
+      this.checkAny(
+        TokenType.LT,
+        TokenType.GT,
+        TokenType.LTE,
+        TokenType.GTE,
+        TokenType.DOUBLE_EQUALS,
+        ReqonTokenType.NOT_EQUALS
+      )
+    ) {
       const token = this.advance();
       // Normalize the operator value for NOT_EQUALS
       const operator = token.type === ReqonTokenType.NOT_EQUALS ? '!=' : token.value;

@@ -236,7 +236,7 @@ export class CursorPaginationStrategy implements PaginationStrategy {
     return {};
   }
 
-  extractResults(response: unknown, ctx: PaginationContext): PageResult {
+  extractResults(response: unknown, _ctx: PaginationContext): PageResult {
     if (!response || typeof response !== 'object') {
       return { items: [], hasMore: false };
     }

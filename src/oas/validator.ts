@@ -1,7 +1,5 @@
 import type { OpenAPIV3 } from 'openapi-types';
 
-type ArraySchemaObject = OpenAPIV3.ArraySchemaObject;
-
 export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
@@ -175,11 +173,7 @@ function validateNumber(
   }
 }
 
-function validateBoolean(
-  value: unknown,
-  path: string,
-  errors: ValidationError[]
-): void {
+function validateBoolean(value: unknown, path: string, errors: ValidationError[]): void {
   if (typeof value !== 'boolean') {
     errors.push({
       path,

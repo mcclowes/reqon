@@ -5,7 +5,6 @@ import {
   createPauseState,
   isPauseExpired,
   getRemainingTime,
-  getPauseSummary,
 } from './state.js';
 import { MemoryPauseStore } from './store.js';
 import { PauseManager } from './manager.js';

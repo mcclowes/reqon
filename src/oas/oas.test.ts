@@ -83,7 +83,7 @@ describe('OAS Validator', () => {
     const result = validateResponse(data, schema);
 
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.path === 'name')).toBe(true);
+    expect(result.errors.some((e) => e.path === 'name')).toBe(true);
   });
 
   it('catches type mismatches', () => {

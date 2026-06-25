@@ -2,7 +2,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { resolve, join, dirname, basename } from 'node:path';
 import { ReqonLexer } from '../lexer/index.js';
 import { ReqonParser } from '../parser/index.js';
-import type { ReqonProgram, MissionDefinition, ActionDefinition, Statement } from '../ast/nodes.js';
+import type { ReqonProgram, MissionDefinition, ActionDefinition } from '../ast/nodes.js';
 
 export interface LoadResult {
   program: ReqonProgram;
@@ -33,10 +33,7 @@ export interface LoadOptions {
  *   Looks for mission.reqon (root) and merges all *.reqon action files.
  *   Actions are resolved by name from the `run` pipeline.
  */
-export async function loadMission(
-  path: string,
-  options: LoadOptions = {}
-): Promise<LoadResult> {
+export async function loadMission(path: string, options: LoadOptions = {}): Promise<LoadResult> {
   const absolutePath = resolve(path);
   const stats = await stat(absolutePath);
 
@@ -80,14 +77,9 @@ async function loadMissionFile(filePath: string): Promise<LoadResult> {
  *
  * Action files contain standalone action definitions that get merged in.
  */
-async function loadMissionFolder(
-  folderPath: string,
-  options: LoadOptions
-): Promise<LoadResult> {
+async function loadMissionFolder(folderPath: string, options: LoadOptions): Promise<LoadResult> {
   // Find root file - try extensions in order of preference
-  const extensionsToTry = options.extension
-    ? [options.extension]
-    : SUPPORTED_EXTENSIONS;
+  const extensionsToTry = options.extension ? [options.extension] : SUPPORTED_EXTENSIONS;
 
   let rootFilePath: string | null = null;
   let ext: SupportedExtension | null = null;
@@ -105,10 +97,9 @@ async function loadMissionFolder(
   }
 
   if (!rootFilePath || !ext) {
-    const tried = extensionsToTry.map(e => `mission${e}`).join(' or ');
+    const tried = extensionsToTry.map((e) => `mission${e}`).join(' or ');
     throw new Error(
-      `Mission folder must contain a root file (${tried}). ` +
-      `Not found in: ${folderPath}`
+      `Mission folder must contain a root file (${tried}). ` + `Not found in: ${folderPath}`
     );
   }
 
@@ -119,9 +110,7 @@ async function loadMissionFolder(
   // Find all other action files in the folder (same extension as root)
   const rootFileName = basename(rootFilePath);
   const files = await readdir(folderPath);
-  const actionFiles = files.filter(
-    f => f.endsWith(ext) && f !== rootFileName
-  );
+  const actionFiles = files.filter((f) => f.endsWith(ext) && f !== rootFileName);
 
   const sourceFiles = [rootFilePath];
   const externalActions: ActionDefinition[] = [];
@@ -141,7 +130,7 @@ async function loadMissionFolder(
       } else if (stmt.type === 'MissionDefinition') {
         throw new Error(
           `Action file '${file}' should not contain a mission definition. ` +
-          `Only '${rootFileName}' should define the mission.`
+            `Only '${rootFileName}' should define the mission.`
         );
       }
     }
@@ -173,10 +162,7 @@ function parseSource(source: string, filePath: string): ReqonProgram {
 /**
  * Merge external actions into the mission definition
  */
-function mergeActions(
-  program: ReqonProgram,
-  externalActions: ActionDefinition[]
-): ReqonProgram {
+function mergeActions(program: ReqonProgram, externalActions: ActionDefinition[]): ReqonProgram {
   // Find the mission in the program
   const missionIndex = program.statements.findIndex(
     (s): s is MissionDefinition => s.type === 'MissionDefinition'
@@ -199,7 +185,7 @@ function mergeActions(
     if (actionMap.has(action.name)) {
       throw new Error(
         `Duplicate action definition: '${action.name}'. ` +
-        `Action names must be unique across all files.`
+          `Action names must be unique across all files.`
       );
     }
     actionMap.set(action.name, action);
@@ -231,7 +217,7 @@ function validatePipelineActions(program: ReqonProgram): void {
 
   if (!mission) return;
 
-  const actionNames = new Set(mission.actions.map(a => a.name));
+  const actionNames = new Set(mission.actions.map((a) => a.name));
 
   for (const stage of mission.pipeline.stages) {
     const stageActions = stage.actions ?? (stage.action ? [stage.action] : []);
@@ -240,7 +226,7 @@ function validatePipelineActions(program: ReqonProgram): void {
       if (!actionNames.has(actionName)) {
         throw new Error(
           `Pipeline references unknown action: '${actionName}'. ` +
-          `Available actions: ${Array.from(actionNames).join(', ')}`
+            `Available actions: ${Array.from(actionNames).join(', ')}`
         );
       }
     }

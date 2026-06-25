@@ -1,5 +1,5 @@
 import type { MatchStep, ActionStep, FlowDirective } from '../../ast/nodes.js';
-import type { StepHandler, StepHandlerDeps } from './types.js';
+import type { StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
 import type { ExecutionContext } from '../context.js';
 import { findMatchingSchema } from '../schema-matcher.js';
@@ -92,7 +92,11 @@ export class MatchHandler {
     // Execute steps
     if (matchedArm.steps) {
       // Debug pause point - before match arm body (step-into mode)
-      if (this.deps.debugController && this.deps.captureDebugSnapshot && this.deps.handleDebugCommand) {
+      if (
+        this.deps.debugController &&
+        this.deps.captureDebugSnapshot &&
+        this.deps.handleDebugCommand
+      ) {
         const location: DebugLocation = {
           action: this.deps.actionName,
           stepIndex: -1, // Use -1 for match arms
@@ -119,7 +123,10 @@ export class MatchHandler {
     }
   }
 
-  private handleFlowDirective(flow: Exclude<FlowDirective, { type: 'continue' }>, value: unknown): never {
+  private handleFlowDirective(
+    flow: Exclude<FlowDirective, { type: 'continue' }>,
+    value: unknown
+  ): never {
     switch (flow.type) {
       case 'skip':
         throw new SkipSignal();
@@ -136,10 +143,11 @@ export class MatchHandler {
       case 'queue':
         throw new QueueSignal(value, flow.target);
 
-      default:
+      default: {
         // This should never happen if TypeScript is working correctly
         const _exhaustive: never = flow;
         throw new Error(`Unknown flow directive: ${(_exhaustive as FlowDirective).type}`);
+      }
     }
   }
 }

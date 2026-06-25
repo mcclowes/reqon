@@ -195,12 +195,18 @@ export class CircuitBreaker {
   /**
    * Record a failed request
    */
-  recordFailure(source: string, endpoint?: string, statusCode?: number, isNetworkError = false): void {
+  recordFailure(
+    source: string,
+    endpoint?: string,
+    statusCode?: number,
+    isNetworkError = false
+  ): void {
     const entry = this.getOrCreateEntry(source, endpoint);
     const config = entry.config;
 
     // Check if this failure type should be counted
-    const isFailureStatus = statusCode !== undefined && config.failureStatusCodes.includes(statusCode);
+    const isFailureStatus =
+      statusCode !== undefined && config.failureStatusCodes.includes(statusCode);
     const shouldCount = isFailureStatus || (isNetworkError && config.countNetworkErrors);
 
     if (!shouldCount) {
@@ -240,7 +246,6 @@ export class CircuitBreaker {
    */
   getStatus(source: string, endpoint?: string): CircuitBreakerStatus {
     const entry = this.getOrCreateEntry(source, endpoint);
-    const now = Date.now();
 
     let nextAttemptTime: Date | undefined;
     if (entry.state === 'open' && entry.openedAt) {
@@ -293,7 +298,7 @@ export class CircuitBreaker {
   getAllStatuses(): Map<string, CircuitBreakerStatus> {
     const result = new Map<string, CircuitBreakerStatus>();
 
-    for (const [key, entry] of this.circuits) {
+    for (const key of this.circuits.keys()) {
       const [source, endpoint] = key.split(':');
       result.set(key, this.getStatus(source, endpoint === '' ? undefined : endpoint));
     }

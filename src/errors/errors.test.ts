@@ -71,12 +71,7 @@ describe('Error classes', () => {
       const source = `mission Test {
   source API auth: bearer
 }`;
-      const error = new ParseError(
-        "Expected '{'",
-        { line: 2, column: 14 },
-        { source },
-        'auth'
-      );
+      const error = new ParseError("Expected '{'", { line: 2, column: 14 }, { source }, 'auth');
       const formatted = error.format();
 
       expect(formatted).toContain('ParseError');
@@ -89,11 +84,7 @@ describe('Error classes', () => {
   describe('LexerError', () => {
     it('should format with source context', () => {
       const source = 'mission Test { @ }';
-      const error = new LexerError(
-        "Unexpected character '@'",
-        { line: 1, column: 16 },
-        { source }
-      );
+      const error = new LexerError("Unexpected character '@'", { line: 1, column: 16 }, { source });
       const formatted = error.format();
 
       expect(formatted).toContain('LexerError');

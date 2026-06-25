@@ -2,7 +2,7 @@
  * Source definition parsing
  * Handles parsing of source definitions, auth config, rate limiting, and circuit breaker config.
  */
-import { TokenType, type Expression, type Token } from 'vague-lang';
+import { TokenType, type Expression } from 'vague-lang';
 import { ReqonTokenType } from '../lexer/tokens.js';
 import type {
   SourceDefinition,
@@ -104,7 +104,10 @@ export class SourceParser extends ReqonExpressionParser {
           config.maxWait = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
           break;
         case 'fallbackRpm':
-          config.fallbackRpm = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          config.fallbackRpm = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
           break;
         default:
           throw this.error(`Unknown rate limit option: ${key}`);
@@ -129,16 +132,28 @@ export class SourceParser extends ReqonExpressionParser {
 
       switch (key) {
         case 'failureThreshold':
-          config.failureThreshold = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          config.failureThreshold = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
           break;
         case 'resetTimeout':
-          config.resetTimeout = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          config.resetTimeout = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
           break;
         case 'successThreshold':
-          config.successThreshold = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          config.successThreshold = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
           break;
         case 'failureWindow':
-          config.failureWindow = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          config.failureWindow = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
           break;
         default:
           throw this.error(`Unknown circuit breaker option: ${key}`);

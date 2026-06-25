@@ -337,7 +337,10 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     const isLimited =
       (state.retryAfter && state.retryAfter > now) ||
-      (state.remaining !== undefined && state.remaining <= 0 && state.resetAt && state.resetAt > now);
+      (state.remaining !== undefined &&
+        state.remaining <= 0 &&
+        state.resetAt &&
+        state.resetAt > now);
 
     let resetInSeconds: number | undefined;
     if (isLimited && state.resetAt) {

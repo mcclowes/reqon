@@ -4,7 +4,7 @@ import type { ScheduleDefinition, IntervalSchedule } from '../ast/nodes.js';
  * Parse a cron expression and calculate the next run time
  *
  * Cron format: "minute hour day-of-month month day-of-week"
- * Supports: numbers, ranges (1-5), steps (*​/5), lists (1,3,5), and wildcards (*)
+ * Supports: numbers, ranges (1-5), steps (* /5), lists (1,3,5), and wildcards (*)
  */
 export function parseCronExpression(expression: string): CronSchedule {
   const parts = expression.trim().split(/\s+/);
@@ -155,7 +155,10 @@ export function intervalToMs(interval: IntervalSchedule): number {
 /**
  * Calculate next run time based on schedule definition
  */
-export function getNextRunTime(schedule: ScheduleDefinition, after: Date = new Date()): Date | null {
+export function getNextRunTime(
+  schedule: ScheduleDefinition,
+  after: Date = new Date()
+): Date | null {
   switch (schedule.scheduleType) {
     case 'interval': {
       if (!schedule.interval) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { MapStep, FieldMapping } from '../../ast/nodes.js';
+import type { MapStep } from '../../ast/nodes.js';
 import type { Expression } from 'vague-lang';
 import { MapHandler } from './map-handler.js';
 import { createContext, setVariable } from '../context.js';

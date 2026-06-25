@@ -1,12 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MissionExecutor } from './executor.js';
-import type {
-  ProgressCallbacks,
-  ExecutionStartEvent,
-  ExecutionCompleteEvent,
-  StageStartEvent,
-  StageCompleteEvent,
-} from './executor.js';
+import type { ExecutionCompleteEvent, StageStartEvent, StageCompleteEvent } from './executor.js';
 import type { ReqonProgram, MissionDefinition } from '../ast/nodes.js';
 
 function createTestProgram(stages: string[]): ReqonProgram {

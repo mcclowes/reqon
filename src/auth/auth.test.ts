@@ -6,7 +6,7 @@ import {
   RateLimitTimeoutError,
 } from './rate-limiter.js';
 import { InMemoryTokenStore } from './token-store.js';
-import type { OAuth2Tokens, RateLimitEvent } from './types.js';
+import type { OAuth2Tokens } from './types.js';
 
 describe('parseRateLimitHeaders', () => {
   it('parses X-RateLimit headers', () => {
@@ -110,7 +110,11 @@ describe('AdaptiveRateLimiter', () => {
   });
 
   it('tracks limits per endpoint within source', async () => {
-    limiter.recordResponse('API', { remaining: 0, resetAt: new Date(Date.now() + 60000) }, '/invoices');
+    limiter.recordResponse(
+      'API',
+      { remaining: 0, resetAt: new Date(Date.now() + 60000) },
+      '/invoices'
+    );
     limiter.recordResponse('API', { remaining: 50, limit: 100 }, '/contacts');
 
     expect(await limiter.canProceed('API', '/invoices')).toBe(false);

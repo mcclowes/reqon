@@ -5,7 +5,9 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ['dist/**', 'node_modules/**', '**/*.test.ts'],
+    // Benchmarks are standalone tsx scripts outside the typecheck project
+    // (excluded from tsconfig), so the type-aware linter can't resolve them.
+    ignores: ['dist/**', 'node_modules/**', 'src/benchmark/**'],
   },
   {
     languageOptions: {
@@ -32,6 +34,15 @@ export default tseslint.config(
       // Consistent return types
       '@typescript-eslint/explicit-function-return-type': 'off',
       // Allow non-null assertions sparingly
+      '@typescript-eslint/no-non-null-assertion': 'warn',
+    },
+  },
+  {
+    // Tests legitimately use mock casts and non-null assertions to build
+    // fixtures; keep these as warnings rather than hard errors.
+    files: ['**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-non-null-assertion': 'warn',
     },
   }

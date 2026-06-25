@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { FetchStep, RetryConfig, PaginationConfig } from '../ast/nodes.js';
+import type { FetchStep } from '../ast/nodes.js';
 import type { Expression } from 'vague-lang';
-import { FetchHandler, type FetchHandlerDeps, type FetchResult } from './fetch-handler.js';
+import { FetchHandler, type FetchHandlerDeps } from './fetch-handler.js';
 import { createContext, setVariable } from './context.js';
 import type { HttpClient } from './http.js';
 import type { OASSource } from '../oas/index.js';
@@ -521,9 +521,7 @@ describe('FetchHandler', () => {
     });
 
     it('fetches with page number pagination', async () => {
-      let callCount = 0;
       (mockClient.request as ReturnType<typeof vi.fn>).mockImplementation(async ({ query }) => {
-        callCount++;
         const page = parseInt(query?.page ?? '1');
         if (page > 2) {
           return { status: 200, data: { data: [] }, headers: {} };

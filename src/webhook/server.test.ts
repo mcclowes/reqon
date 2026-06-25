@@ -76,14 +76,14 @@ describe('WebhookServer', () => {
         await secured.start();
         const reg = await secured.register('exec-1', { path: '/cb', expectedEvents: 1 });
 
-        const unauth = await fetch('http://localhost:13900/cb', {
+        const unauth = await fetch('http://127.0.0.1:13900/cb', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: '{}',
         });
         expect(unauth.status).toBe(401);
 
-        const authed = await fetch('http://localhost:13900/cb', {
+        const authed = await fetch('http://127.0.0.1:13900/cb', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer hook-secret' },
           body: '{}',
@@ -104,7 +104,7 @@ describe('WebhookServer', () => {
         await limited.start();
         await limited.register('exec-2', { path: '/cb', expectedEvents: 1 });
 
-        const res = await fetch('http://localhost:13901/cb', {
+        const res = await fetch('http://127.0.0.1:13901/cb', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ blob: 'x'.repeat(500) }),
@@ -133,7 +133,7 @@ describe('WebhookServer', () => {
         const first = concurrent.waitForEvents(reg.id, 5000);
         const second = concurrent.waitForEvents(reg.id, 5000);
 
-        const res = await fetch('http://localhost:13902/cb', {
+        const res = await fetch('http://127.0.0.1:13902/cb', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ok: true }),

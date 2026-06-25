@@ -1,6 +1,6 @@
 import type { ActionStep } from '../../ast/nodes.js';
 import type { ExecutionContext } from '../context.js';
-import type { EventEmitter, EventType } from '../../observability/index.js';
+import type { EventType } from '../../observability/index.js';
 
 /**
  * Dependencies injected into step handlers

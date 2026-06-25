@@ -5,7 +5,6 @@ import {
   RateLimitTimeoutError,
   RateLimitError,
 } from './rate-limiter.js';
-import type { RateLimitCallbacks, RateLimitConfig } from './types.js';
 
 describe('AdaptiveRateLimiter', () => {
   let limiter: AdaptiveRateLimiter;
@@ -77,7 +76,6 @@ describe('AdaptiveRateLimiter', () => {
     });
 
     it('records retry-after as future date', () => {
-      const now = Date.now();
       limiter.recordResponse('api', { retryAfter: 30 });
       const status = limiter.getStatus('api');
       expect(status.isLimited).toBe(true);

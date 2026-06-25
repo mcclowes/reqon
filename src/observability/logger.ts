@@ -249,14 +249,11 @@ export class ConsoleOutput implements LogOutput {
     const levelStr = entry.level.toUpperCase().padEnd(5);
 
     // Format context as key=value pairs
-    const contextStr = Object.keys(entry.context).length > 0
-      ? ` ${formatContext(entry.context)}`
-      : '';
+    const contextStr =
+      Object.keys(entry.context).length > 0 ? ` ${formatContext(entry.context)}` : '';
 
     // Format duration if present
-    const durationStr = entry.duration !== undefined
-      ? ` (${entry.duration}ms)`
-      : '';
+    const durationStr = entry.duration !== undefined ? ` (${entry.duration}ms)` : '';
 
     const message = `${prefix} ${levelStr} ${entry.message}${contextStr}${durationStr}`;
 
@@ -327,10 +324,10 @@ export class EventOutput implements LogOutput {
     // Map log entries to appropriate event types based on context
     // This allows logs to flow into the event system
     if (entry.context.eventType) {
-      this.emitter.emit(
-        entry.context.eventType as EventType,
-        { ...entry.context, message: entry.message }
-      );
+      this.emitter.emit(entry.context.eventType as EventType, {
+        ...entry.context,
+        message: entry.message,
+      });
     }
   }
 }

@@ -3,7 +3,7 @@
  */
 
 import * as readline from 'node:readline';
-import type { DebugCommand, DebugSnapshot, DebugLocation, DebugMode } from './controller.js';
+import type { DebugCommand, DebugSnapshot } from './controller.js';
 import { BaseDebugController } from './controller.js';
 
 export class CLIDebugger extends BaseDebugController {
@@ -33,7 +33,9 @@ export class CLIDebugger extends BaseDebugController {
 
     // Print pause reason
     if (s.pauseReason.type === 'loop-iteration') {
-      console.log(`  Loop: ${s.pauseReason.variable} [${s.pauseReason.index + 1}/${s.pauseReason.total}]`);
+      console.log(
+        `  Loop: ${s.pauseReason.variable} [${s.pauseReason.index + 1}/${s.pauseReason.total}]`
+      );
     } else if (s.pauseReason.type === 'match-arm') {
       console.log(`  Matched: ${s.pauseReason.schema}`);
     } else if (s.pauseReason.type === 'breakpoint') {
@@ -43,7 +45,10 @@ export class CLIDebugger extends BaseDebugController {
     // Print variables summary
     const varKeys = Object.keys(s.variables);
     if (varKeys.length > 0) {
-      const preview = varKeys.slice(0, 3).map(k => `${k}: ${this.formatValue(s.variables[k])}`).join(', ');
+      const preview = varKeys
+        .slice(0, 3)
+        .map((k) => `${k}: ${this.formatValue(s.variables[k])}`)
+        .join(', ');
       const more = varKeys.length > 3 ? ` (+${varKeys.length - 3} more)` : '';
       console.log(`  Variables: { ${preview}${more} }`);
     }
@@ -51,10 +56,12 @@ export class CLIDebugger extends BaseDebugController {
     // Print stores summary
     const storeEntries = Object.entries(s.stores);
     if (storeEntries.length > 0) {
-      const storeInfo = storeEntries.map(([name, info]) => {
-        const count = info.count >= 0 ? ` (${info.count} items)` : '';
-        return `${name}: ${info.type}${count}`;
-      }).join(', ');
+      const storeInfo = storeEntries
+        .map(([name, info]) => {
+          const count = info.count >= 0 ? ` (${info.count} items)` : '';
+          return `${name}: ${info.type}${count}`;
+        })
+        .join(', ');
       console.log(`  Stores: { ${storeInfo} }`);
     }
 

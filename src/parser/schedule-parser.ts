@@ -115,7 +115,9 @@ export class ScheduleParser extends SourceParser {
         unit = 'weeks';
         break;
       default:
-        throw this.error(`Expected time unit (seconds, minutes, hours, days, weeks), got: ${unitToken.value}`);
+        throw this.error(
+          `Expected time unit (seconds, minutes, hours, days, weeks), got: ${unitToken.value}`
+        );
     }
 
     return { value, unit };

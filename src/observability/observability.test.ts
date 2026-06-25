@@ -1,23 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  ObservabilityEmitter,
-  createEmitter,
-  type ObservabilityEvent,
-  type EventType,
-} from './events.js';
-import {
-  createStructuredLogger,
-  ConsoleOutput,
-  JsonLinesOutput,
-  BufferOutput,
-  type LogEntry,
-} from './logger.js';
-import {
-  SpanBuilder,
-  OTelEventAdapter,
-  generateTraceId,
-  generateSpanId,
-} from './otel.js';
+import { ObservabilityEmitter, createEmitter, type ObservabilityEvent } from './events.js';
+import { createStructuredLogger, BufferOutput, type LogEntry } from './logger.js';
+import { SpanBuilder, OTelEventAdapter, generateTraceId, generateSpanId } from './otel.js';
 
 describe('ObservabilityEmitter', () => {
   let emitter: ObservabilityEmitter;
@@ -126,7 +110,6 @@ describe('StructuredLogger', () => {
   });
 
   it('should filter by log level', () => {
-    const buffer = new BufferOutput();
     const logger = createStructuredLogger({ silent: true, level: 'warn' });
 
     // Logger with warn level should not log info

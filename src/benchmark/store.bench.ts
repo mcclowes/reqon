@@ -21,19 +21,27 @@ export async function runStoreBenchmarks(): Promise<void> {
   });
 
   // Batch set operations
-  await suite.addAsync('set-100-records', async () => {
-    const store = new MemoryStore('test');
-    for (const record of smallRecords) {
-      await store.set(record.id as string, record);
-    }
-  }, { iterations: 100 });
+  await suite.addAsync(
+    'set-100-records',
+    async () => {
+      const store = new MemoryStore('test');
+      for (const record of smallRecords) {
+        await store.set(record.id as string, record);
+      }
+    },
+    { iterations: 100 }
+  );
 
-  await suite.addAsync('set-1000-records', async () => {
-    const store = new MemoryStore('test');
-    for (const record of mediumRecords) {
-      await store.set(record.id as string, record);
-    }
-  }, { iterations: 50, warmupIterations: 5 });
+  await suite.addAsync(
+    'set-1000-records',
+    async () => {
+      const store = new MemoryStore('test');
+      for (const record of mediumRecords) {
+        await store.set(record.id as string, record);
+      }
+    },
+    { iterations: 50, warmupIterations: 5 }
+  );
 
   // Get operations (pre-populate store)
   const prePopulatedStore = new MemoryStore('prepopulated');
@@ -49,27 +57,39 @@ export async function runStoreBenchmarks(): Promise<void> {
     await prePopulatedStore.get('nonexistent-key');
   });
 
-  await suite.addAsync('get-100-sequential', async () => {
-    for (let i = 0; i < 100; i++) {
-      await prePopulatedStore.get(`record-${i}`);
-    }
-  }, { iterations: 100 });
+  await suite.addAsync(
+    'get-100-sequential',
+    async () => {
+      for (let i = 0; i < 100; i++) {
+        await prePopulatedStore.get(`record-${i}`);
+      }
+    },
+    { iterations: 100 }
+  );
 
   // Update operations
   await suite.addAsync('update-existing', async () => {
     await prePopulatedStore.update('record-500', { updated: true });
   });
 
-  await suite.addAsync('update-100-records', async () => {
-    for (let i = 0; i < 100; i++) {
-      await prePopulatedStore.update(`record-${i}`, { updated: true });
-    }
-  }, { iterations: 100 });
+  await suite.addAsync(
+    'update-100-records',
+    async () => {
+      for (let i = 0; i < 100; i++) {
+        await prePopulatedStore.update(`record-${i}`, { updated: true });
+      }
+    },
+    { iterations: 100 }
+  );
 
   // List operations
-  await suite.addAsync('list-all-1000', async () => {
-    await prePopulatedStore.list();
-  }, { iterations: 100 });
+  await suite.addAsync(
+    'list-all-1000',
+    async () => {
+      await prePopulatedStore.list();
+    },
+    { iterations: 100 }
+  );
 
   // Large store for list benchmarks
   const largeStore = new MemoryStore('large');
@@ -77,22 +97,38 @@ export async function runStoreBenchmarks(): Promise<void> {
     await largeStore.set(record.id as string, record);
   }
 
-  await suite.addAsync('list-all-10000', async () => {
-    await largeStore.list();
-  }, { iterations: 20, warmupIterations: 5 });
+  await suite.addAsync(
+    'list-all-10000',
+    async () => {
+      await largeStore.list();
+    },
+    { iterations: 20, warmupIterations: 5 }
+  );
 
   // List with filters
-  await suite.addAsync('list-with-limit-100', async () => {
-    await largeStore.list({ limit: 100 });
-  }, { iterations: 100 });
+  await suite.addAsync(
+    'list-with-limit-100',
+    async () => {
+      await largeStore.list({ limit: 100 });
+    },
+    { iterations: 100 }
+  );
 
-  await suite.addAsync('list-with-offset-and-limit', async () => {
-    await largeStore.list({ offset: 5000, limit: 100 });
-  }, { iterations: 100 });
+  await suite.addAsync(
+    'list-with-offset-and-limit',
+    async () => {
+      await largeStore.list({ offset: 5000, limit: 100 });
+    },
+    { iterations: 100 }
+  );
 
-  await suite.addAsync('list-with-where-clause', async () => {
-    await largeStore.list({ where: { active: true } });
-  }, { iterations: 50, warmupIterations: 5 });
+  await suite.addAsync(
+    'list-with-where-clause',
+    async () => {
+      await largeStore.list({ where: { active: true } });
+    },
+    { iterations: 50, warmupIterations: 5 }
+  );
 
   // Delete operations
   await suite.addAsync('delete-single', async () => {
@@ -110,9 +146,13 @@ export async function runStoreBenchmarks(): Promise<void> {
     return applyStoreFilter(mediumRecords);
   });
 
-  filterSuite.addSync('no-filter-10000', () => {
-    return applyStoreFilter(largeRecords);
-  }, { iterations: 100 });
+  filterSuite.addSync(
+    'no-filter-10000',
+    () => {
+      return applyStoreFilter(largeRecords);
+    },
+    { iterations: 100 }
+  );
 
   filterSuite.addSync('limit-only-1000', () => {
     return applyStoreFilter(mediumRecords, { limit: 100 });
@@ -126,17 +166,25 @@ export async function runStoreBenchmarks(): Promise<void> {
     return applyStoreFilter(mediumRecords, { where: { active: true } });
   });
 
-  filterSuite.addSync('where-simple-10000', () => {
-    return applyStoreFilter(largeRecords, { where: { active: true } });
-  }, { iterations: 100 });
+  filterSuite.addSync(
+    'where-simple-10000',
+    () => {
+      return applyStoreFilter(largeRecords, { where: { active: true } });
+    },
+    { iterations: 100 }
+  );
 
-  filterSuite.addSync('where-multiple-conditions', () => {
-    return applyStoreFilter(largeRecords, {
-      where: { active: true },
-      offset: 100,
-      limit: 50,
-    });
-  }, { iterations: 100 });
+  filterSuite.addSync(
+    'where-multiple-conditions',
+    () => {
+      return applyStoreFilter(largeRecords, {
+        where: { active: true },
+        offset: 100,
+        limit: 50,
+      });
+    },
+    { iterations: 100 }
+  );
 
   filterSuite.print();
 }

@@ -54,13 +54,17 @@ describe('Scheduler', () => {
     vi.useRealTimers();
   });
 
-  const createMission = (name: string, schedule: ScheduleDefinition): MissionDefinition => ({
+  const createMission = (
+    name: string,
+    schedule: Omit<ScheduleDefinition, 'type'>
+  ): MissionDefinition => ({
     type: 'MissionDefinition',
     name,
-    schedule,
+    schedule: { type: 'ScheduleDefinition', ...schedule },
     sources: [],
     stores: [],
     schemas: [],
+    transforms: [],
     actions: [],
     pipeline: { type: 'PipelineDefinition', stages: [] },
   });
@@ -114,6 +118,7 @@ describe('Scheduler', () => {
         sources: [],
         stores: [],
         schemas: [],
+        transforms: [],
         actions: [],
         pipeline: { type: 'PipelineDefinition', stages: [] },
       };
@@ -165,6 +170,7 @@ describe('Scheduler', () => {
             sources: [],
             stores: [],
             schemas: [],
+            transforms: [],
             actions: [],
             pipeline: { type: 'PipelineDefinition', stages: [] },
           },
@@ -347,7 +353,6 @@ describe('Scheduler', () => {
       scheduler.register(mission, '/path/mission.vague');
 
       const job = scheduler.getJob('nextRunMission');
-      const initialNextRun = job?.nextRun;
 
       await scheduler.start();
       vi.advanceTimersByTime(1000);

@@ -7,14 +7,19 @@
  * - HTTPBin (https://httpbin.org) - HTTP request/response testing
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { execute } from './index.js';
-import { MemoryStore } from './stores/index.js';
 
 // Increase timeout for network requests
 const NETWORK_TIMEOUT = 30000;
 
-describe('API Integration Tests', { timeout: NETWORK_TIMEOUT }, () => {
+// These tests hit live third-party APIs: they are slow (~100s) and flake when
+// the network or the upstream service is unavailable. They are skipped by
+// default and excluded from the commit/CI path. Run them on demand with
+// `npm run test:integration` (sets RUN_NETWORK_TESTS=1).
+const runNetworkTests = !!process.env.RUN_NETWORK_TESTS;
+
+describe.skipIf(!runNetworkTests)('API Integration Tests', { timeout: NETWORK_TIMEOUT }, () => {
   describe('JSONPlaceholder API', () => {
     it('fetches posts and stores them', async () => {
       const source = `
@@ -320,8 +325,12 @@ describe('API Integration Tests', { timeout: NETWORK_TIMEOUT }, () => {
       expect(items.length).toBe(10);
 
       // Check that categories are correctly assigned
-      const firstUserPosts = items.filter((p: Record<string, unknown>) => p.category === 'first-user');
-      const secondUserPosts = items.filter((p: Record<string, unknown>) => p.category === 'second-user');
+      const firstUserPosts = items.filter(
+        (p: Record<string, unknown>) => p.category === 'first-user'
+      );
+      const secondUserPosts = items.filter(
+        (p: Record<string, unknown>) => p.category === 'second-user'
+      );
       const otherPosts = items.filter((p: Record<string, unknown>) => p.category === 'other-user');
 
       expect(firstUserPosts.length + secondUserPosts.length + otherPosts.length).toBe(10);
