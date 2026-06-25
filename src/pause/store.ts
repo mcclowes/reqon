@@ -68,7 +68,9 @@ export class FilePauseStore implements PauseStore {
 
   async save(pause: PauseState): Promise<void> {
     await this.initialized;
-    await writeJsonFile(this.getFilePath(pause.id), pause);
+    // Pause files hold the captured variables needed to resume (so they can't
+    // be redacted); write owner-only (0o600) so they aren't world-readable.
+    await writeJsonFile(this.getFilePath(pause.id), pause, true, 0o600);
   }
 
   async load(id: string): Promise<PauseState | null> {

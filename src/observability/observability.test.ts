@@ -109,6 +109,19 @@ describe('StructuredLogger', () => {
     // Need to test with proper injection
   });
 
+  it('redacts credential-looking context before it reaches outputs', () => {
+    const buffer = new BufferOutput();
+    const logger = createStructuredLogger({ silent: true });
+    (logger as any).outputs = [buffer];
+
+    logger.info('login', { user: 'alice', apiKey: 'sk-secret', nested: { token: 'tok' } });
+
+    const context = buffer.entries[0].context as Record<string, any>;
+    expect(context.user).toBe('alice');
+    expect(context.apiKey).toBe('[REDACTED]');
+    expect(context.nested.token).toBe('[REDACTED]');
+  });
+
   it('should filter by log level', () => {
     const logger = createStructuredLogger({ silent: true, level: 'warn' });
 

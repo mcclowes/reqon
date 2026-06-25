@@ -112,9 +112,9 @@ export class FileTraceStore implements TraceStore {
     // acts as a commit pointer: a crash mid-save leaves either no metadata or
     // the previous one, never a metadata that claims more snapshots than exist.
     for (let i = 0; i < trace.snapshots.length; i++) {
-      await writeJsonFile(this.getSnapshotPath(trace.id, i), trace.snapshots[i]);
+      await writeJsonFile(this.getSnapshotPath(trace.id, i), trace.snapshots[i], true, 0o600);
     }
-    await writeJsonFile(this.getMetadataPath(trace.id), metadata);
+    await writeJsonFile(this.getMetadataPath(trace.id), metadata, true, 0o600);
   }
 
   async appendSnapshot(traceId: string, snapshot: TraceSnapshot): Promise<void> {
@@ -148,11 +148,11 @@ export class FileTraceStore implements TraceStore {
     // Write the snapshot first, then commit the new count to metadata so a
     // crash between the two leaves an uncommitted (ignored) snapshot, never a
     // count that points past what's on disk.
-    await writeJsonFile(this.getSnapshotPath(traceId, snapshotCount), snapshot);
+    await writeJsonFile(this.getSnapshotPath(traceId, snapshotCount), snapshot, true, 0o600);
 
     if (metadata) {
       metadata.snapshotCount = snapshotCount + 1;
-      await writeJsonFile(metadataPath, metadata);
+      await writeJsonFile(metadataPath, metadata, true, 0o600);
     }
   }
 

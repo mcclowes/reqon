@@ -92,6 +92,7 @@ import {
   createPauseManager,
 } from '../pause/index.js';
 import { sleep } from '../utils/async.js';
+import { redactNamedValue } from '../utils/redact.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -1303,7 +1304,8 @@ export class MissionExecutor {
   private async executeLet(step: LetStep, ctx: ExecutionContext): Promise<void> {
     const value = evaluate(step.value, ctx);
     setVariable(ctx, step.name, value);
-    this.log(`Set variable '${step.name}' = ${JSON.stringify(value)}`);
+    // Redact before logging: the value (or a nested field) may be a secret.
+    this.log(`Set variable '${step.name}' = ${JSON.stringify(redactNamedValue(step.name, value))}`);
   }
 
   private async executeApply(step: ApplyStep, ctx: ExecutionContext): Promise<void> {

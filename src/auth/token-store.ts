@@ -125,7 +125,14 @@ export class FileTokenStore implements TokenStore {
       data[key] = value;
     }
 
-    await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+    // Owner-only (0o600): the file holds OAuth tokens and must not be
+    // world-readable. `mode` only applies on creation, so chmod an existing
+    // file too (in case it was created before this fix or under a loose umask).
+    await fs.writeFile(this.filePath, JSON.stringify(data, null, 2), {
+      encoding: 'utf-8',
+      mode: 0o600,
+    });
+    await fs.chmod(this.filePath, 0o600).catch(() => {});
   }
 
   async get(connectionId: string): Promise<OAuth2Tokens | null> {

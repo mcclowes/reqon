@@ -9,6 +9,7 @@
  */
 
 import type { LogLevel, EventEmitter, EventType } from './events.js';
+import { redactSecrets } from '../utils/redact.js';
 
 /** Log entry structure */
 export interface LogEntry {
@@ -141,7 +142,7 @@ class StructuredLoggerImpl implements StructuredLogger {
       level,
       message,
       timestamp: new Date().toISOString(),
-      context: { ...this.context, ...context },
+      context: redactSecrets({ ...this.context, ...context }),
     };
 
     for (const output of this.outputs) {
@@ -204,7 +205,7 @@ class StructuredLoggerImpl implements StructuredLogger {
       level: 'debug',
       message: `span:end`,
       timestamp: new Date().toISOString(),
-      context: { ...this.context, spanName: name, ...spanContext },
+      context: redactSecrets({ ...this.context, spanName: name, ...spanContext }),
       spanId,
       parentSpanId,
       duration,

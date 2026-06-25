@@ -17,6 +17,7 @@ import {
   safeClone,
   truncateForTrace,
 } from './state.js';
+import { redactSecrets } from '../utils/redact.js';
 
 export interface TraceRecorderConfig {
   /** Execution ID (used as trace ID) */
@@ -137,15 +138,18 @@ export class TraceRecorder {
   ): TraceSnapshot {
     const index = this.snapshotIndex++;
 
-    // Capture variables from context chain
-    const variables = this.captureVariables(ctx);
+    // Capture variables from context chain. Trace files are diagnostic and
+    // persisted to disk, so redact credential-looking fields.
+    const variables = redactSecrets(this.captureVariables(ctx));
 
     // Capture store states
     const stores = this.captureStores(ctx);
 
     // Capture response (truncated for large responses)
     const response =
-      this.config.mode === 'full' ? truncateForTrace(safeClone(ctx.response)) : undefined;
+      this.config.mode === 'full'
+        ? redactSecrets(truncateForTrace(safeClone(ctx.response)))
+        : undefined;
 
     return {
       id: generateSnapshotId(this.trace.id, index),
