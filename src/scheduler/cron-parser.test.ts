@@ -105,6 +105,66 @@ describe('getNextCronRun', () => {
   });
 });
 
+describe('getNextCronRun POSIX day-of-month / day-of-week semantics', () => {
+  it('ORs day-of-month with day-of-week when both are restricted', () => {
+    // POSIX: "0 0 13 * 5" fires on the 13th OR on any Friday, not only on
+    // Friday the 13th. From Mon 2025-01-20 the next Friday (Jan 24) comes first.
+    const schedule = parseCronExpression('0 0 13 * 5');
+    const next = getNextCronRun(schedule, new Date('2025-01-20T10:30:00Z'));
+    expect(next.toISOString()).toBe('2025-01-24T00:00:00.000Z');
+  });
+
+  it('matches the day-of-month even when it is not the restricted weekday', () => {
+    // The 13th (a Monday in 2025-01) must still fire under "0 0 13 * 5".
+    const schedule = parseCronExpression('0 0 13 * 5');
+    const next = getNextCronRun(schedule, new Date('2025-01-10T10:30:00Z'));
+    expect(next.toISOString()).toBe('2025-01-13T00:00:00.000Z');
+  });
+
+  it('applies only day-of-week when day-of-month is a wildcard', () => {
+    const schedule = parseCronExpression('0 0 * * 1'); // Mondays only
+    const next = getNextCronRun(schedule, new Date('2025-01-20T10:30:00Z')); // Monday
+    expect(next.toISOString()).toBe('2025-01-27T00:00:00.000Z'); // next Monday
+  });
+
+  it('applies only day-of-month when day-of-week is a wildcard', () => {
+    const schedule = parseCronExpression('0 0 15 * *');
+    const next = getNextCronRun(schedule, new Date('2025-01-20T10:30:00Z'));
+    expect(next.toISOString()).toBe('2025-02-15T00:00:00.000Z');
+  });
+});
+
+describe('getNextCronRun timezone awareness (DST)', () => {
+  it('evaluates wall-clock time in the given IANA zone across DST', () => {
+    const schedule = parseCronExpression('0 12 * * *'); // noon, daily
+
+    // Summer (EDT, UTC-4): noon New York is 16:00 UTC.
+    const summer = getNextCronRun(schedule, new Date('2025-07-01T20:00:00Z'), 'America/New_York');
+    expect(summer.toISOString()).toBe('2025-07-02T16:00:00.000Z');
+
+    // Winter (EST, UTC-5): noon New York is 17:00 UTC.
+    const winter = getNextCronRun(schedule, new Date('2025-01-01T20:00:00Z'), 'America/New_York');
+    expect(winter.toISOString()).toBe('2025-01-02T17:00:00.000Z');
+  });
+
+  it('defaults to UTC when no timezone is given', () => {
+    const schedule = parseCronExpression('30 9 * * *');
+    const next = getNextCronRun(schedule, new Date('2025-07-01T20:00:00Z'));
+    expect(next.toISOString()).toBe('2025-07-02T09:30:00.000Z');
+  });
+
+  it('threads the schedule timezone through getNextRunTime', () => {
+    const schedule: ScheduleDefinition = {
+      type: 'ScheduleDefinition',
+      scheduleType: 'cron',
+      cronExpression: '0 12 * * *',
+      timezone: 'America/New_York',
+    };
+    const next = getNextRunTime(schedule, new Date('2025-07-01T20:00:00Z'));
+    expect(next!.toISOString()).toBe('2025-07-02T16:00:00.000Z');
+  });
+});
+
 describe('intervalToMs', () => {
   it('should convert seconds to ms', () => {
     const interval: IntervalSchedule = { value: 30, unit: 'seconds' };
@@ -232,5 +292,27 @@ describe('shouldRunNow', () => {
 
     const lastRun = new Date('2025-01-15T15:00:00Z');
     expect(shouldRunNow(schedule, lastRun)).toBe(false);
+  });
+
+  it('fires an overdue cron tick even when the poll is late (no drift skip)', () => {
+    // Every-minute cron whose last run was 90s ago: a scheduled tick has since
+    // passed. The old ±1s window would miss it; the catch-up logic fires it.
+    const schedule: ScheduleDefinition = {
+      type: 'ScheduleDefinition',
+      scheduleType: 'cron',
+      cronExpression: '* * * * *',
+    };
+    const lastRun = new Date(Date.now() - 90_000);
+    expect(shouldRunNow(schedule, lastRun)).toBe(true);
+  });
+
+  it('does not fire a cron tick that is not yet due', () => {
+    const schedule: ScheduleDefinition = {
+      type: 'ScheduleDefinition',
+      scheduleType: 'cron',
+      cronExpression: '*/5 * * * *',
+    };
+    // Just ran; the next 5-minute boundary is still in the future.
+    expect(shouldRunNow(schedule, new Date())).toBe(false);
   });
 });
