@@ -84,8 +84,9 @@ export class OAuth2AuthProvider implements AuthProvider {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Token refresh failed: ${response.status} ${error}`);
+      // Do not include the response body: token endpoints can echo the
+      // submitted client secret / refresh token in error responses.
+      throw new Error(`Token refresh failed: ${response.status} ${response.statusText}`);
     }
 
     const data = (await response.json()) as TokenResponse;

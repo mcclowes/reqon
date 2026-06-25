@@ -35,9 +35,13 @@ export function serialize(data: unknown, pretty = true): string {
  * the target. A crash or full disk mid-write leaves the original file intact
  * rather than truncating it (the rename is atomic on POSIX/NTFS).
  */
-export async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+export async function writeFileAtomic(
+  filePath: string,
+  content: string,
+  mode?: number
+): Promise<void> {
   const tmpPath = `${filePath}.${process.pid}.${tmpCounter++}.tmp`;
-  const handle = await open(tmpPath, 'w');
+  const handle = await open(tmpPath, 'w', mode);
   try {
     await handle.writeFile(content, 'utf-8');
     await handle.sync();
@@ -77,8 +81,13 @@ export function writeFileAtomicSync(filePath: string, content: string): void {
 /**
  * Write JSON data to a file atomically (durable against mid-write crashes).
  */
-export async function writeJsonFile(filePath: string, data: unknown, pretty = true): Promise<void> {
-  await writeFileAtomic(filePath, serialize(data, pretty));
+export async function writeJsonFile(
+  filePath: string,
+  data: unknown,
+  pretty = true,
+  mode?: number
+): Promise<void> {
+  await writeFileAtomic(filePath, serialize(data, pretty), mode);
 }
 
 /**
