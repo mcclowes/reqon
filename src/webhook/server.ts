@@ -8,6 +8,7 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { parse as parseUrl } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { setLongTimeout, type LongTimeout } from '../utils/long-timeout.js';
 import type {
   WebhookServerConfig,
   WebhookServerCallbacks,
@@ -25,7 +26,8 @@ import { WEBHOOK_DEFAULTS } from '../config/index.js';
 interface PendingWait {
   registrationId: string;
   resolve: (result: WaitResult) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
+  // Long-delay-safe timer: a multi-week wait must not overflow setTimeout.
+  timer: LongTimeout;
 }
 
 /**
@@ -114,7 +116,7 @@ export class WebhookServer {
     // Cancel all pending waits
     for (const [, waiters] of this.pendingWaits) {
       for (const pending of waiters) {
-        clearTimeout(pending.timeoutId);
+        pending.timer.clear();
         pending.resolve({
           success: false,
           events: [],
@@ -202,8 +204,8 @@ export class WebhookServer {
     const waitTimeout = timeout ?? registration.expiresAt.getTime() - Date.now();
 
     return new Promise((resolve) => {
-      const pending: PendingWait = { registrationId, resolve, timeoutId: undefined! };
-      pending.timeoutId = setTimeout(() => {
+      const pending: PendingWait = { registrationId, resolve, timer: undefined! };
+      pending.timer = setLongTimeout(() => {
         this.removePendingWait(registrationId, pending);
         this.store.getEvents(registrationId).then((events) => {
           resolve({
@@ -244,7 +246,7 @@ export class WebhookServer {
     const waiters = this.pendingWaits.get(registrationId);
     if (waiters) {
       for (const pending of waiters) {
-        clearTimeout(pending.timeoutId);
+        pending.timer.clear();
       }
       this.pendingWaits.delete(registrationId);
     }
@@ -375,7 +377,7 @@ export class WebhookServer {
       if (waiters) {
         this.pendingWaits.delete(registration.id);
         for (const pending of waiters) {
-          clearTimeout(pending.timeoutId);
+          pending.timer.clear();
           pending.resolve({ success: true, events });
         }
       }
