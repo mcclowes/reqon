@@ -11,6 +11,7 @@ import {
   writeFileAtomicSync,
 } from '../utils/file.js';
 import { safeJoin } from '../utils/path.js';
+import { deepMerge } from '../utils/deep-merge.js';
 
 export interface FileStoreOptions {
   /** Base directory for data files (default: '.reqon-data') */
@@ -180,11 +181,7 @@ export class FileStore implements StoreAdapter {
     // Upsert all records in memory first (no disk I/O per record)
     for (const { key, value } of records) {
       const existing = this.data.get(key);
-      if (existing) {
-        this.data.set(key, { ...existing, ...value });
-      } else {
-        this.data.set(key, { ...value });
-      }
+      this.data.set(key, existing ? deepMerge(existing, value) : { ...value });
     }
     // Single persist operation for all records
     await this.persist();
@@ -193,11 +190,10 @@ export class FileStore implements StoreAdapter {
   async update(key: string, value: Partial<Record<string, unknown>>): Promise<void> {
     await this.ensureInitialized();
     const existing = this.data.get(key);
-    if (existing) {
-      this.data.set(key, { ...existing, ...value });
-    } else {
-      this.data.set(key, value as Record<string, unknown>);
-    }
+    this.data.set(
+      key,
+      existing ? deepMerge(existing, value as Record<string, unknown>) : { ...value }
+    );
     await this.persist();
   }
 

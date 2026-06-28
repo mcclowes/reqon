@@ -1,5 +1,6 @@
 import type { StoreAdapter, StoreFilter } from './types.js';
 import { applyStoreFilter } from './types.js';
+import { deepMerge } from '../utils/deep-merge.js';
 
 export class MemoryStore implements StoreAdapter {
   private data: Map<string, Record<string, unknown>> = new Map();
@@ -26,21 +27,16 @@ export class MemoryStore implements StoreAdapter {
   async bulkUpsert(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void> {
     for (const { key, value } of records) {
       const existing = this.data.get(key);
-      if (existing) {
-        this.data.set(key, { ...existing, ...value });
-      } else {
-        this.data.set(key, { ...value });
-      }
+      this.data.set(key, existing ? deepMerge(existing, value) : { ...value });
     }
   }
 
   async update(key: string, value: Partial<Record<string, unknown>>): Promise<void> {
     const existing = this.data.get(key);
-    if (existing) {
-      this.data.set(key, { ...existing, ...value });
-    } else {
-      this.data.set(key, value as Record<string, unknown>);
-    }
+    this.data.set(
+      key,
+      existing ? deepMerge(existing, value as Record<string, unknown>) : { ...value }
+    );
   }
 
   async delete(key: string): Promise<void> {

@@ -20,6 +20,36 @@ describe('StoreHandler', () => {
     };
   });
 
+  describe('key validation', () => {
+    it('errors when a record has no id and no key option (no random keys)', async () => {
+      deps.ctx.response = { name: 'NoId' };
+
+      const step: StoreStep = {
+        type: 'StoreStep',
+        target: 'testStore',
+        source: { type: 'Identifier', name: 'response' } as Expression,
+        options: {},
+      };
+
+      await expect(new StoreHandler(deps).execute(step)).rejects.toThrow(/key/i);
+      expect(await store.count()).toBe(0);
+    });
+
+    it('errors when the key expression evaluates to undefined/null (no "undefined" key)', async () => {
+      deps.ctx.response = { name: 'NoKey' };
+
+      const step: StoreStep = {
+        type: 'StoreStep',
+        target: 'testStore',
+        source: { type: 'Identifier', name: 'response' } as Expression,
+        options: { key: { type: 'Identifier', name: 'missingField' } as Expression },
+      };
+
+      await expect(new StoreHandler(deps).execute(step)).rejects.toThrow(/key/i);
+      expect(await store.get('undefined')).toBeNull();
+    });
+  });
+
   describe('storing single records', () => {
     it('stores a single record using id as key', async () => {
       deps.ctx.response = { id: 'user-1', name: 'Alice', email: 'alice@example.com' };
@@ -237,65 +267,61 @@ describe('StoreHandler', () => {
     });
   });
 
-  describe('partial flag', () => {
-    it('marks single record as partial', async () => {
-      deps.ctx.response = { id: '1', name: 'PartialData' };
+  describe('partial / merge semantics', () => {
+    it('does not leak a _partial flag into stored data or mutate the source record', async () => {
+      const record = { id: '1', name: 'PartialData' };
+      deps.ctx.response = record;
 
       const step: StoreStep = {
         type: 'StoreStep',
         target: 'testStore',
         source: { type: 'Identifier', name: 'response' } as Expression,
-        options: {
-          partial: true,
-        },
+        options: { partial: true },
       };
 
-      const handler = new StoreHandler(deps);
-      await handler.execute(step);
+      await new StoreHandler(deps).execute(step);
 
-      const result = await store.get('1');
-      expect(result).toEqual({ id: '1', name: 'PartialData', _partial: true });
+      expect(await store.get('1')).toEqual({ id: '1', name: 'PartialData' });
+      // The caller's object must be untouched.
+      expect(record).toEqual({ id: '1', name: 'PartialData' });
     });
 
-    it('marks multiple records as partial', async () => {
-      deps.ctx.response = [
-        { id: '1', summary: 'First' },
-        { id: '2', summary: 'Second' },
-      ];
+    it('deep-merges a partial record into an existing one without clobbering nested siblings', async () => {
+      await store.set('1', { id: '1', profile: { name: 'Alice', city: 'NYC' }, tags: ['a'] });
+      deps.ctx.response = { id: '1', profile: { city: 'LA' }, tags: ['b'] };
 
       const step: StoreStep = {
         type: 'StoreStep',
         target: 'testStore',
         source: { type: 'Identifier', name: 'response' } as Expression,
-        options: {
-          partial: true,
-        },
+        options: { partial: true },
       };
 
-      const handler = new StoreHandler(deps);
-      await handler.execute(step);
+      await new StoreHandler(deps).execute(step);
 
-      expect(await store.get('1')).toEqual({ id: '1', summary: 'First', _partial: true });
-      expect(await store.get('2')).toEqual({ id: '2', summary: 'Second', _partial: true });
+      expect(await store.get('1')).toEqual({
+        id: '1',
+        // nested 'name' preserved, 'city' updated (deep merge)
+        profile: { name: 'Alice', city: 'LA' },
+        // arrays are replaced, not concatenated
+        tags: ['b'],
+      });
     });
 
-    it('can set partial to false explicitly', async () => {
-      deps.ctx.response = { id: '1', name: 'CompleteData' };
+    it('upsert deep-merges instead of shallow-clobbering nested objects', async () => {
+      await store.set('1', { id: '1', meta: { a: 1, b: 2 } });
+      deps.ctx.response = { id: '1', meta: { b: 3 } };
 
       const step: StoreStep = {
         type: 'StoreStep',
         target: 'testStore',
         source: { type: 'Identifier', name: 'response' } as Expression,
-        options: {
-          partial: false,
-        },
+        options: { upsert: true },
       };
 
-      const handler = new StoreHandler(deps);
-      await handler.execute(step);
+      await new StoreHandler(deps).execute(step);
 
-      const result = await store.get('1');
-      expect(result).toEqual({ id: '1', name: 'CompleteData', _partial: false });
+      expect(await store.get('1')).toEqual({ id: '1', meta: { a: 1, b: 3 } });
     });
   });
 
