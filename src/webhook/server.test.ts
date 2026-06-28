@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { WebhookServer } from './server.js';
 import { MemoryWebhookStore } from './store.js';
+import { MAX_TIMEOUT_MS } from '../utils/long-timeout.js';
 
 describe('WebhookServer', () => {
   let server: WebhookServer;
@@ -149,6 +150,39 @@ describe('WebhookServer', () => {
         expect(b.events).toHaveLength(1);
       } finally {
         await concurrent.stop();
+      }
+    });
+  });
+
+  describe('long waits', () => {
+    it('does not time out a multi-week wait immediately (no setTimeout overflow)', async () => {
+      vi.useFakeTimers();
+      try {
+        const longStore = new MemoryWebhookStore();
+        const longServer = new WebhookServer({ port: 0, verbose: false }, longStore);
+        const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000; // exceeds the 32-bit limit
+
+        const reg = await longServer.register('exec-long', {
+          timeout: THIRTY_DAYS,
+          expectedEvents: 1,
+        });
+
+        let settled = false;
+        const waitPromise = longServer.waitForEvents(reg.id).then((r) => {
+          settled = true;
+          return r;
+        });
+
+        // A raw setTimeout would have fired ~immediately at this point.
+        await vi.advanceTimersByTimeAsync(MAX_TIMEOUT_MS);
+        expect(settled).toBe(false);
+
+        // Advancing the rest of the way lets it time out as intended.
+        await vi.advanceTimersByTimeAsync(THIRTY_DAYS - MAX_TIMEOUT_MS);
+        const result = await waitPromise;
+        expect(result.timedOut).toBe(true);
+      } finally {
+        vi.useRealTimers();
       }
     });
   });

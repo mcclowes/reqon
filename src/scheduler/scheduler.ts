@@ -11,6 +11,7 @@ import type {
   ScheduledMission,
 } from './types.js';
 import { getNextRunTime, shouldRunNow } from './cron-parser.js';
+import { setLongTimeout, type LongTimeout } from '../utils/long-timeout.js';
 
 /**
  * Scheduler for running missions on a schedule
@@ -21,7 +22,7 @@ export class Scheduler {
   private state: SchedulerState;
   private running = false;
   private checkTimer: NodeJS.Timeout | null = null;
-  private retryTimers: Set<NodeJS.Timeout> = new Set();
+  private retryTimers: Set<LongTimeout> = new Set();
   private executorConfig: ExecutorConfig;
 
   constructor(config: SchedulerConfig = {}, executorConfig: ExecutorConfig = {}) {
@@ -125,7 +126,7 @@ export class Scheduler {
 
     // Clear all pending retry timers to prevent memory leaks
     for (const timer of this.retryTimers) {
-      clearTimeout(timer);
+      timer.clear();
     }
     this.retryTimers.clear();
 
@@ -271,8 +272,9 @@ export class Scheduler {
           `(attempt ${job.consecutiveFailures}/${retryConfig.maxRetries})`
       );
 
-      // Schedule retry and track the timer to prevent memory leaks
-      const timer = setTimeout(() => {
+      // Schedule retry and track the timer to prevent memory leaks. Use a
+      // long-delay-safe timer so a large retry delay can't overflow setTimeout.
+      const timer = setLongTimeout(() => {
         this.retryTimers.delete(timer);
         const scheduledMission = this.missions.get(job.missionName);
         if (scheduledMission && this.running) {
