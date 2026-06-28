@@ -1,32 +1,45 @@
 version: 2
 updates:
-  # npm dependencies
+  # Root npm dependencies
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "deps"
+      interval: "monthly"
+    open-pull-requests-limit: 5
     groups:
-      dev-dependencies:
-        dependency-type: "development"
+      # One PR/month for all minor + patch bumps. Majors stay separate so
+      # breaking changes are reviewed individually.
+      npm-minor-patch:
         patterns:
           - "*"
-      production-dependencies:
-        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Local file: link, not a registry package.
+      - dependency-name: "vague-lang"
+
+  # Docs site (Docusaurus) dependencies
+  - package-ecosystem: "npm"
+    directory: "/docusaurus"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    groups:
+      docusaurus-minor-patch:
         patterns:
           - "*"
-        exclude-patterns:
-          - "vague-lang"
+        update-types:
+          - "minor"
+          - "patch"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "monthly"
     open-pull-requests-limit: 5
-    commit-message:
-      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
