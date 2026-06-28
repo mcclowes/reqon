@@ -1263,6 +1263,15 @@ export class MissionExecutor {
   }
 
   private async executeStore(step: StoreStep, ctx: ExecutionContext): Promise<void> {
+    // Dry runs use synthetic fetch data that has no real keys; persisting it
+    // would both write garbage and trip key validation. Skip the write but
+    // still advance checkpoints so the dry run exercises the sync path.
+    if (this.config.dryRun) {
+      this.log(`[dry run] skipping store to ${step.target}`);
+      await this.flushPendingCheckpoints();
+      return;
+    }
+
     const handler = new StoreHandler({
       ctx,
       log: (msg) => this.log(msg),
