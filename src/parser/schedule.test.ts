@@ -9,8 +9,7 @@ function parseSchedule(source: string): ScheduleDefinition | undefined {
   const parser = new ReqonParser(tokens);
   const program = parser.parse();
   const mission = program.statements.find((s) => s.type === 'MissionDefinition') as
-    | MissionDefinition
-    | undefined;
+    MissionDefinition | undefined;
   return mission?.schedule;
 }
 

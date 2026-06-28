@@ -214,8 +214,7 @@ export interface PauseStep {
 }
 
 export type PauseResumeTrigger =
-  | { type: 'timeout' }
-  | { type: 'webhook'; path: string; eventFilter?: Expression };
+  { type: 'timeout' } | { type: 'webhook'; path: string; eventFilter?: Expression };
 
 // Flow control directives for match arms
 export type FlowDirective =
