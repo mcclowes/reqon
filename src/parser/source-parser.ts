@@ -96,9 +96,7 @@ export class SourceParser extends ReqonExpressionParser {
       switch (key) {
         case 'strategy':
           config.strategy = this.consume(TokenType.IDENTIFIER, 'Expected strategy').value as
-            | 'pause'
-            | 'throttle'
-            | 'fail';
+            'pause' | 'throttle' | 'fail';
           break;
         case 'maxWait':
           config.maxWait = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
