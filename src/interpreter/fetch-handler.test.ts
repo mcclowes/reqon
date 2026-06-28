@@ -623,9 +623,37 @@ describe('FetchHandler', () => {
       const handler = new FetchHandler(deps);
       const result = await handler.execute(step);
 
-      // Should stop when done is true
+      // Stops once `done` is true, but the page that triggered the stop is
+      // included (no off-by-one data loss): pages 1 and 2 both kept.
       expect(callCount).toBe(2);
-      expect((result.data as unknown[]).length).toBe(1); // Only first page since we break on done
+      expect((result.data as unknown[]).length).toBe(2);
+    });
+
+    it('stops a cursor that stops advancing without looping or duplicating', async () => {
+      let callCount = 0;
+      (mockClient.request as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callCount++;
+        // API bug: always echoes the same cursor, which would loop to the cap.
+        return {
+          status: 200,
+          data: { items: [{ id: callCount }], nextCursor: 'same' },
+          headers: {},
+        };
+      });
+
+      const step: FetchStep = {
+        type: 'FetchStep',
+        source: 'api',
+        method: 'GET',
+        path: { type: 'Literal', value: '/items', dataType: 'string' } as Expression,
+        paginate: { type: 'cursor', param: 'cursor', cursorPath: 'nextCursor', pageSize: 1 },
+      };
+
+      const result = await new FetchHandler(deps).execute(step);
+
+      // First page uses no cursor; second page would reuse 'same' → stop there.
+      expect(callCount).toBe(2);
+      expect((result.data as unknown[]).length).toBe(2);
     });
 
     it('respects MAX_PAGINATION_PAGES limit', async () => {
