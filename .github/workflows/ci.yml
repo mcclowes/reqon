@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout vague
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: mcclowes/vague
           path: vague
@@ -31,7 +31,7 @@ jobs:
 
       - name: Cache vague build
         id: cache-vague
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: vague
           key: vague-build-${{ hashFiles('vague/package-lock.json', 'vague/src/**', 'vague/tsconfig.json') }}
@@ -44,7 +44,7 @@ jobs:
           npm run build
 
       - name: Upload vague artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: vague-build
           path: vague
@@ -62,10 +62,10 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download vague build
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: vague-build
           path: ../vague
@@ -92,10 +92,10 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download vague build
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: vague-build
           path: ../vague
@@ -113,7 +113,7 @@ jobs:
         run: npm run test:coverage
 
       - name: Upload coverage reports
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage
@@ -127,10 +127,10 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download vague build
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: vague-build
           path: ../vague
@@ -160,10 +160,10 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download vague build
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: vague-build
           path: ../vague
@@ -192,10 +192,10 @@ jobs:
 
     steps:
       - name: Checkout reqon
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download vague build
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: vague-build
           path: ../vague
@@ -213,7 +213,7 @@ jobs:
         run: npm run bench
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results
           path: benchmark-results.json
