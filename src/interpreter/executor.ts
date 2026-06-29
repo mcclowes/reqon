@@ -34,7 +34,7 @@ import type {
   PipelineStage,
 } from '../ast/nodes.js';
 import { isParallelStage } from '../ast/nodes.js';
-import type { ExecutionContext } from './context.js';
+import type { ExecutionContext, ActionScope } from './context.js';
 import { createContext, childContext, setVariable } from './context.js';
 import { evaluate } from './evaluator.js';
 import type { StoreAdapter } from '../stores/types.js';
@@ -218,6 +218,9 @@ export interface ExecutorConfig {
 // AuthConfig is now exported from source-manager.ts
 export { type AuthConfig } from './source-manager.js';
 
+/** Max parallel-stage actions running concurrently (bounds fan-out). */
+const MAX_PARALLEL_ACTIONS = 8;
+
 export class MissionExecutor {
   private config: ExecutorConfig;
   private ctx: ExecutionContext;
@@ -225,12 +228,6 @@ export class MissionExecutor {
   private actionsRun: string[] = [];
   /** Monotonic key generator for queued values lacking an id. */
   private queueCounter = 0;
-  /**
-   * Sync checkpoints deferred until data is durably stored. Advancing the
-   * checkpoint before a successful store would silently drop unstored records
-   * on a crash between fetch and store.
-   */
-  private pendingCheckpoints: Array<() => Promise<void>> = [];
   private transforms: Map<string, TransformDefinition> = new Map();
   private rateLimiter: RateLimiter;
   private circuitBreaker: CircuitBreaker;
@@ -242,7 +239,6 @@ export class MissionExecutor {
   private missionName?: string;
   private eventEmitter?: EventEmitter;
   private logger?: StructuredLogger;
-  private stepIndex = 0;
   private debugController?: DebugController;
   private traceRecorder?: TraceRecorder;
   private traceStore?: TraceStore;
@@ -814,6 +810,42 @@ export class MissionExecutor {
     }
   }
 
+  /**
+   * Run all settled-style tasks with a bounded number in flight at once,
+   * preserving result order. Caps fan-out so a wide `run [...]` can't open an
+   * unbounded number of concurrent HTTP/store operations.
+   */
+  private async settleWithLimit<T>(
+    tasks: Array<() => Promise<T>>,
+    limit: number
+  ): Promise<PromiseSettledResult<T>[]> {
+    const results = new Array<PromiseSettledResult<T>>(tasks.length);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (let i = next++; i < tasks.length; i = next++) {
+        try {
+          results[i] = { status: 'fulfilled', value: await tasks[i]() };
+        } catch (reason) {
+          results[i] = { status: 'rejected', reason };
+        }
+      }
+    };
+    const workerCount = Math.min(Math.max(1, limit), tasks.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return results;
+  }
+
+  /**
+   * Execute a `run [A, B, ...]` stage.
+   *
+   * Failure semantics are **complete-then-fail**: every branch runs to
+   * completion (bounded by MAX_PARALLEL_ACTIONS in flight), then the stage
+   * fails if any branch failed. There is no cancellation of siblings and no
+   * rollback — a branch that committed store writes keeps them even if another
+   * branch failed. Each branch gets its own action scope (step counter +
+   * checkpoints); stores/sources/schemas are shared, so parallel branches that
+   * write the same key get last-writer-wins and should target disjoint keys.
+   */
   private async executeParallelStage(
     stageIndex: number,
     stage: PipelineStage & { actions: string[] },
@@ -860,9 +892,11 @@ export class MissionExecutor {
     this.log(`Executing parallel stage: ${stageName}`);
 
     try {
-      // Execute all actions in parallel
-      const results = await Promise.allSettled(
-        actionDefs.map((action) => this.executeAction(action))
+      // Execute all actions in parallel, bounded to MAX_PARALLEL_ACTIONS in
+      // flight. allSettled semantics: every started branch runs to completion.
+      const results = await this.settleWithLimit(
+        actionDefs.map((action) => () => this.executeAction(action)),
+        MAX_PARALLEL_ACTIONS
       );
 
       // Check for failures
@@ -945,35 +979,34 @@ export class MissionExecutor {
     let attempt = 0;
 
     for (;;) {
-      // Each attempt starts fresh — discard any checkpoints from a prior
-      // (retried) attempt so a re-run's fetch doesn't double-record.
-      this.pendingCheckpoints = [];
-      // Create a child context for this action with its own response scope.
-      // This allows parallel actions to have independent response values.
+      // Create a child context for this action with its own response scope and
+      // its own action scope (step counter + deferred checkpoints). Each attempt
+      // gets a fresh scope, so a retry's fetch doesn't double-record and so
+      // parallel actions never share a counter or checkpoint list.
       const actionCtx = childContext(this.ctx);
+      actionCtx.actionScope = { stepIndex: 0, pendingCheckpoints: [] };
       try {
         for (const step of action.steps) {
           await this.executeStep(step, action.name, actionCtx);
         }
         // Flush checkpoints for fetches that completed without a later store.
-        await this.flushPendingCheckpoints();
+        await this.flushPendingCheckpoints(actionCtx);
         return;
       } catch (error) {
         if (error instanceof SkipSignal) {
           this.log(`Action ${action.name}: skip — remaining steps skipped`);
-          await this.flushPendingCheckpoints();
+          await this.flushPendingCheckpoints(actionCtx);
           return;
         }
         if (error instanceof QueueSignal) {
           await this.handleQueue(error);
-          await this.flushPendingCheckpoints();
+          await this.flushPendingCheckpoints(actionCtx);
           return;
         }
         if (error instanceof RetrySignal) {
           const maxAttempts = error.backoff?.maxAttempts ?? MAX_RETRY_FALLBACK;
           attempt++;
           if (attempt >= maxAttempts) {
-            this.pendingCheckpoints = [];
             throw new Error(`Action ${action.name} exhausted ${maxAttempts} retry attempt(s)`);
           }
           const delay = this.computeRetryDelay(error.backoff, attempt);
@@ -981,9 +1014,9 @@ export class MissionExecutor {
           if (delay > 0) await sleep(delay);
           continue;
         }
-        // JumpSignal, PauseSignal, and real errors propagate; discard
-        // checkpoints for data that was never durably stored.
-        this.pendingCheckpoints = [];
+        // JumpSignal, PauseSignal, and real errors propagate. The action's
+        // checkpoints live on actionCtx and are simply discarded (never flushed)
+        // since the data was not durably stored.
         throw error;
       }
     }
@@ -1039,8 +1072,8 @@ export class MissionExecutor {
     // this.ctx is still used for mission-level resources (stores, sources)
     const execCtx = ctx ?? this.ctx;
 
-    // Track step index for events
-    const currentStepIndex = this.stepIndex++;
+    // Track step index per-action so parallel actions don't share a counter.
+    const currentStepIndex = this.scopeFor(execCtx).stepIndex++;
     const stepType = this.getStepType(step.type);
 
     // Emit step.start event
@@ -1198,16 +1231,29 @@ export class MissionExecutor {
     if (result.checkpointKey && this.syncStore) {
       const key = result.checkpointKey;
       const data = result.data;
-      this.pendingCheckpoints.push(() =>
+      this.scopeFor(ctx).pendingCheckpoints.push(() =>
         fetchHandler.recordCheckpoint(key, step, data, fetchStartedAt)
       );
     }
   }
 
+  /**
+   * Per-action mutable scope (step counter + deferred checkpoints). Lazily
+   * created so a step run with the bare mission context still works; normally
+   * executeAction installs a fresh scope that nested scopes inherit.
+   */
+  private scopeFor(ctx: ExecutionContext): ActionScope {
+    if (!ctx.actionScope) {
+      ctx.actionScope = { stepIndex: 0, pendingCheckpoints: [] };
+    }
+    return ctx.actionScope;
+  }
+
   /** Flush deferred sync checkpoints (called after a successful store / action). */
-  private async flushPendingCheckpoints(): Promise<void> {
-    const pending = this.pendingCheckpoints;
-    this.pendingCheckpoints = [];
+  private async flushPendingCheckpoints(ctx: ExecutionContext): Promise<void> {
+    const scope = this.scopeFor(ctx);
+    const pending = scope.pendingCheckpoints;
+    scope.pendingCheckpoints = [];
     for (const record of pending) {
       await record();
     }
@@ -1268,7 +1314,7 @@ export class MissionExecutor {
     // still advance checkpoints so the dry run exercises the sync path.
     if (this.config.dryRun) {
       this.log(`[dry run] skipping store to ${step.target}`);
-      await this.flushPendingCheckpoints();
+      await this.flushPendingCheckpoints(ctx);
       return;
     }
 
@@ -1281,7 +1327,7 @@ export class MissionExecutor {
     });
     await handler.execute(step);
     // Data is now durably stored — safe to advance any pending sync checkpoint.
-    await this.flushPendingCheckpoints();
+    await this.flushPendingCheckpoints(ctx);
   }
 
   private async executeMatch(

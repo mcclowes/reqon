@@ -604,4 +604,62 @@ describe('MissionExecutor', () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe('parallel actions', () => {
+    const storeStep = (target: string, record: Record<string, unknown>): ActionStep =>
+      ({
+        type: 'StoreStep',
+        target,
+        source: { type: 'Literal', value: record, dataType: 'object' },
+        options: { key: { type: 'Identifier', name: 'id' } },
+      }) as unknown as ActionStep;
+
+    const parallelProgram = (actions: ActionDefinition[]): ReqonProgram => ({
+      type: 'ReqonProgram',
+      statements: [
+        {
+          type: 'MissionDefinition',
+          name: 'ParMission',
+          sources: [],
+          stores: [{ type: 'StoreDefinition', name: 'out', target: 'out', storeType: 'memory' }],
+          schemas: [],
+          transforms: [],
+          actions,
+          // A single parallel stage running every action at once.
+          pipeline: {
+            type: 'PipelineDefinition',
+            stages: [{ actions: actions.map((a) => a.name) }],
+          },
+        } as unknown as MissionDefinition,
+      ],
+    });
+
+    it('runs branches concurrently and both commit their writes', async () => {
+      const program = parallelProgram([
+        { type: 'ActionDefinition', name: 'A', steps: [storeStep('out', { id: 'a', v: 1 })] },
+        { type: 'ActionDefinition', name: 'B', steps: [storeStep('out', { id: 'b', v: 2 })] },
+      ] as unknown as ActionDefinition[]);
+
+      const result = await new MissionExecutor().execute(program);
+
+      expect(result.success).toBe(true);
+      const out = result.stores.get('out')!;
+      expect(await out.get('a')).toEqual({ id: 'a', v: 1 });
+      expect(await out.get('b')).toEqual({ id: 'b', v: 2 });
+    });
+
+    it('completes-then-fails: a failing branch fails the stage but its sibling still commits', async () => {
+      const program = parallelProgram([
+        { type: 'ActionDefinition', name: 'Good', steps: [storeStep('out', { id: 'a', v: 1 })] },
+        // Targets an undeclared store → throws at runtime.
+        { type: 'ActionDefinition', name: 'Bad', steps: [storeStep('missing', { id: 'x' })] },
+      ] as unknown as ActionDefinition[]);
+
+      const result = await new MissionExecutor().execute(program);
+
+      // No rollback: the good branch's write is committed even though the stage failed.
+      expect(result.success).toBe(false);
+      expect(await result.stores.get('out')!.get('a')).toEqual({ id: 'a', v: 1 });
+    });
+  });
 });
