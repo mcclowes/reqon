@@ -2,15 +2,74 @@
  * Append-only storage for execution events. The contract: events for a given
  * execution are read back in append order with a contiguous `seq` starting at 0.
  */
-import { appendFile, readFile, mkdir } from 'node:fs/promises';
+import { appendFile, readFile, readdir, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ExecutionEvent, StoredEvent } from './events.js';
+
+/**
+ * The latest sync checkpoint for a key, materialised across executions — the
+ * read model behind log-backed incremental sync. Derived from the most recent
+ * `checkpoint.advanced` event for each key.
+ */
+export interface CheckpointRecord {
+  key: string;
+  syncedAt: string;
+  recordCount?: number;
+  cursor?: string;
+  mission?: string;
+  /** The execution that advanced this checkpoint. */
+  executionId: string;
+}
 
 export interface ExecutionLogStore {
   /** Append one event; returns it with its assigned seq and recorded timestamp. */
   append(event: ExecutionEvent): Promise<StoredEvent>;
   /** Read all events for an execution, in append order. */
   read(executionId: string): Promise<StoredEvent[]>;
+  /**
+   * Latest checkpoint per key across all executions in this store (optionally
+   * filtered by mission). The read model for log-backed incremental sync.
+   */
+  listCheckpoints(mission?: string): Promise<CheckpointRecord[]>;
+}
+
+/**
+ * Fold `checkpoint.advanced` events into the latest checkpoint per key. "Latest"
+ * is the furthest-advanced sync: ordered by `syncedAt` (so a checkpoint never
+ * moves backwards across runs — incremental sync stays monotonic), ties broken
+ * by the recording time `at` then `seq`. Shared by every store backend so the
+ * read-model semantics stay identical across them.
+ */
+export function reduceCheckpoints(events: StoredEvent[], mission?: string): CheckpointRecord[] {
+  type Ranked = { record: CheckpointRecord; syncedAt: string; at: string; seq: number };
+  const latest = new Map<string, Ranked>();
+
+  const isNewer = (a: Ranked, prior: Ranked): boolean => {
+    if (a.syncedAt !== prior.syncedAt) return a.syncedAt > prior.syncedAt;
+    if (a.at !== prior.at) return a.at > prior.at;
+    return a.seq > prior.seq;
+  };
+
+  for (const event of events) {
+    if (event.type !== 'checkpoint.advanced') continue;
+    if (mission !== undefined && event.mission !== mission) continue;
+    const candidate: Ranked = {
+      syncedAt: event.syncedAt,
+      at: event.at,
+      seq: event.seq,
+      record: {
+        key: event.key,
+        syncedAt: event.syncedAt,
+        recordCount: event.recordCount,
+        cursor: event.cursor,
+        mission: event.mission,
+        executionId: event.executionId,
+      },
+    };
+    const prior = latest.get(event.key);
+    if (!prior || isNewer(candidate, prior)) latest.set(event.key, candidate);
+  }
+  return Array.from(latest.values()).map((v) => v.record);
 }
 
 /** In-memory execution log — for tests and ephemeral runs. */
@@ -28,6 +87,12 @@ export class MemoryExecutionLog implements ExecutionLogStore {
 
   async read(executionId: string): Promise<StoredEvent[]> {
     return [...(this.events.get(executionId) ?? [])];
+  }
+
+  async listCheckpoints(mission?: string): Promise<CheckpointRecord[]> {
+    const all: StoredEvent[] = [];
+    for (const log of this.events.values()) all.push(...log);
+    return reduceCheckpoints(all, mission);
   }
 }
 
@@ -83,6 +148,22 @@ export class FileExecutionLog implements ExecutionLogStore {
 
   async read(executionId: string): Promise<StoredEvent[]> {
     return this.parse(await this.readRaw(executionId));
+  }
+
+  async listCheckpoints(mission?: string): Promise<CheckpointRecord[]> {
+    let files: string[];
+    try {
+      files = await readdir(this.dir);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
+    const all: StoredEvent[] = [];
+    for (const file of files) {
+      if (!file.endsWith('.jsonl')) continue;
+      all.push(...this.parse(await readFile(join(this.dir, file), 'utf-8')));
+    }
+    return reduceCheckpoints(all, mission);
   }
 
   private async readRaw(executionId: string): Promise<string> {

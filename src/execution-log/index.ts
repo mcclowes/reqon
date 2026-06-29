@@ -23,8 +23,8 @@ export type {
 } from './events.js';
 export { effectId } from './events.js';
 
-export type { ExecutionLogStore } from './store.js';
-export { MemoryExecutionLog, FileExecutionLog } from './store.js';
+export type { ExecutionLogStore, CheckpointRecord } from './store.js';
+export { MemoryExecutionLog, FileExecutionLog, reduceCheckpoints } from './store.js';
 export { SqliteExecutionLog } from './sqlite-store.js';
 export { PostgresExecutionLog, type PostgresExecutionLogOptions } from './postgres-store.js';
 
