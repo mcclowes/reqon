@@ -1160,7 +1160,7 @@ export class MissionExecutor {
     try {
       switch (step.type) {
         case 'FetchStep':
-          await this.executeFetch(step, execCtx);
+          await this.executeFetch(step, execCtx, stepId);
           break;
         case 'ForStep':
           await this.executeFor(step, actionName, execCtx);
@@ -1255,7 +1255,11 @@ export class MissionExecutor {
     }
   }
 
-  private async executeFetch(step: FetchStep, ctx: ExecutionContext): Promise<void> {
+  private async executeFetch(
+    step: FetchStep,
+    ctx: ExecutionContext,
+    stepId?: string
+  ): Promise<void> {
     const fetchHandler = new FetchHandler({
       ctx,
       oasSources: this.sourceManager.getAllOASSources(),
@@ -1268,6 +1272,11 @@ export class MissionExecutor {
       emit: this.eventEmitter
         ? (type, payload) => this.eventEmitter!.emit(type, payload)
         : undefined,
+      // Durable mode: mutating fetches carry a stable Idempotency-Key.
+      idempotency:
+        this.executionLog && this.logExecutionId && stepId
+          ? { executionId: this.logExecutionId, stepId }
+          : undefined,
     });
 
     // Capture when the request began; used as the checkpoint fallback time so

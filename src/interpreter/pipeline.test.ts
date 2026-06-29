@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, type Mock } from 'vitest';
 import { execute } from '../index.js';
+import { MemoryExecutionLog } from '../execution-log/index.js';
 
 /**
  * Deterministic end-to-end coverage of the real fetch -> validate -> map ->
@@ -160,5 +161,49 @@ describe('executor pipeline (mocked transport)', () => {
 
     expect(result.success).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it('sends an Idempotency-Key on mutating fetches in durable mode (executionLog set)', async () => {
+    const fetchMock = stubTransport({ '/orders': { ok: true } });
+    const source = `
+      mission Order {
+        source Api { auth: none, base: "https://api.example.test" }
+        store out: memory("out")
+        action Place {
+          post "/orders"
+          store response -> out { key: "r" }
+        }
+        run Place
+      }
+    `;
+
+    await execute(source, { verbose: false, executionLog: new MemoryExecutionLog() });
+
+    const init = fetchMock.mock.calls.find((c) => String(c[0]).includes('/orders'))?.[1] as
+      RequestInit | undefined;
+    const headers = init?.headers as Record<string, string> | undefined;
+    expect(headers?.['Idempotency-Key']).toBeTypeOf('string');
+  });
+
+  it('sends no Idempotency-Key when no execution log is configured', async () => {
+    const fetchMock = stubTransport({ '/orders': { ok: true } });
+    const source = `
+      mission Order {
+        source Api { auth: none, base: "https://api.example.test" }
+        store out: memory("out")
+        action Place {
+          post "/orders"
+          store response -> out { key: "r" }
+        }
+        run Place
+      }
+    `;
+
+    await execute(source, { verbose: false });
+
+    const init = fetchMock.mock.calls.find((c) => String(c[0]).includes('/orders'))?.[1] as
+      RequestInit | undefined;
+    const headers = init?.headers as Record<string, string> | undefined;
+    expect(headers?.['Idempotency-Key']).toBeUndefined();
   });
 });
