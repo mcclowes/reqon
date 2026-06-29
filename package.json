@@ -17,6 +17,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:integration": "RUN_NETWORK_TESTS=1 vitest run src/api-integration.test.ts",
+    "test:crash": "vitest run src/durability/",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",

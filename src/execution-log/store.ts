@@ -59,34 +59,53 @@ export class FileExecutionLog implements ExecutionLogStore {
     await mkdir(this.dir, { recursive: true });
 
     let seq = this.counts.get(event.executionId);
+    let prefix = '';
     if (seq === undefined) {
-      // First append this process: derive next seq from any persisted events.
-      seq = (await this.read(event.executionId)).length;
+      // First append this instance: derive next seq from any persisted events,
+      // and detect an unterminated tail left by a crash mid-append. Writing
+      // straight after it would concatenate this event onto the torn line and
+      // corrupt it; a leading newline terminates the torn line (which read()
+      // still skips) and keeps this event a clean, parseable record.
+      const raw = await this.readRaw(event.executionId);
+      seq = this.parse(raw).length;
+      if (raw.length > 0 && !raw.endsWith('\n')) prefix = '\n';
     }
 
     const stored = { ...event, seq, at: new Date().toISOString() } as StoredEvent;
-    await appendFile(this.pathFor(event.executionId), `${JSON.stringify(stored)}\n`, 'utf-8');
+    await appendFile(
+      this.pathFor(event.executionId),
+      `${prefix}${JSON.stringify(stored)}\n`,
+      'utf-8'
+    );
     this.counts.set(event.executionId, seq + 1);
     return stored;
   }
 
   async read(executionId: string): Promise<StoredEvent[]> {
-    let content: string;
+    return this.parse(await this.readRaw(executionId));
+  }
+
+  private async readRaw(executionId: string): Promise<string> {
     try {
-      content = await readFile(this.pathFor(executionId), 'utf-8');
+      return await readFile(this.pathFor(executionId), 'utf-8');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return '';
       throw err;
     }
+  }
 
+  private parse(content: string): StoredEvent[] {
     const events: StoredEvent[] = [];
     for (const line of content.split('\n')) {
       if (line.trim() === '') continue;
       try {
         events.push(JSON.parse(line) as StoredEvent);
       } catch {
-        // A torn trailing line from a crash mid-append — stop; the rest is intact.
-        break;
+        // A torn line from a crash mid-append. Each event is an independent
+        // single-line record, so skip just this line rather than discarding
+        // everything after it (a healed torn line can sit mid-file, followed
+        // by valid events appended on resume).
+        continue;
       }
     }
     return events;
