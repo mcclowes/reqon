@@ -427,13 +427,26 @@ export class MissionExecutor {
     this.logExecutionId =
       this.executionState?.id ?? this.config.resumeFrom ?? generateExecutionId();
 
-    // Load already-applied effects from the log so replay skips them.
+    // Load already-applied effects from the log so replay skips them, and note
+    // a pending pause so we can record its resumption below.
+    let resumedPauseId: string | undefined;
     if (this.executionLog) {
       const prior = await loadState(this.executionLog, this.logExecutionId);
       this.appliedEffects = new Set(prior.appliedEffects);
+      resumedPauseId = prior.pendingPauseId;
     }
 
     await this.logEvent({ type: 'mission.started', mission: mission.name });
+
+    // If the prior log ended paused, this run is resuming that pause. Record it
+    // so the log's folded status leaves 'paused' before replay continues.
+    if (resumedPauseId) {
+      await this.logEvent({
+        type: 'pause.resumed',
+        pauseId: resumedPauseId,
+        resumedBy: this.config.resumeFrom ? 'resume' : 'replay',
+      });
+    }
 
     // Initialize trace recorder if tracing is enabled
     if (mission.trace && this.traceStore && this.executionState) {
@@ -466,6 +479,9 @@ export class MissionExecutor {
         this.currentPauseId = error.pauseId;
         // State is already set to 'paused' in checkPause() or pause handler
         // Don't record as error, just let execution end
+        if (error.pauseId) {
+          await this.logEvent({ type: 'pause.created', pauseId: error.pauseId });
+        }
       } else {
         this.errors.push({
           action: 'mission',
@@ -1290,9 +1306,16 @@ export class MissionExecutor {
     if (result.checkpointKey && this.syncStore) {
       const key = result.checkpointKey;
       const data = result.data;
-      this.scopeFor(ctx).pendingCheckpoints.push(() =>
-        fetchHandler.recordCheckpoint(key, step, data, fetchStartedAt)
-      );
+      this.scopeFor(ctx).pendingCheckpoints.push(async () => {
+        const syncedAt = await fetchHandler.recordCheckpoint(key, step, data, fetchStartedAt);
+        if (syncedAt) {
+          await this.logEvent({
+            type: 'checkpoint.advanced',
+            key,
+            syncedAt: syncedAt.toISOString(),
+          });
+        }
+      });
     }
   }
 

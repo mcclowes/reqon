@@ -182,8 +182,8 @@ export class FetchHandler {
     step: FetchStep,
     data: unknown,
     fallbackTime?: Date
-  ): Promise<void> {
-    if (!this.deps.syncStore) return;
+  ): Promise<Date | undefined> {
+    if (!this.deps.syncStore) return undefined;
 
     // Prefer the data's own clock; otherwise fall back to when the request was
     // issued (not now), so records written server-side during the fetch are
@@ -223,6 +223,8 @@ export class FetchHandler {
       recordsFetched: recordCount ?? 0,
       isIncremental: true,
     });
+
+    return syncedAt;
   }
 
   private resolveFetchTarget(step: FetchStep): {
