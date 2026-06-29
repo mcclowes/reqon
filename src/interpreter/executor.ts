@@ -94,6 +94,7 @@ import {
 import { sleep } from '../utils/async.js';
 import { redactNamedValue } from '../utils/redact.js';
 import type { ExecutionLogStore, ExecutionEvent } from '../execution-log/index.js';
+import { effectId, loadState } from '../execution-log/index.js';
 import { generateExecutionId } from '../execution/index.js';
 
 /** An execution event minus executionId (the executor supplies it). Distributes
@@ -255,6 +256,8 @@ export class MissionExecutor {
   private executionLog?: ExecutionLogStore;
   /** Stable id used for the execution event log (independent of persistState). */
   private logExecutionId?: string;
+  /** Effect ids already applied (from the log) — replay skips these. */
+  private appliedEffects: Set<string> = new Set();
   private debugController?: DebugController;
   private traceRecorder?: TraceRecorder;
   private traceStore?: TraceStore;
@@ -419,9 +422,17 @@ export class MissionExecutor {
     // Initialize or resume execution state
     await this.initializeExecutionState(mission);
 
-    // Establish a stable id for the execution log (independent of persistState)
-    // and open the log with a mission.started event.
-    this.logExecutionId = this.executionState?.id ?? generateExecutionId();
+    // Establish a stable id for the execution log. On resume we reuse the prior
+    // id (so replay reads the same log); otherwise a fresh id.
+    this.logExecutionId =
+      this.executionState?.id ?? this.config.resumeFrom ?? generateExecutionId();
+
+    // Load already-applied effects from the log so replay skips them.
+    if (this.executionLog) {
+      const prior = await loadState(this.executionLog, this.logExecutionId);
+      this.appliedEffects = new Set(prior.appliedEffects);
+    }
+
     await this.logEvent({ type: 'mission.started', mission: mission.name });
 
     // Initialize trace recorder if tracing is enabled
@@ -1161,7 +1172,7 @@ export class MissionExecutor {
           await this.executeValidate(step, execCtx);
           break;
         case 'StoreStep':
-          await this.executeStore(step, execCtx);
+          await this.executeStore(step, execCtx, stepId);
           break;
         case 'MatchStep':
           await this.executeMatch(step, actionName, execCtx);
@@ -1359,12 +1370,30 @@ export class MissionExecutor {
     await handler.execute(step);
   }
 
-  private async executeStore(step: StoreStep, ctx: ExecutionContext): Promise<void> {
+  private async executeStore(
+    step: StoreStep,
+    ctx: ExecutionContext,
+    stepId?: string
+  ): Promise<void> {
     // Dry runs use synthetic fetch data that has no real keys; persisting it
     // would both write garbage and trip key validation. Skip the write but
     // still advance checkpoints so the dry run exercises the sync path.
     if (this.config.dryRun) {
       this.log(`[dry run] skipping store to ${step.target}`);
+      await this.flushPendingCheckpoints(ctx);
+      return;
+    }
+
+    // Step-level effect identity (attempt-independent): a store effect already
+    // applied in the log — whether by a prior run we are resuming or an earlier
+    // action attempt — must not be re-applied. This is the exactly-once-on-replay
+    // guarantee for store writes.
+    const fx =
+      stepId && this.logExecutionId
+        ? effectId(this.logExecutionId, stepId, 0, 'store', step.target)
+        : undefined;
+    if (fx && this.appliedEffects.has(fx)) {
+      this.log(`Skipping already-applied store to ${step.target} (resume)`);
       await this.flushPendingCheckpoints(ctx);
       return;
     }
@@ -1377,6 +1406,19 @@ export class MissionExecutor {
         : undefined,
     });
     await handler.execute(step);
+
+    // Record the effect as applied so replay/retry skips it.
+    if (fx) {
+      this.appliedEffects.add(fx);
+      await this.logEvent({
+        type: 'effect.applied',
+        stepId: stepId!,
+        attempt: 0,
+        effectType: 'store',
+        effectId: fx,
+      });
+    }
+
     // Data is now durably stored — safe to advance any pending sync checkpoint.
     await this.flushPendingCheckpoints(ctx);
   }
