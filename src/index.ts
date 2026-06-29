@@ -59,6 +59,7 @@ export {
   MemoryExecutionLog,
   FileExecutionLog,
   SqliteExecutionLog,
+  PostgresExecutionLog,
   foldLog,
   loadState,
   effectId,

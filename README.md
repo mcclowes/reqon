@@ -224,8 +224,9 @@ where it left off:
   fetches carry a stable `Idempotency-Key`), otherwise at-least-once + keyed
   store dedup. Exactly-once on replay via recorded effect identity.
 - **Resume across restart**: replay + fold; effects already applied are skipped.
-- **Backends**: in-memory (tests), file (dev), and `SqliteExecutionLog`
-  (transactional, fsync-backed) for single-process self-hosting.
+- **Backends**: in-memory (tests), file (dev), `SqliteExecutionLog`
+  (transactional, fsync-backed) for single-process self-hosting, and
+  `PostgresExecutionLog` for multi-node.
 
 These guarantees are proven by a crash-injection suite that kills the run at
 every event boundary and asserts no lost record and no duplicated effect

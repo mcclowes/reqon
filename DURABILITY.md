@@ -89,8 +89,7 @@ The event log is pluggable (`ExecutionLogStore`). Choose by durability need:
 | `MemoryExecutionLog`   | None (process memory) | tests, ephemeral runs | lost on exit |
 | `FileExecutionLog`     | Survives restart | local / dev | append-only JSON-lines; tolerates a torn final line and heals an unterminated tail on the next append. No atomic locking — single-process only. |
 | `SqliteExecutionLog`   | Transactional, fsync-backed | single-process self-hosting | WAL + `synchronous = NORMAL`; `seq` assigned atomically inside the INSERT under a `(execution_id, seq)` primary key. Requires the optional peer dependency `better-sqlite3`. |
-
-Postgres (multi-node / production) is planned; see **Known limits**.
+| `PostgresExecutionLog` | Transactional, multi-node | multi-node / production | `seq` assigned inside the INSERT under a `(execution_id, seq)` primary key; concurrent appenders that collide retry on unique-violation, so they always land on distinct, contiguous seqs. Requires the optional peer dependency `pg`. |
 
 ## Pauses and timers
 
@@ -112,6 +111,7 @@ same pause fire the resume exactly once.
 | Torn mid-write line is ignored and resume stays coherent | `src/durability/crash-injection.test.ts` → "ignores a torn final log line …" |
 | File log survives restart / tolerates a torn final line | `src/execution-log/file-store.test.ts` |
 | SQLite log is durable across reopen and continues `seq` | `src/execution-log/sqlite-store.test.ts` |
+| Postgres log is durable across reconnect; concurrent appenders get distinct, contiguous `seq`s | `src/execution-log/postgres-store.test.ts` (CI, against a Postgres service) |
 | Pause resume is single-shot under a timeout/webhook race | `src/pause/pause.test.ts` → "resume is single-shot under races" |
 
 Run the durability proof on its own:
@@ -122,9 +122,9 @@ npm run test:crash
 
 ## Known limits
 
-- **Multi-node**: only `SqliteExecutionLog` (single-process) and the dev-grade
-  `FileExecutionLog` ship today. A transactional Postgres backend for multi-node
-  coordination is planned.
+- **Multi-node**: use `PostgresExecutionLog` — concurrent appenders are
+  serialised on a `(execution_id, seq)` primary key with unique-violation retry.
+  `SqliteExecutionLog` is single-process; `FileExecutionLog` is dev-only.
 - **`FileExecutionLog` is dev-grade**: no atomic sequence assignment or locking;
   do not point two processes at the same file log. Use `SqliteExecutionLog` for
   real durability.
