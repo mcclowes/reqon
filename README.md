@@ -213,6 +213,25 @@ mission DurablePipeline {
 }
 ```
 
+#### Durability guarantees
+
+Run a mission as a **durable execution** (`executionLog:`) and an append-only
+event log lets an interrupted run — crash, deploy, `kill -9` — resume exactly
+where it left off:
+
+- **Delivery**: at-least-once (a step is never silently dropped).
+- **Effects**: exactly-once where the API honours idempotency keys (mutating
+  fetches carry a stable `Idempotency-Key`), otherwise at-least-once + keyed
+  store dedup. Exactly-once on replay via recorded effect identity.
+- **Resume across restart**: replay + fold; effects already applied are skipped.
+- **Backends**: in-memory (tests), file (dev), and `SqliteExecutionLog`
+  (transactional, fsync-backed) for single-process self-hosting.
+
+These guarantees are proven by a crash-injection suite that kills the run at
+every event boundary and asserts no lost record and no duplicated effect
+(`npm run test:crash`). See **[DURABILITY.md](./DURABILITY.md)** for the full
+statement and the guarantee → test map.
+
 ## OpenAPI Integration
 
 Reqon can consume OpenAPI specs directly, eliminating the need for handwritten SDK code:
