@@ -54,6 +54,11 @@ export class PauseManager {
   private config: PauseManagerConfig;
   private pollTimer?: ReturnType<typeof setInterval>;
   private isRunning = false;
+  // Pause ids currently being resumed. Claimed synchronously before any await
+  // so a timeout poll and an inbound webhook can't both resume the same pause.
+  private resuming = new Set<string>();
+  // Prevents a slow resume cycle from overlapping the next poll tick.
+  private isCheckingExpired = false;
 
   constructor(config: PauseManagerConfig) {
     this.config = config;
@@ -129,7 +134,14 @@ export class PauseManager {
       throw new Error(`Pause ${pauseId} is not waiting (status: ${pause.status})`);
     }
 
-    return this.markResumed(pause, 'manual');
+    const resumed = await this.markResumed(pause, 'manual');
+    if (!resumed) {
+      // Lost a race with another resume trigger; return the resolved state.
+      const current = await this.config.store.load(pauseId);
+      if (!current) throw new Error(`Pause not found: ${pauseId}`);
+      return current;
+    }
+    return resumed;
   }
 
   /**
@@ -185,10 +197,9 @@ export class PauseManager {
       return false;
     }
 
-    // Mark resumed with webhook payload
-    await this.markResumed(pause, 'webhook', payload);
-
-    return true;
+    // Mark resumed with webhook payload; false if another trigger won the race.
+    const resumed = await this.markResumed(pause, 'webhook', payload);
+    return resumed !== null;
   }
 
   /**
@@ -223,15 +234,25 @@ export class PauseManager {
    * Check for and process expired pauses
    */
   async checkExpiredPauses(): Promise<PauseState[]> {
-    const expired = await this.config.store.findExpired();
-    const resumed: PauseState[] = [];
+    // Overlap guard: if a prior cycle's resume callbacks are still running when
+    // the next poll fires, skip rather than reprocessing the same pauses.
+    if (this.isCheckingExpired) return [];
+    this.isCheckingExpired = true;
 
-    for (const pause of expired) {
-      const updated = await this.markResumed(pause, 'timeout');
-      resumed.push(updated);
+    try {
+      const expired = await this.config.store.findExpired();
+      const resumed: PauseState[] = [];
+
+      for (const pause of expired) {
+        const updated = await this.markResumed(pause, 'timeout');
+        // null means another trigger already resumed this pause — skip it.
+        if (updated) resumed.push(updated);
+      }
+
+      return resumed;
+    } finally {
+      this.isCheckingExpired = false;
     }
-
-    return resumed;
   }
 
   /**
@@ -277,39 +298,64 @@ export class PauseManager {
     };
   }
 
+  /**
+   * Transition a pause to `resumed` and fire `onResume` exactly once.
+   *
+   * Returns the resumed pause, or `null` if this call lost the race (another
+   * resume already claimed it, or it is no longer waiting). The claim on
+   * `this.resuming` is synchronous — taken before any `await` — so two
+   * concurrent callers (e.g. the timeout poller and an inbound webhook) can't
+   * both pass the status check and double-fire the side-effecting tail. The
+   * persisted-status re-check makes resume idempotent across poll cycles too.
+   */
   private async markResumed(
     pause: PauseState,
     resumedBy: 'timeout' | 'webhook' | 'manual',
     webhookPayload?: unknown
-  ): Promise<PauseState> {
-    const updates: Partial<PauseState> = {
-      status: 'resumed',
-      resumedAt: new Date(),
-      resumedBy,
-    };
-
-    if (webhookPayload !== undefined) {
-      updates.webhookPayload = webhookPayload;
+  ): Promise<PauseState | null> {
+    if (this.resuming.has(pause.id)) {
+      return null; // another resume is already in flight for this pause
     }
+    this.resuming.add(pause.id);
 
-    await this.config.store.update(pause.id, updates);
+    try {
+      // Re-read the source of truth: a prior cycle may already have resumed it.
+      const current = await this.config.store.load(pause.id);
+      if (!current || current.status !== 'waiting') {
+        return null;
+      }
 
-    // Cleanup webhook registrations
-    await this.cleanupWebhooks(pause);
+      const updates: Partial<PauseState> = {
+        status: 'resumed',
+        resumedAt: new Date(),
+        resumedBy,
+      };
 
-    const updated = await this.config.store.load(pause.id);
-    if (!updated) {
-      throw new Error(`Failed to load updated pause: ${pause.id}`);
+      if (webhookPayload !== undefined) {
+        updates.webhookPayload = webhookPayload;
+      }
+
+      await this.config.store.update(pause.id, updates);
+
+      // Cleanup webhook registrations
+      await this.cleanupWebhooks(current);
+
+      const updated = await this.config.store.load(pause.id);
+      if (!updated) {
+        throw new Error(`Failed to load updated pause: ${pause.id}`);
+      }
+
+      this.log(`Pause ${pause.id} resumed by ${resumedBy}`);
+
+      // Trigger callback (the side-effecting pipeline tail) exactly once.
+      if (this.config.onResume) {
+        await this.config.onResume(updated);
+      }
+
+      return updated;
+    } finally {
+      this.resuming.delete(pause.id);
     }
-
-    this.log(`Pause ${pause.id} resumed by ${resumedBy}`);
-
-    // Trigger callback
-    if (this.config.onResume) {
-      await this.config.onResume(updated);
-    }
-
-    return updated;
   }
 
   private async registerWebhookTrigger(
