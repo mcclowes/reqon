@@ -16,6 +16,19 @@ import type { SchemaDefinition } from 'vague-lang';
 import type { StoreAdapter } from '../stores/types.js';
 import type { HttpClient } from './http.js';
 
+/**
+ * Mutable per-action execution state. Parallel actions (`run [A, B]`) must not
+ * share this — each gets its own scope so their step counters and deferred sync
+ * checkpoints can't corrupt each other. Nested scopes (for/match) inherit the
+ * same reference so the whole action shares one counter/checkpoint list.
+ */
+export interface ActionScope {
+  /** Monotonic step index within the action (for trace/debug positions). */
+  stepIndex: number;
+  /** Sync checkpoints deferred until the action's data is durably stored. */
+  pendingCheckpoints: Array<() => Promise<void>>;
+}
+
 export interface ExecutionContext {
   // Named stores
   stores: Map<string, StoreAdapter>;
@@ -37,6 +50,9 @@ export interface ExecutionContext {
 
   // Parent context (for nested scopes)
   parent?: ExecutionContext;
+
+  // Per-action mutable state (step counter, deferred checkpoints).
+  actionScope?: ActionScope;
 }
 
 export function createContext(): ExecutionContext {
@@ -57,6 +73,9 @@ export function childContext(parent: ExecutionContext): ExecutionContext {
     schemas: parent.schemas,
     variables: new Map(),
     parent,
+    // Nested scopes (for/match) share the action's scope so the step counter
+    // and checkpoint list stay coherent across the whole action.
+    actionScope: parent.actionScope,
   };
 }
 
