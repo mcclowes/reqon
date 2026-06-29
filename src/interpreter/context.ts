@@ -25,6 +25,8 @@ import type { HttpClient } from './http.js';
 export interface ActionScope {
   /** Monotonic step index within the action (for trace/debug positions). */
   stepIndex: number;
+  /** Current retry attempt of the action (0-based), for effect identity. */
+  attempt: number;
   /** Sync checkpoints deferred until the action's data is durably stored. */
   pendingCheckpoints: Array<() => Promise<void>>;
 }

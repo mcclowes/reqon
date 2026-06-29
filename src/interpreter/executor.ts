@@ -93,6 +93,16 @@ import {
 } from '../pause/index.js';
 import { sleep } from '../utils/async.js';
 import { redactNamedValue } from '../utils/redact.js';
+import type { ExecutionLogStore, ExecutionEvent } from '../execution-log/index.js';
+import { generateExecutionId } from '../execution/index.js';
+
+/** An execution event minus executionId (the executor supplies it). Distributes
+ * Omit across the union so each variant keeps its own fields. */
+type ExecutionEventInput = ExecutionEvent extends infer T
+  ? T extends ExecutionEvent
+    ? Omit<T, 'executionId'>
+    : never
+  : never;
 
 export interface ExecutionResult {
   success: boolean;
@@ -213,6 +223,9 @@ export interface ExecutorConfig {
   pauseStore?: PauseStore;
   // Custom pause manager
   pauseManager?: PauseManager;
+  // Append-only execution event log (durable-execution foundation). When set,
+  // the run emits an ordered event log used for replay-based resume.
+  executionLog?: ExecutionLogStore;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -239,6 +252,9 @@ export class MissionExecutor {
   private missionName?: string;
   private eventEmitter?: EventEmitter;
   private logger?: StructuredLogger;
+  private executionLog?: ExecutionLogStore;
+  /** Stable id used for the execution event log (independent of persistState). */
+  private logExecutionId?: string;
   private debugController?: DebugController;
   private traceRecorder?: TraceRecorder;
   private traceStore?: TraceStore;
@@ -337,6 +353,7 @@ export class MissionExecutor {
 
     // Initialize event emitter if provided
     this.eventEmitter = config.eventEmitter;
+    this.executionLog = config.executionLog;
 
     // Initialize logger if verbose or provided
     if (config.logger) {
@@ -402,6 +419,11 @@ export class MissionExecutor {
     // Initialize or resume execution state
     await this.initializeExecutionState(mission);
 
+    // Establish a stable id for the execution log (independent of persistState)
+    // and open the log with a mission.started event.
+    this.logExecutionId = this.executionState?.id ?? generateExecutionId();
+    await this.logEvent({ type: 'mission.started', mission: mission.name });
+
     // Initialize trace recorder if tracing is enabled
     if (mission.trace && this.traceStore && this.executionState) {
       this.traceRecorder = createTraceRecorder({
@@ -425,6 +447,7 @@ export class MissionExecutor {
         this.executionState.duration = Date.now() - startTime;
         await this.saveExecutionState();
       }
+      await this.logEvent({ type: 'mission.completed' });
     } catch (error) {
       // PauseSignal is not an error - execution was intentionally paused
       if (error instanceof PauseSignal) {
@@ -447,6 +470,7 @@ export class MissionExecutor {
           this.executionState.duration = Date.now() - startTime;
           await this.saveExecutionState();
         }
+        await this.logEvent({ type: 'mission.failed', error: (error as Error).message });
       }
     }
 
@@ -511,7 +535,7 @@ export class MissionExecutor {
       actionsRun: this.actionsRun,
       errors: this.errors,
       stores: this.ctx.stores,
-      executionId: this.executionState?.id,
+      executionId: this.executionState?.id ?? this.logExecutionId,
       state: this.executionState,
       traceId: this.traceRecorder ? this.executionState?.id : undefined,
       pauseId: this.currentPauseId,
@@ -984,7 +1008,7 @@ export class MissionExecutor {
       // gets a fresh scope, so a retry's fetch doesn't double-record and so
       // parallel actions never share a counter or checkpoint list.
       const actionCtx = childContext(this.ctx);
-      actionCtx.actionScope = { stepIndex: 0, pendingCheckpoints: [] };
+      actionCtx.actionScope = { stepIndex: 0, attempt, pendingCheckpoints: [] };
       try {
         for (const step of action.steps) {
           await this.executeStep(step, action.name, actionCtx);
@@ -1073,14 +1097,26 @@ export class MissionExecutor {
     const execCtx = ctx ?? this.ctx;
 
     // Track step index per-action so parallel actions don't share a counter.
-    const currentStepIndex = this.scopeFor(execCtx).stepIndex++;
+    const scope = this.scopeFor(execCtx);
+    const currentStepIndex = scope.stepIndex++;
     const stepType = this.getStepType(step.type);
+    // Stable step identity for the execution log: action + per-action index.
+    const stepId = `${actionName}#${currentStepIndex}`;
 
     // Emit step.start event
     this.eventEmitter?.emit('step.start', {
       actionName,
       stepIndex: currentStepIndex,
       stepType,
+    });
+
+    // Append step.started to the durable execution log.
+    await this.logEvent({
+      type: 'step.started',
+      stepId,
+      action: actionName,
+      stepType,
+      attempt: scope.attempt,
     });
 
     const stepStartTime = Date.now();
@@ -1166,6 +1202,9 @@ export class MissionExecutor {
         stepType,
         success: true,
       });
+
+      // Append step.completed to the durable execution log.
+      await this.logEvent({ type: 'step.completed', stepId, attempt: scope.attempt });
     } catch (error) {
       // Re-throw flow control signals without recording as errors
       if (
@@ -1244,9 +1283,21 @@ export class MissionExecutor {
    */
   private scopeFor(ctx: ExecutionContext): ActionScope {
     if (!ctx.actionScope) {
-      ctx.actionScope = { stepIndex: 0, pendingCheckpoints: [] };
+      ctx.actionScope = { stepIndex: 0, attempt: 0, pendingCheckpoints: [] };
     }
     return ctx.actionScope;
+  }
+
+  /**
+   * Append an event to the execution log. No-op (zero cost) when no log is
+   * configured. The executionId is supplied from this run's stable log id.
+   */
+  private async logEvent(event: ExecutionEventInput): Promise<void> {
+    if (!this.executionLog || !this.logExecutionId) return;
+    await this.executionLog.append({
+      ...event,
+      executionId: this.logExecutionId,
+    } as ExecutionEvent);
   }
 
   /** Flush deferred sync checkpoints (called after a successful store / action). */
