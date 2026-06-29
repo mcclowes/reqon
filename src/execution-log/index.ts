@@ -25,6 +25,7 @@ export { effectId } from './events.js';
 
 export type { ExecutionLogStore } from './store.js';
 export { MemoryExecutionLog, FileExecutionLog } from './store.js';
+export { SqliteExecutionLog } from './sqlite-store.js';
 
 export type { FoldedState, FoldedStatus } from './fold.js';
 export { foldLog } from './fold.js';

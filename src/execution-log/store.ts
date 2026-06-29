@@ -36,8 +36,9 @@ export class MemoryExecutionLog implements ExecutionLogStore {
  *
  * Appends are O_APPEND single-line writes, so a crash mid-write can at worst
  * leave a torn final line, which {@link read} skips. The log therefore survives
- * a process restart — a resumed run reads its prior events back. (Single-process
- * for now; the transactional Postgres/SQLite backend is #138.)
+ * a process restart — a resumed run reads its prior events back. Dev-grade: no
+ * atomic seq assignment or locking. For a transactional single-process backend
+ * use {@link SqliteExecutionLog}; Postgres (multi-node) is still to come.
  */
 export class FileExecutionLog implements ExecutionLogStore {
   private dir: string;

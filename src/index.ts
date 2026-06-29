@@ -58,6 +58,7 @@ export {
 export {
   MemoryExecutionLog,
   FileExecutionLog,
+  SqliteExecutionLog,
   foldLog,
   loadState,
   effectId,
