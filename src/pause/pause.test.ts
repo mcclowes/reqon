@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   parseDuration,
   formatDuration,
@@ -324,6 +324,72 @@ describe('PauseManager', () => {
     expect(expired).toHaveLength(1);
     expect(expired[0].status).toBe('resumed');
     expect(expired[0].resumedBy).toBe('timeout');
+  });
+
+  describe('resume is single-shot under races', () => {
+    const checkpoint = { stageIndex: 0, stepIndex: 0, action: 'A', variables: {} };
+
+    it('fires onResume once when a timeout poll and a webhook resume race', async () => {
+      const onResume = vi.fn();
+      const racing = new PauseManager({ store, onResume });
+      const pause = await racing.createPause({
+        executionId: 'exec-race',
+        mission: 'M',
+        duration: -1000, // already expired (timeout path is eligible)
+        checkpoint,
+        resumeTriggers: [{ type: 'webhook', path: '/cb' }],
+      });
+
+      await Promise.all([
+        racing.checkExpiredPauses(),
+        racing.handleWebhook(pause.id, { ok: true }),
+      ]);
+
+      expect(onResume).toHaveBeenCalledTimes(1);
+      expect((await store.load(pause.id))?.status).toBe('resumed');
+    });
+
+    it('is idempotent: a second resume of the same pause does nothing', async () => {
+      const onResume = vi.fn();
+      const racing = new PauseManager({ store, onResume });
+      const pause = await racing.createPause({
+        executionId: 'exec-idem',
+        mission: 'M',
+        duration: '1h',
+        checkpoint,
+        resumeTriggers: [{ type: 'webhook', path: '/cb' }],
+      });
+
+      const first = await racing.handleWebhook(pause.id, {});
+      const second = await racing.handleWebhook(pause.id, {});
+
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+      expect(onResume).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not overlap itself when a resume callback outlives the poll interval', async () => {
+      // Deferred gate created up front so it's always resolvable.
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const onResume = vi.fn(() => gate);
+      const racing = new PauseManager({ store, onResume });
+      await racing.createPause({
+        executionId: 'exec-overlap',
+        mission: 'M',
+        duration: -1000,
+        checkpoint,
+      });
+
+      const first = racing.checkExpiredPauses(); // enters; resume callback hangs on `gate`
+      const second = await racing.checkExpiredPauses(); // overlaps → skipped
+
+      expect(second).toEqual([]);
+
+      release();
+      await first;
+      expect(onResume).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('cancels pause', async () => {
