@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { FetchStep } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
 import { evaluate, interpolatePath } from './evaluator.js';
@@ -35,6 +36,12 @@ export interface FetchHandlerDeps {
   log: (message: string) => void;
   /** Optional event emitter for observability */
   emit?: <T>(type: EventType, payload: T) => void;
+  /**
+   * When set (durable mode), mutating requests carry a stable Idempotency-Key
+   * derived from (executionId, stepId, request signature) so retries and
+   * replays don't double-apply server-side where the API honours the header.
+   */
+  idempotency?: { executionId: string; stepId: string };
 }
 
 export interface FetchResult {
@@ -111,13 +118,15 @@ export class FetchHandler {
         data = result;
         pagesFetched = Array.isArray(result) ? undefined : 1; // Will be set by executePaginated
       } else {
+        const body = step.body ? evaluate(step.body, this.deps.ctx) : undefined;
         const response = await client.request(
           {
             method: resolved.method,
             path: resolved.path,
             query: Object.keys(sinceQuery).length > 0 ? sinceQuery : undefined,
             headers: Object.keys(sinceHeaders).length > 0 ? sinceHeaders : undefined,
-            body: step.body ? evaluate(step.body, this.deps.ctx) : undefined,
+            body,
+            idempotencyKey: this.idempotencyKeyFor(resolved.method, resolved.path, body),
           },
           step.retry
         );
@@ -315,6 +324,21 @@ export class FetchHandler {
     }
 
     return { query, headers, checkpointKey };
+  }
+
+  /**
+   * Idempotency-Key header for a mutating request, when durable mode is on.
+   *
+   * GET is safe and gets no key. The key is a hash of
+   * (executionId, stepId, method, path, body) so it is stable across retries
+   * and replays of the same request, yet distinct per loop iteration (different
+   * path/body) — letting a cooperating API dedupe re-issued effects.
+   */
+  private idempotencyKeyFor(method: string, path: string, body: unknown): string | undefined {
+    if (!this.deps.idempotency || method === 'GET') return undefined;
+    const { executionId, stepId } = this.deps.idempotency;
+    const signature = `${executionId} ${stepId} ${method} ${path} ${JSON.stringify(body ?? null)}`;
+    return createHash('sha256').update(signature).digest('hex').slice(0, 32);
   }
 
   private async executePaginated(

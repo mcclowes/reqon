@@ -41,6 +41,60 @@ describe('FetchHandler', () => {
     };
   });
 
+  describe('idempotency keys', () => {
+    const post = (path: string, body: unknown): FetchStep => ({
+      type: 'FetchStep',
+      source: 'api',
+      method: 'POST',
+      path: { type: 'Literal', value: path, dataType: 'string' } as Expression,
+      body: { type: 'Literal', value: body, dataType: 'object' } as unknown as Expression,
+    });
+    const keyOf = () =>
+      (
+        (mockClient.request as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+          idempotencyKey?: string;
+        }
+      ).idempotencyKey;
+
+    it('adds a stable Idempotency-Key to mutating requests when enabled', async () => {
+      deps.idempotency = { executionId: 'exec-123', stepId: 'A#0' };
+
+      await new FetchHandler(deps).execute(post('/orders', { sku: 1 }));
+      const key1 = keyOf();
+      expect(key1).toBeTypeOf('string');
+
+      // Same execution + step + request → same key (safe to re-issue on replay).
+      (mockClient.request as ReturnType<typeof vi.fn>).mockClear();
+      await new FetchHandler(deps).execute(post('/orders', { sku: 1 }));
+      expect(keyOf()).toBe(key1);
+    });
+
+    it('derives a different key for a different request body (loop-safe)', async () => {
+      deps.idempotency = { executionId: 'exec-123', stepId: 'A#0' };
+      await new FetchHandler(deps).execute(post('/orders', { sku: 1 }));
+      const k1 = keyOf();
+      (mockClient.request as ReturnType<typeof vi.fn>).mockClear();
+      await new FetchHandler(deps).execute(post('/orders', { sku: 2 }));
+      expect(keyOf()).not.toBe(k1);
+    });
+
+    it('does not add an Idempotency-Key to safe GET requests', async () => {
+      deps.idempotency = { executionId: 'exec-123', stepId: 'A#0' };
+      await new FetchHandler(deps).execute({
+        type: 'FetchStep',
+        source: 'api',
+        method: 'GET',
+        path: { type: 'Literal', value: '/users', dataType: 'string' } as Expression,
+      });
+      expect(keyOf()).toBeUndefined();
+    });
+
+    it('adds no key when idempotency is not enabled', async () => {
+      await new FetchHandler(deps).execute(post('/orders', { sku: 1 }));
+      expect(keyOf()).toBeUndefined();
+    });
+  });
+
   describe('basic fetch', () => {
     it('executes GET request with explicit path', async () => {
       const step: FetchStep = {
