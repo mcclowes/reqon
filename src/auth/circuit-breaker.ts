@@ -65,6 +65,10 @@ interface CircuitEntry {
   failureTimestamps: number[];
   lastFailureTime?: number;
   openedAt?: number;
+  /** True while a single half-open probe request is in flight. */
+  probeInFlight: boolean;
+  /** Timestamp of the last state-changing activity, used for eviction. */
+  lastActivity: number;
   config: Required<CircuitBreakerConfig>;
 }
 
@@ -131,7 +135,13 @@ export class CircuitBreaker {
    * Check if a request can proceed (throws if circuit is open)
    */
   canProceed(source: string, endpoint?: string): boolean {
-    const entry = this.getOrCreateEntry(source, endpoint);
+    // Read-only: an unknown key is implicitly closed and must not be inserted
+    // (otherwise every probed endpoint leaks an entry forever).
+    const entry = this.getEntry(source, endpoint);
+    if (!entry) {
+      return true;
+    }
+
     const now = Date.now();
 
     if (entry.state === 'closed') {
@@ -142,15 +152,22 @@ export class CircuitBreaker {
       const timeSinceOpen = now - (entry.openedAt ?? now);
 
       if (timeSinceOpen >= entry.config.resetTimeout) {
-        // Transition to half-open
+        // Transition to half-open and let this single caller be the probe.
         this.transitionTo(entry, 'half_open', source, endpoint);
+        entry.probeInFlight = true;
         return true;
       }
 
       return false;
     }
 
-    // Half-open: allow the request through for testing
+    // Half-open: allow exactly one probe at a time. Every other request is
+    // denied until the in-flight probe resolves (success closes the circuit or
+    // advances the count; failure re-opens it), preventing a recovery stampede.
+    if (entry.probeInFlight) {
+      return false;
+    }
+    entry.probeInFlight = true;
     return true;
   }
 
@@ -159,9 +176,11 @@ export class CircuitBreaker {
    */
   ensureCanProceed(source: string, endpoint?: string): void {
     if (!this.canProceed(source, endpoint)) {
-      const entry = this.getOrCreateEntry(source, endpoint);
+      // canProceed only returns false for an existing open/half-open entry.
+      const entry = this.getEntry(source, endpoint);
+      const config = entry?.config ?? this.defaultConfig;
       const now = Date.now();
-      const nextAttemptIn = entry.config.resetTimeout - (now - (entry.openedAt ?? now));
+      const nextAttemptIn = config.resetTimeout - (now - (entry?.openedAt ?? now));
 
       this.callbacks.onRejected?.({
         source,
@@ -177,7 +196,13 @@ export class CircuitBreaker {
    * Record a successful request
    */
   recordSuccess(source: string, endpoint?: string): void {
-    const entry = this.getOrCreateEntry(source, endpoint);
+    // Read-only lookup: a success on an untracked (implicitly closed) endpoint
+    // has nothing to record, so don't allocate an entry for it.
+    const entry = this.getEntry(source, endpoint);
+    if (!entry) {
+      return;
+    }
+    entry.lastActivity = Date.now();
 
     if (entry.state === 'half_open') {
       entry.successes++;
@@ -185,6 +210,9 @@ export class CircuitBreaker {
       if (entry.successes >= entry.config.successThreshold) {
         // Recovery successful, close the circuit
         this.transitionTo(entry, 'closed', source, endpoint);
+      } else {
+        // Probe succeeded but more are needed; release the slot for the next.
+        entry.probeInFlight = false;
       }
     } else if (entry.state === 'closed') {
       // Clear old failures from window
@@ -201,8 +229,10 @@ export class CircuitBreaker {
     statusCode?: number,
     isNetworkError = false
   ): void {
-    const entry = this.getOrCreateEntry(source, endpoint);
-    const config = entry.config;
+    // Resolve config without forcing an entry — ignored failures (e.g. a 404)
+    // must not allocate a permanent circuit for an otherwise-untracked endpoint.
+    const existing = this.getEntry(source, endpoint);
+    const config = existing?.config ?? this.getEntry(source)?.config ?? this.defaultConfig;
 
     // Check if this failure type should be counted
     const isFailureStatus =
@@ -213,7 +243,9 @@ export class CircuitBreaker {
       return;
     }
 
+    const entry = existing ?? this.getOrCreateEntry(source, endpoint);
     const now = Date.now();
+    entry.lastActivity = now;
 
     if (entry.state === 'half_open') {
       // Any failure in half-open immediately re-opens circuit
@@ -245,8 +277,15 @@ export class CircuitBreaker {
    * Get current status for a source/endpoint
    */
   getStatus(source: string, endpoint?: string): CircuitBreakerStatus {
-    const entry = this.getOrCreateEntry(source, endpoint);
+    // Read-only: querying an unknown circuit must not create one.
+    const entry = this.getEntry(source, endpoint);
+    if (!entry) {
+      return { state: 'closed', failures: 0, successes: 0, isOpen: false };
+    }
+    return this.statusFromEntry(entry);
+  }
 
+  private statusFromEntry(entry: CircuitEntry): CircuitBreakerStatus {
     let nextAttemptTime: Date | undefined;
     if (entry.state === 'open' && entry.openedAt) {
       const nextAttemptMs = entry.openedAt + entry.config.resetTimeout;
@@ -278,6 +317,8 @@ export class CircuitBreaker {
       entry.failureTimestamps = [];
       entry.lastFailureTime = undefined;
       entry.openedAt = undefined;
+      entry.probeInFlight = false;
+      entry.lastActivity = Date.now();
 
       if (previousState !== 'closed') {
         this.callbacks.onClose?.({
@@ -298,12 +339,38 @@ export class CircuitBreaker {
   getAllStatuses(): Map<string, CircuitBreakerStatus> {
     const result = new Map<string, CircuitBreakerStatus>();
 
-    for (const key of this.circuits.keys()) {
-      const [source, endpoint] = key.split(':');
-      result.set(key, this.getStatus(source, endpoint === '' ? undefined : endpoint));
+    // Build the status from each entry directly. Splitting the key on ':' would
+    // corrupt URL-shaped keys (e.g. `https://x` → source `https`), and routing
+    // back through getStatus is needless. We never mutate `circuits` here.
+    for (const [key, entry] of this.circuits) {
+      result.set(key, this.statusFromEntry(entry));
     }
 
     return result;
+  }
+
+  /**
+   * Evict stale closed circuits to bound memory. Open and half-open circuits
+   * are always retained (they carry active backoff/recovery state).
+   *
+   * @param maxAgeMs Remove closed entries with no activity for this long.
+   * @returns Number of entries evicted.
+   */
+  evictStale(maxAgeMs: number = this.defaultConfig.failureWindow): number {
+    const cutoff = Date.now() - maxAgeMs;
+    let evicted = 0;
+    // Collect first, then delete — never mutate the map mid-iteration.
+    const toDelete: string[] = [];
+    for (const [key, entry] of this.circuits) {
+      if (entry.state === 'closed' && entry.lastActivity < cutoff) {
+        toDelete.push(key);
+      }
+    }
+    for (const key of toDelete) {
+      this.circuits.delete(key);
+      evicted++;
+    }
+    return evicted;
   }
 
   private getKey(source: string, endpoint?: string): string {
@@ -316,8 +383,15 @@ export class CircuitBreaker {
       failures: 0,
       successes: 0,
       failureTimestamps: [],
+      probeInFlight: false,
+      lastActivity: Date.now(),
       config,
     };
+  }
+
+  /** Read-only lookup. Never inserts — used by status/probe-check paths. */
+  private getEntry(source: string, endpoint?: string): CircuitEntry | undefined {
+    return this.circuits.get(this.getKey(source, endpoint));
   }
 
   private getOrCreateEntry(source: string, endpoint?: string): CircuitEntry {
@@ -351,6 +425,10 @@ export class CircuitBreaker {
   ): void {
     const previousState = entry.state;
     entry.state = newState;
+    entry.lastActivity = Date.now();
+    // Any state change clears the half-open probe slot; canProceed re-claims it
+    // when it admits the next probe.
+    entry.probeInFlight = false;
 
     const event: CircuitBreakerEvent = {
       source,

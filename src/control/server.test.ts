@@ -123,6 +123,48 @@ describe('ControlServer', () => {
         await secured.stop();
       }
     });
+
+    it('rejects a token of the wrong length without throwing', async () => {
+      const secured = new ControlServer({ port: 13098, authToken: 's3cret' });
+      try {
+        await secured.start();
+        const res = await fetch('http://localhost:13098/pause', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer short' },
+        });
+        expect(res.status).toBe(401);
+        expect(secured.isPauseRequested()).toBe(false);
+      } finally {
+        await secured.stop();
+      }
+    });
+
+    it('refuses to start on a non-loopback host with no authToken', async () => {
+      const exposed = new ControlServer({ port: 13097, host: '0.0.0.0' });
+      await expect(exposed.start()).rejects.toThrow(/Refusing to start/);
+      expect(exposed.isRunning()).toBe(false);
+      await exposed.stop();
+    });
+
+    it('starts on a non-loopback host when an authToken is set', async () => {
+      const exposed = new ControlServer({ port: 13096, host: '0.0.0.0', authToken: 's3cret' });
+      try {
+        await expect(exposed.start()).resolves.not.toThrow();
+        expect(exposed.isRunning()).toBe(true);
+      } finally {
+        await exposed.stop();
+      }
+    });
+
+    it('still starts on loopback with no authToken', async () => {
+      const loopback = new ControlServer({ port: 13095, host: '127.0.0.1' });
+      try {
+        await expect(loopback.start()).resolves.not.toThrow();
+        expect(loopback.isRunning()).toBe(true);
+      } finally {
+        await loopback.stop();
+      }
+    });
   });
 
   describe('status endpoint', () => {
