@@ -55,6 +55,14 @@ class CrashAfterLog implements ExecutionLogStore {
   read(executionId: string): Promise<StoredEvent[]> {
     return this.inner.read(executionId);
   }
+
+  listCheckpoints(mission?: string) {
+    return this.inner.listCheckpoints(mission);
+  }
+
+  listPauses() {
+    return this.inner.listPauses();
+  }
 }
 
 /** A store step that writes one keyed record. */

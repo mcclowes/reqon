@@ -23,6 +23,13 @@ export interface FoldedState {
   pageProgress: Map<string, { page: number; cursor?: string; done: boolean }>;
   /** The pause this run is currently waiting on, if any. */
   pendingPauseId?: string;
+  /**
+   * The last pause marked resumed in the log. A resume trigger (webhook/timeout)
+   * can record `pause.resumed` before the executor re-runs, so this lets the
+   * executor recognise it must continue past that pause rather than create a new
+   * one. Cleared once the run completes or fails.
+   */
+  resumedPauseId?: string;
   /** Error message if the run failed. */
   error?: string;
 }
@@ -67,13 +74,16 @@ export function foldLog(events: StoredEvent[]): FoldedState {
       case 'pause.resumed':
         state.status = 'running';
         state.pendingPauseId = undefined;
+        state.resumedPauseId = event.pauseId;
         break;
       case 'mission.completed':
         state.status = 'completed';
+        state.resumedPauseId = undefined;
         break;
       case 'mission.failed':
         state.status = 'failed';
         state.error = event.error;
+        state.resumedPauseId = undefined;
         break;
       // step.started carries no folded state on its own.
     }

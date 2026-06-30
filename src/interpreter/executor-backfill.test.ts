@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { execute } from '../index.js';
+import { execute, MissionExecutor, parse } from '../index.js';
 import { MemoryExecutionLog } from '../execution-log/index.js';
 import { loadState } from '../execution-log/index.js';
+import { MemoryStore } from '../stores/index.js';
 import type { StoredEvent } from '../execution-log/index.js';
 
 /**
@@ -84,6 +85,35 @@ describe('resumable backfill pagination', () => {
     );
     const totalFetched = records.reduce((sum, e) => sum + (e.recordCount ?? 0), 0);
     expect(totalFetched).toBe(DATASET.length);
+  });
+
+  it('persists every page to the store across runs, not just the first', async () => {
+    // Regression for the store-effect-identity bug: the effect id was keyed only
+    // on (executionId, stepId, target), all stable across resumed runs, so every
+    // run after the first found its store effect "already applied" and skipped
+    // the write — silently dropping all but the first page's records.
+    const log = new MemoryExecutionLog();
+    const out = new MemoryStore('out');
+    mockApi();
+
+    let executionId: string | undefined;
+    let done = false;
+    let runs = 0;
+    while (!done && runs < 10) {
+      runs++;
+      const result = await new MissionExecutor({
+        executionLog: log,
+        stores: { out },
+        resumeFrom: executionId,
+        backfillMaxItemsPerRun: 2,
+      }).execute(parse(source));
+      executionId = result.executionId;
+      done = (await loadState(log, executionId!)).pageProgress.get('Pull#0')?.done ?? false;
+    }
+
+    expect(done).toBe(true);
+    const stored = (await out.list()).map((r) => r.id).sort((a, b) => Number(a) - Number(b));
+    expect(stored).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
   it('a run after completion fetches nothing', async () => {

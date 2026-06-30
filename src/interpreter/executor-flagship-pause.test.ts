@@ -77,4 +77,38 @@ describe('flagship: pause for a webhook, restart, resume', () => {
     // The pause is no longer active once resumed.
     expect(await new LogBackedPauseStore(log).listActive()).toHaveLength(0);
   });
+
+  it('still resumes past the pause when it was already marked resumed in the log', async () => {
+    // Regression for the two-resume-paths corruption (C3): if a resume trigger
+    // (webhook/timeout) appended `pause.resumed` to the log *before* the executor
+    // re-ran, the fold reported no pending pause, so the replayed pause step
+    // created a brand-new pause and the run never finished — an infinite re-pause.
+    const dir = join(freshDir(), 'log');
+
+    const first = await execute(source, { executionLog: new FileExecutionLog(dir) });
+
+    // Simulate the resume trigger recording the resumption out of band.
+    const created = (await new FileExecutionLog(dir).read(first.executionId!)).find(
+      (e) => e.type === 'pause.created'
+    ) as { pauseId: string } | undefined;
+    expect(created).toBeDefined();
+    await new FileExecutionLog(dir).append({
+      type: 'pause.resumed',
+      executionId: first.executionId!,
+      pauseId: created!.pauseId,
+      resumedBy: 'webhook',
+    });
+
+    // Now the executor re-runs. It must continue past the pause, not re-pause.
+    const second = await execute(source, {
+      executionLog: new FileExecutionLog(dir),
+      resumeFrom: first.executionId,
+    });
+
+    expect(second.success).toBe(true);
+    const types = (await new FileExecutionLog(dir).read(first.executionId!)).map((e) => e.type);
+    expect(types).toContain('mission.completed');
+    // Exactly one pause was ever created — no re-pause loop.
+    expect(types.filter((t) => t === 'pause.created')).toHaveLength(1);
+  });
 });
