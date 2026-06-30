@@ -29,3 +29,7 @@ export type {
   SnapshotDiff,
 } from './replay.js';
 export { TraceReplayer, createTraceReplayer } from './replay.js';
+
+// Log-backed trace view (time-travel as a view over the execution log)
+export type { LogTimelineEntry, LogTraceSummary } from './log-view.js';
+export { LogTraceView, traceTimelineFromLog } from './log-view.js';

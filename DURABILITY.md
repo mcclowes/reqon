@@ -91,6 +91,23 @@ The event log is pluggable (`ExecutionLogStore`). Choose by durability need:
 | `SqliteExecutionLog`   | Transactional, fsync-backed | single-process self-hosting | WAL + `synchronous = NORMAL`; `seq` assigned atomically inside the INSERT under a `(execution_id, seq)` primary key. Requires the optional peer dependency `better-sqlite3`. |
 | `PostgresExecutionLog` | Transactional, multi-node | multi-node / production | `seq` assigned inside the INSERT under a `(execution_id, seq)` primary key; concurrent appenders that collide retry on unique-violation, so they always land on distinct, contiguous seqs. Requires the optional peer dependency `pg`. |
 
+## Derived views — one log, not four stores
+
+In durable mode the log is the single source of truth; the subsystems that used
+to keep their own state are now **views folded back from the log**:
+
+- **Sync** — incremental-sync checkpoints are `checkpoint.advanced` events;
+  `lastSync` resolves from the log (`LogBackedSyncStore`), monotonic per key, so
+  a sync's progress survives a crash and resumes atomically with the run.
+- **Pause** — a `pause.created` event carries the full pause payload (deadline,
+  resume triggers, captured checkpoint) and `pause.resumed` records how it ended,
+  so a paused run is reconstructable from the log alone (`LogBackedPauseStore`).
+- **Trace** — the ordered events *are* the time-travel trace; `LogTraceView`
+  derives a navigable timeline and audit summary with no separate trace store.
+
+Because the log can now hold resume state (a pause checkpoint's captured
+variables), `FileExecutionLog` creates its files owner-only (`0o600`).
+
 ## Pauses and timers
 
 A `pause` suspends a run without holding resources and resumes on a timeout or a
