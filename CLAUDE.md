@@ -2,7 +2,7 @@
 
 A declarative DSL framework for fetch, map, validate pipelines - built on [Vague](https://github.com/mcclowes/vague).
 
-File extension: `.vague`
+File extensions: `.vague` and `.reqon` (both supported; the loader tries `.vague` then `.reqon`)
 
 ## Architecture
 
@@ -19,8 +19,10 @@ src/
 ├── config/        # Runtime configuration and constants
 ├── control/       # Control server for pause/resume, status queries, heartbeats
 ├── debug/         # CLI debugger and debug controller
+├── durability/    # Crash-injection tests for durable execution
 ├── errors/        # Structured error classes (ParseError, RuntimeError, etc.)
 ├── execution/     # Execution state management and persistence
+├── execution-log/ # Append-only event log (file/sqlite/postgres stores); pause/sync/trace are views over it
 ├── interpreter/   # Runtime execution
 │   ├── context.ts       # Execution context (stores, variables)
 │   ├── evaluator.ts     # Expression evaluation
@@ -30,6 +32,8 @@ src/
 │   ├── http.ts          # HTTP client with retry/backoff
 │   ├── schema-matcher.ts # Schema matching logic
 │   ├── signals.ts       # Execution signals (abort, skip, pause, etc.)
+│   ├── source-manager.ts # Source resolution and lifecycle
+│   ├── store-manager.ts  # Store resolution and lifecycle
 │   └── step-handlers/   # Individual step type handlers (for, map, validate, store, match, webhook, apply, pause)
 ├── lexer/         # Reqon keywords (uses Vague's lexer via plugin)
 ├── loader/        # Mission loader (single file or folder with action files)
@@ -53,9 +57,13 @@ src/
 
 ```bash
 npm run build      # Compile TypeScript
+npm run dev        # Watch mode compilation
+npm run typecheck  # Type-check without emitting
 npm run test       # Run tests in watch mode
 npm run test:run   # Run tests once
-npm run dev        # Watch mode compilation
+npm run lint       # ESLint over src/
+npm run format     # Prettier write over src/
+npm run bench      # Run performance benchmarks
 ```
 
 ## DSL Syntax

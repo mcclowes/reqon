@@ -73,9 +73,9 @@ reqon sync-invoices.vague --dry-run
 ### Programmatic
 
 ```typescript
-import { parse, execute } from 'reqon';
+import { execute } from 'reqon';
 
-const program = parse(`
+const source = `
   mission Test {
     source API { auth: bearer, base: "https://api.example.com" }
     store items: memory("items")
@@ -85,7 +85,7 @@ const program = parse(`
     }
     run Fetch
   }
-`);
+`;
 
 const result = await execute(source, {
   auth: { API: { type: 'bearer', token: 'your-token' } }
