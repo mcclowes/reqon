@@ -20,9 +20,23 @@ export interface ObjectProperty {
   value: Expression;
 }
 
+// Guards unbounded recursive descent from blowing the JS stack on deeply nested
+// input, surfacing a structured ParseError instead of a raw V8 RangeError.
+const MAX_EXPRESSION_DEPTH = 200;
+
 export class ReqonExpressionParser extends ReqonParserBase {
+  private expressionDepth = 0;
+
   parseExpression(): Expression {
-    return this.parseTernary();
+    if (++this.expressionDepth > MAX_EXPRESSION_DEPTH) {
+      this.expressionDepth--;
+      throw this.error('Expression nesting too deep (maximum depth 200 exceeded)');
+    }
+    try {
+      return this.parseTernary();
+    } finally {
+      this.expressionDepth--;
+    }
   }
 
   parseLogicalExpression(): Expression {
@@ -180,7 +194,7 @@ export class ReqonExpressionParser extends ReqonParserBase {
     // Check for 'is' type checking: expr is array, expr is string, etc.
     if (this.check(ReqonTokenType.IS)) {
       this.advance(); // consume 'is'
-      const typeCheck = this.consume(TokenType.IDENTIFIER, "Expected type name after 'is'").value;
+      const typeCheck = this.consumeName("Expected type name after 'is'").value;
       return { type: 'IsExpression', operand: left, typeCheck } as unknown as Expression;
     }
 
@@ -256,7 +270,7 @@ export class ReqonExpressionParser extends ReqonParserBase {
           expr = { type: 'CallExpression', callee: expr.parts.join('.'), arguments: args };
         }
       } else if (this.match(TokenType.DOT)) {
-        const name = this.consume(TokenType.IDENTIFIER, 'Expected property name').value;
+        const name = this.consumeName('Expected property name').value;
         if (expr.type === 'Identifier') {
           expr = { type: 'QualifiedName', parts: [expr.name, name] };
         } else if (expr.type === 'QualifiedName') {
@@ -337,7 +351,7 @@ export class ReqonExpressionParser extends ReqonParserBase {
 
     // .field shorthand
     if (this.match(TokenType.DOT)) {
-      const name = this.consumeIdentifier("Expected field name after '.'").value;
+      const name = this.consumeName("Expected field name after '.'").value;
       return { type: 'Identifier', name };
     }
 
