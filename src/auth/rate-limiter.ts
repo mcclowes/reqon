@@ -72,7 +72,14 @@ export class AdaptiveRateLimiter implements RateLimiter {
   }
 
   /**
-   * Clean up stale entries from the state map to prevent memory leaks
+   * Clean up stale entries from the state map to prevent memory leaks.
+   *
+   * Eviction is driven by `lastRequestAt`, not `resetAt`. Most of the leak came
+   * from keys whose API sends no reset header: `resetAt` is never set, so the
+   * old reset-passed condition could never fire and those keys lived forever.
+   * Now any key idle longer than the stale threshold is evicted regardless of
+   * `resetAt`, except while an active `retryAfter` backoff is still pending
+   * (that state must survive so we keep honouring the 429).
    */
   private cleanup(): void {
     const now = Date.now();
@@ -90,14 +97,15 @@ export class AdaptiveRateLimiter implements RateLimiter {
     const staleThreshold = new Date(now - this.maxStaleAgeMs);
 
     for (const [key, state] of this.state) {
-      // Remove if:
-      // 1. Reset time has passed AND no recent requests
-      // 2. Last request is older than max stale age
-      const isResetPassed = state.resetAt && state.resetAt < nowDate;
-      const isRetryPassed = !state.retryAfter || state.retryAfter < nowDate;
-      const isStale = state.lastRequestAt && state.lastRequestAt < staleThreshold;
+      // A pending retry-after backoff must never be evicted out from under us.
+      const isRetryPending = state.retryAfter !== undefined && state.retryAfter >= nowDate;
+      if (isRetryPending) continue;
 
-      if ((isResetPassed && isRetryPassed && isStale) || (!state.lastRequestAt && isResetPassed)) {
+      // Stale if the last request is older than the threshold, or if no request
+      // was ever recorded for this key.
+      const isStale = !state.lastRequestAt || state.lastRequestAt < staleThreshold;
+
+      if (isStale) {
         this.state.delete(key);
       }
     }
@@ -318,7 +326,16 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     this.state.set(key, state);
 
-    // Periodically clean up stale entries (every N responses)
+    // Trigger a stale-entry sweep every N responses. The sweep itself is rate-
+    // limited by CLEANUP_INTERVAL_MS / MAX_ENTRIES_BEFORE_CLEANUP inside
+    // cleanup(), so this counter only decides how often we *consider* sweeping.
+    //
+    // TODO: this limiter is purely reactive — it learns limits from response
+    // headers after the fact. Add proactive in-flight token accounting (track
+    // tokens consumed by requests that have been issued but not yet returned a
+    // response) so concurrent callers can't collectively blow past the limit
+    // between header updates. That is a larger redesign; the eviction leak fix
+    // above is independent of it.
     this.responsesSinceCleanup++;
     if (this.responsesSinceCleanup >= RATE_LIMIT_DEFAULTS.CLEANUP_CHECK_INTERVAL) {
       this.responsesSinceCleanup = 0;

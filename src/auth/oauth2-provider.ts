@@ -91,6 +91,14 @@ export class OAuth2AuthProvider implements AuthProvider {
 
     const data = (await response.json()) as TokenResponse;
 
+    // A 2xx with no access_token would otherwise propagate as `Bearer undefined`
+    // on every subsequent request. Fail loudly instead.
+    if (!data.access_token) {
+      throw new Error(
+        `Token refresh for connection "${this.connectionId}" returned no access_token`
+      );
+    }
+
     const newTokens: OAuth2Tokens = {
       accessToken: data.access_token,
       refreshToken: data.refresh_token ?? tokens.refreshToken, // Keep old if not rotated
@@ -111,7 +119,11 @@ export class OAuth2AuthProvider implements AuthProvider {
 
   private shouldRefresh(tokens: OAuth2Tokens): boolean {
     if (!tokens.expiresAt) {
-      return false; // No expiry info, assume valid
+      // No expiry metadata: we cannot know when the token lapses, so we treat it
+      // as still valid and let a downstream 401 trigger an explicit
+      // refreshToken() call. Proactively refreshing here would burn the refresh
+      // token (and break non-expiring tokens) on every single request.
+      return false;
     }
 
     const now = Date.now();
