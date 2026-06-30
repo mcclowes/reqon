@@ -261,6 +261,12 @@ export interface FetchStep {
   retry?: RetryConfig;
   // Incremental sync
   since?: SinceConfig;
+  /**
+   * Resumable backfill: persist per-page progress to the execution log so a
+   * large paginated fetch survives a restart/deploy and continues from the last
+   * page. Requires durable mode (an executionLog). Only meaningful with paginate.
+   */
+  backfill?: boolean;
 }
 
 // Configuration for incremental sync

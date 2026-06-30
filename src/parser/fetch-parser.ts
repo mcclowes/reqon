@@ -100,6 +100,7 @@ export class FetchParser extends ScheduleParser {
     let until: Expression | undefined;
     let retry: RetryConfig | undefined;
     let since: SinceConfig | undefined;
+    let backfill: boolean | undefined;
 
     if (this.match(TokenType.LBRACE)) {
       while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
@@ -125,6 +126,12 @@ export class FetchParser extends ScheduleParser {
           case 'since':
             since = this.parseSinceConfig();
             break;
+          case 'backfill':
+            backfill = this.match(TokenType.TRUE);
+            if (!backfill) {
+              this.consume(TokenType.FALSE, "Expected 'true' or 'false'");
+            }
+            break;
           default:
             throw this.error(`Unknown fetch option: ${key}`);
         }
@@ -134,7 +141,7 @@ export class FetchParser extends ScheduleParser {
       this.consume(TokenType.RBRACE, "Expected '}'");
     }
 
-    return { source, body, headers, paginate, until, retry, since };
+    return { source, body, headers, paginate, until, retry, since, backfill };
   }
 
   /**

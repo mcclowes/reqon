@@ -42,6 +42,22 @@ export interface FetchHandlerDeps {
    * replays don't double-apply server-side where the API honours the header.
    */
   idempotency?: { executionId: string; stepId: string };
+  /**
+   * Resumable (backfill) pagination, wired in durable mode. `resume` seeds the
+   * starting page/cursor from the folded log; `onPage` records each completed
+   * page back to the log; `maxItemsPerRun` bounds memory per run (a backfill
+   * that exceeds it stops cleanly and continues on the next resume).
+   */
+  pagination?: {
+    resume?: { page: number; cursor?: string; done: boolean };
+    onPage?: (progress: {
+      page: number;
+      cursor?: string;
+      recordCount: number;
+      done: boolean;
+    }) => Promise<void>;
+    maxItemsPerRun?: number;
+  };
 }
 
 export interface FetchResult {
@@ -362,7 +378,26 @@ export class FetchHandler {
       pageSize: paginate.pageSize,
     };
 
+    // Resumable (backfill) pagination: seed the cursor/page from the last
+    // persisted position so a restart continues from where it stopped.
+    const backfill = this.deps.pagination;
+    if (step.backfill && backfill?.resume) {
+      if (backfill.resume.done) {
+        this.deps.log('Backfill already complete; nothing to fetch.');
+        return [];
+      }
+      ctx.page = backfill.resume.page;
+      ctx.cursor = backfill.resume.cursor;
+      this.deps.log(`Resuming backfill from page ${ctx.page + 1}`);
+    }
+
+    // Per-run item cap. For a backfill this bounds memory per run: when hit, the
+    // run stops *incomplete* and a later resume continues — so an arbitrarily
+    // large backfill completes across runs without buffering it all at once.
+    const itemCap = backfill?.maxItemsPerRun ?? MAX_PAGINATION_ITEMS;
+
     let hasMore = true;
+    let stoppedByCap = false;
 
     while (hasMore) {
       // Build query with pagination params
@@ -404,10 +439,24 @@ export class FetchHandler {
         hasMore = false;
       }
 
-      // Memory safety: cap total accumulated items, not just page count.
-      if (allResults.length >= MAX_PAGINATION_ITEMS) {
-        this.deps.log(`Warning: pagination item limit (${MAX_PAGINATION_ITEMS}) reached`);
+      // Memory safety: cap total accumulated items, not just page count. For a
+      // backfill this is a clean stop-and-resume boundary, not an end of data.
+      if (allResults.length >= itemCap) {
+        this.deps.log(`Pagination item limit (${itemCap}) reached`);
+        if (hasMore) stoppedByCap = true;
         hasMore = false;
+      }
+
+      // Record this page's position for a resumable backfill. `done` is the
+      // natural end of pagination — never set when we stopped on the item cap,
+      // so a resume knows to continue rather than treat the backfill as finished.
+      if (step.backfill && backfill?.onPage) {
+        await backfill.onPage({
+          page: ctx.page,
+          cursor: ctx.cursor,
+          recordCount: pageResult.items.length,
+          done: !hasMore && !stoppedByCap,
+        });
       }
 
       // Emit heartbeat after each page

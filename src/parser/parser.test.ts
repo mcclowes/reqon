@@ -90,6 +90,32 @@ describe('ReqonParser', () => {
     }
   });
 
+  it('parses the backfill fetch option', () => {
+    const source = `
+      mission B {
+        source API { auth: none, base: "https://api.example.com" }
+        store items: memory("items")
+        action FetchAll {
+          get "/items" {
+            paginate: offset(offset, 50),
+            backfill: true
+          }
+          store response -> items { key: .id }
+        }
+        run FetchAll
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0];
+    if (mission.type === 'MissionDefinition') {
+      const fetchStep = mission.actions[0].steps[0];
+      if (fetchStep.type === 'FetchStep') {
+        expect(fetchStep.backfill).toBe(true);
+      }
+    }
+  });
+
   it('parses for loops with conditions', () => {
     const source = `
       mission IterateItems {
