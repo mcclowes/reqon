@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Scheduler } from './scheduler.js';
+import { MissionExecutor } from '../interpreter/executor.js';
+import type { ExecutionResult } from '../interpreter/executor.js';
 import type { MissionDefinition, ScheduleDefinition, ReqonProgram } from '../ast/nodes.js';
 import type { SchedulerCallbacks, ScheduleEvent } from './types.js';
 
@@ -551,6 +553,101 @@ describe('Scheduler', () => {
       }
 
       await failScheduler.stop();
+    });
+  });
+
+  describe('per-job isolation (one bad job cannot starve the loop)', () => {
+    it('a job with an impossible cron does not prevent a sibling valid job from running', async () => {
+      // "0 0 31 2 *" (Feb 31) can never match; evaluating it must not throw out
+      // of the check loop and skip the sibling.
+      const impossible = createMission('impossibleMission', {
+        scheduleType: 'cron',
+        cronExpression: '0 0 31 2 *',
+      });
+      const valid = createMission('validMission', {
+        scheduleType: 'interval',
+        interval: { value: 1, unit: 'seconds' },
+      });
+
+      // Register the bad job first so it is checked before the good one.
+      scheduler.register(impossible, '/path/impossible.vague');
+      scheduler.register(valid, '/path/valid.vague');
+
+      await scheduler.start();
+
+      const started = events.filter((e) => e.type === 'started');
+      expect(started.some((e) => e.missionName === 'validMission')).toBe(true);
+    });
+
+    it('a long-running mission does not block other jobs being started (no head-of-line blocking)', async () => {
+      let resolveSlow: () => void = () => {};
+      const slowGate = new Promise<void>((resolve) => {
+        resolveSlow = resolve;
+      });
+
+      const result: ExecutionResult = {
+        success: true,
+        duration: 0,
+        actionsRun: [],
+        errors: [],
+        stores: new Map(),
+      };
+
+      const spy = vi
+        .spyOn(MissionExecutor.prototype, 'execute')
+        .mockImplementation(async function (program: ReqonProgram): Promise<ExecutionResult> {
+          const name = (program.statements[0] as MissionDefinition).name;
+          if (name === 'slowMission') {
+            await slowGate; // hangs until released
+          }
+          return result;
+        });
+
+      try {
+        const slow = createMission('slowMission', {
+          scheduleType: 'interval',
+          interval: { value: 1, unit: 'seconds' },
+        });
+        const fast = createMission('fastMission', {
+          scheduleType: 'interval',
+          interval: { value: 1, unit: 'seconds' },
+        });
+
+        // Slow registered first: if the loop awaited it, fast would never start.
+        scheduler.register(slow, '/path/slow.vague');
+        scheduler.register(fast, '/path/fast.vague');
+
+        // start() awaits the initial check; if a slow job blocked the loop this
+        // would hang. Both jobs should have emitted 'started'.
+        await scheduler.start();
+
+        const started = events.filter((e) => e.type === 'started');
+        expect(started.some((e) => e.missionName === 'slowMission')).toBe(true);
+        expect(started.some((e) => e.missionName === 'fastMission')).toBe(true);
+      } finally {
+        resolveSlow();
+        await Promise.resolve();
+        spy.mockRestore();
+      }
+    });
+  });
+
+  describe('state persistence', () => {
+    it('writes scheduler state atomically (temp file + rename)', async () => {
+      const fs = await import('node:fs/promises');
+      const mission = createMission('persistMission', {
+        scheduleType: 'interval',
+        interval: { value: 1, unit: 'hours' },
+      });
+      scheduler.register(mission, '/path/mission.vague');
+
+      await scheduler.start();
+      await scheduler.trigger('persistMission');
+
+      // Atomic writer opens a temp file then renames it into place; a plain
+      // writeFile to the target would skip both.
+      expect(fs.open).toHaveBeenCalled();
+      expect(fs.rename).toHaveBeenCalled();
     });
   });
 
