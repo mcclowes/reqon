@@ -139,6 +139,15 @@ export class PostgresExecutionLog implements ExecutionLogStore {
     return reduceCheckpoints(events, mission);
   }
 
+  async listPauses(): Promise<StoredEvent[]> {
+    const pool = await this.ensure();
+    const res = await pool.query<{ seq: number; at: string; data: ExecutionEvent }>(
+      `SELECT seq, at, data FROM ${this.table}
+       WHERE data->>'type' IN ('pause.created', 'pause.resumed')`
+    );
+    return res.rows.map((r) => ({ ...r.data, seq: r.seq, at: r.at }) as StoredEvent);
+  }
+
   /** Drop all rows. Intended for test setup, not production use. */
   async reset(): Promise<void> {
     const pool = await this.ensure();

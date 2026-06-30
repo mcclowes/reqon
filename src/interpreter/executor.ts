@@ -89,6 +89,7 @@ import {
   type PauseManager,
   type PauseStore,
   FilePauseStore,
+  LogBackedPauseStore,
   createPauseManager,
 } from '../pause/index.js';
 import { sleep } from '../utils/async.js';
@@ -388,9 +389,15 @@ export class MissionExecutor {
     this.traceStore =
       config.traceStore ?? new FileTraceStore(`${config.dataDir ?? '.reqon-data'}/traces`);
 
-    // Initialize pause store and manager
+    // Initialize pause store and manager. In durable mode the execution log is
+    // the single source of truth — pause state (deadline, triggers, checkpoint)
+    // is recorded as pause events and folded back, rather than kept in a
+    // separate pause file.
     this.pauseStore =
-      config.pauseStore ?? new FilePauseStore(`${config.dataDir ?? '.reqon-data'}/pauses`);
+      config.pauseStore ??
+      (config.executionLog
+        ? new LogBackedPauseStore(config.executionLog)
+        : new FilePauseStore(`${config.dataDir ?? '.reqon-data'}/pauses`));
 
     this.pauseManager =
       config.pauseManager ??
@@ -478,8 +485,13 @@ export class MissionExecutor {
         this.log('Execution paused');
         this.currentPauseId = error.pauseId;
         // State is already set to 'paused' in checkPause() or pause handler
-        // Don't record as error, just let execution end
-        if (error.pauseId) {
+        // Don't record as error, just let execution end.
+        //
+        // A LogBackedPauseStore already appended pause.created (with the full
+        // pause payload) when the pause manager saved it, so only emit the bare
+        // event here when the pause store is *not* the log itself — otherwise
+        // we'd record the pause twice.
+        if (error.pauseId && !(this.pauseStore instanceof LogBackedPauseStore)) {
           await this.logEvent({ type: 'pause.created', pauseId: error.pauseId });
         }
       } else {
@@ -1550,7 +1562,10 @@ export class MissionExecutor {
         ? (type, payload) => this.eventEmitter!.emit(type, payload)
         : undefined,
       pauseManager: this.pauseManager,
-      executionId: this.executionState?.id ?? 'ephemeral',
+      // Anchor the pause to the durable log id so its pause.created lands under
+      // the same execution the log replays on resume (executionState may be
+      // absent when running without an execution store).
+      executionId: this.logExecutionId ?? this.executionState?.id ?? 'ephemeral',
       mission: this.missionName ?? 'unknown',
       actionName,
       stageIndex: this.currentStageIndex,

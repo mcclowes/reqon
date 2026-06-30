@@ -72,12 +72,25 @@ export interface CheckpointAdvancedEvent extends BaseEvent {
 export interface PauseCreatedEvent extends BaseEvent {
   type: 'pause.created';
   pauseId: string;
+  /**
+   * The full durable pause state (expiry, resume triggers, captured checkpoint).
+   * Carried in the log so a paused run — and the timer/webhook it waits on — can
+   * be reconstructed from the log alone, no separate pause file. Opaque to the
+   * log layer (typed `unknown` to avoid coupling it to the pause domain).
+   */
+  pause?: unknown;
 }
 
 export interface PauseResumedEvent extends BaseEvent {
   type: 'pause.resumed';
   pauseId: string;
   resumedBy: string;
+  /** Terminal status of the pause: resumed (default), cancelled, or expired. */
+  status?: 'resumed' | 'cancelled' | 'expired';
+  /** Recorded resume time (ISO 8601). */
+  resumedAt?: string;
+  /** Payload delivered by a webhook resume. */
+  webhookPayload?: unknown;
 }
 
 export interface MissionCompletedEvent extends BaseEvent {

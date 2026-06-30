@@ -72,6 +72,12 @@ describe('MemoryExecutionLog', () => {
       expect(byKey.get('contacts')?.syncedAt).toBe('2026-02-01T00:00:00.000Z');
     });
 
+    it('ignores non-checkpoint events', async () => {
+      const log = new MemoryExecutionLog();
+      await log.append({ executionId: 'e', type: 'mission.started', mission: 'M' });
+      expect(await log.listCheckpoints()).toHaveLength(0);
+    });
+
     it('filters by mission when one is given', async () => {
       const log = new MemoryExecutionLog();
       await log.append({
@@ -92,6 +98,38 @@ describe('MemoryExecutionLog', () => {
       const onlyA = await log.listCheckpoints('A');
       expect(onlyA).toHaveLength(1);
       expect(onlyA[0].syncedAt).toBe('2026-01-01T00:00:00.000Z');
+    });
+  });
+
+  describe('listPauses', () => {
+    it('returns every pause.created and pause.resumed event across executions', async () => {
+      const log = new MemoryExecutionLog();
+      await log.append({ executionId: 'a', type: 'mission.started', mission: 'M' });
+      await log.append({
+        executionId: 'a',
+        type: 'pause.created',
+        pauseId: 'p1',
+        pause: { id: 'p1' },
+      });
+      await log.append({
+        executionId: 'b',
+        type: 'pause.created',
+        pauseId: 'p2',
+        pause: { id: 'p2' },
+      });
+      await log.append({
+        executionId: 'b',
+        type: 'pause.resumed',
+        pauseId: 'p2',
+        resumedBy: 'timeout',
+      });
+
+      const pauses = await log.listPauses();
+      expect(pauses.map((e) => e.type).sort()).toEqual([
+        'pause.created',
+        'pause.created',
+        'pause.resumed',
+      ]);
     });
   });
 });
