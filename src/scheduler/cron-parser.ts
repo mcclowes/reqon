@@ -18,7 +18,7 @@ export function parseCronExpression(expression: string): CronSchedule {
     hour: parseField(parts[1], 0, 23),
     dayOfMonth: parseField(parts[2], 1, 31),
     month: parseField(parts[3], 1, 12),
-    dayOfWeek: parseField(parts[4], 0, 6), // 0 = Sunday
+    dayOfWeek: parseField(parts[4], 0, 6, true), // 0 = Sunday; 7 also = Sunday
     // POSIX day matching keys off whether each field is a literal wildcard.
     dayOfMonthRestricted: parts[2] !== '*',
     dayOfWeekRestricted: parts[4] !== '*',
@@ -37,8 +37,24 @@ interface CronSchedule {
   dayOfWeekRestricted: boolean;
 }
 
-function parseField(field: string, min: number, max: number): number[] {
+/**
+ * Parse one cron field into the explicit set of integers it matches.
+ *
+ * Validation is strict and fails fast (rather than silently yielding an empty
+ * set or, worse, hanging): steps must be integers >= 1, bounds must be numeric,
+ * and ranges must not run backwards. When `allowSundaySeven` is set (day-of-week
+ * only) a literal 7 is accepted and normalised to 0 (Sunday).
+ */
+function parseField(field: string, min: number, max: number, allowSundaySeven = false): number[] {
   const values: Set<number> = new Set();
+
+  const toInt = (token: string, label: string): number => {
+    const n = parseInt(token, 10);
+    if (!Number.isInteger(n) || !/^[+-]?\d+$/.test(token.trim())) {
+      throw new Error(`Invalid cron field value '${token}' in '${field}': expected an integer`);
+    }
+    return n;
+  };
 
   for (const part of field.split(',')) {
     if (part === '*') {
@@ -50,18 +66,27 @@ function parseField(field: string, min: number, max: number): number[] {
       // Step values (e.g., */5 or 1-10/2)
       const [range, stepStr] = part.split('/');
       const step = parseInt(stepStr, 10);
+      if (!Number.isInteger(step) || step < 1) {
+        throw new Error(
+          `Invalid cron step '${stepStr}' in '${part}': step must be an integer >= 1`
+        );
+      }
 
       let start = min;
       let end = max;
 
       if (range !== '*') {
         if (range.includes('-')) {
-          const [rangeStart, rangeEnd] = range.split('-').map((n) => parseInt(n, 10));
-          start = rangeStart;
-          end = rangeEnd;
+          const [rangeStart, rangeEnd] = range.split('-');
+          start = toInt(rangeStart, 'range start');
+          end = toInt(rangeEnd, 'range end');
         } else {
-          start = parseInt(range, 10);
+          start = toInt(range, 'range start');
         }
+      }
+
+      if (end < start) {
+        throw new Error(`Invalid cron range '${range}' in '${part}': ${start} is after ${end}`);
       }
 
       for (let i = start; i <= end; i += step) {
@@ -69,24 +94,36 @@ function parseField(field: string, min: number, max: number): number[] {
       }
     } else if (part.includes('-')) {
       // Range (e.g., 1-5)
-      const [start, end] = part.split('-').map((n) => parseInt(n, 10));
+      const [startStr, endStr] = part.split('-');
+      const start = toInt(startStr, 'range start');
+      const end = toInt(endStr, 'range end');
+      if (end < start) {
+        throw new Error(`Invalid cron range '${part}': ${start} is after ${end}`);
+      }
       for (let i = start; i <= end; i++) {
         values.add(i);
       }
     } else {
       // Single value
-      values.add(parseInt(part, 10));
+      values.add(toInt(part, 'value'));
     }
   }
 
-  // Validate all values are in range
+  // Day-of-week 7 is an alias for Sunday (0) in standard cron.
+  const normalized = new Set<number>();
   for (const value of values) {
-    if (value < min || value > max) {
+    normalized.add(allowSundaySeven && value === 7 ? 0 : value);
+  }
+
+  // Validate all values are in range (NaN is rejected by `toInt` above, but
+  // guard explicitly so an out-of-range NaN can never slip through).
+  for (const value of normalized) {
+    if (Number.isNaN(value) || value < min || value > max) {
       throw new Error(`Cron field value ${value} out of range [${min}, ${max}]`);
     }
   }
 
-  return Array.from(values).sort((a, b) => a - b);
+  return Array.from(normalized).sort((a, b) => a - b);
 }
 
 /** Wall-clock fields of an instant as observed in a given IANA timezone. */
@@ -201,6 +238,10 @@ export function getNextCronRun(
   after: Date = new Date(),
   timeZone: string = 'UTC'
 ): Date {
+  // Fail fast on combinations that can never match (e.g. Feb 31) instead of
+  // grinding through a full multi-year minute-by-minute scan before throwing.
+  assertReachableDayMonth(schedule);
+
   // Start from the first whole minute strictly after `after`.
   const wc = addMinute(partsInZone(after.getTime(), timeZone));
 
@@ -264,6 +305,29 @@ export function getNextCronRun(
   }
 
   throw new Error('Could not find next cron run time within 4 years');
+}
+
+/** Maximum days any given (1-based) month can have, allowing for leap Februarys. */
+const MAX_DAYS_IN_MONTH = [0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/**
+ * Throw if a restricted day-of-month can never occur in any allowed month.
+ * Only applies when day-of-week is a wildcard: with a restricted weekday the
+ * POSIX OR means a matching day still occurs every month, so it is reachable.
+ */
+function assertReachableDayMonth(schedule: CronSchedule): void {
+  if (!schedule.dayOfMonthRestricted || schedule.dayOfWeekRestricted) return;
+
+  const reachable = schedule.month.some((m) =>
+    schedule.dayOfMonth.some((d) => d <= MAX_DAYS_IN_MONTH[m])
+  );
+  if (!reachable) {
+    throw new Error(
+      `Cron schedule can never match: day-of-month [${schedule.dayOfMonth.join(
+        ','
+      )}] never occurs in month(s) [${schedule.month.join(',')}]`
+    );
+  }
 }
 
 /** POSIX day matching: union of day-of-month and day-of-week when both set. */
@@ -372,9 +436,11 @@ export function shouldRunNow(
       if (!schedule.runAt) return false;
       if (lastRun) return false; // Already ran
 
+      // Fire as soon as the scheduled instant has arrived. A missed tick must
+      // not strand the job: once runAt is in the past (and it has never run),
+      // the next check still catches it, rather than only a ±checkInterval window.
       const runAt = new Date(schedule.runAt);
-      const diff = Math.abs(now.getTime() - runAt.getTime());
-      return diff <= checkIntervalMs;
+      return now.getTime() >= runAt.getTime();
     }
 
     default:
