@@ -228,6 +228,12 @@ export interface ExecutorConfig {
   // Append-only execution event log (durable-execution foundation). When set,
   // the run emits an ordered event log used for replay-based resume.
   executionLog?: ExecutionLogStore;
+  /**
+   * Max items a single run of a `backfill` paginated fetch accumulates before
+   * stopping cleanly (a later resume continues). Bounds memory per run for large
+   * backfills. Defaults to the handler's built-in cap.
+   */
+  backfillMaxItemsPerRun?: number;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -259,6 +265,8 @@ export class MissionExecutor {
   private logExecutionId?: string;
   /** Effect ids already applied (from the log) — replay skips these. */
   private appliedEffects: Set<string> = new Set();
+  /** Backfill page progress per step id (from the log) — resumes pagination. */
+  private pageProgress: Map<string, { page: number; cursor?: string; done: boolean }> = new Map();
   private debugController?: DebugController;
   private traceRecorder?: TraceRecorder;
   private traceStore?: TraceStore;
@@ -440,6 +448,7 @@ export class MissionExecutor {
     if (this.executionLog) {
       const prior = await loadState(this.executionLog, this.logExecutionId);
       this.appliedEffects = new Set(prior.appliedEffects);
+      this.pageProgress = prior.pageProgress;
       resumedPauseId = prior.pendingPauseId;
     }
 
@@ -1308,6 +1317,24 @@ export class MissionExecutor {
       idempotency:
         this.executionLog && this.logExecutionId && stepId
           ? { executionId: this.logExecutionId, stepId }
+          : undefined,
+      // Resumable backfill: seed pagination from the log and record each page.
+      pagination:
+        step.backfill && this.executionLog && this.logExecutionId && stepId
+          ? {
+              resume: this.pageProgress.get(stepId),
+              maxItemsPerRun: this.config.backfillMaxItemsPerRun,
+              onPage: async (progress) => {
+                await this.logEvent({
+                  type: 'page.completed',
+                  stepId,
+                  page: progress.page,
+                  cursor: progress.cursor,
+                  recordCount: progress.recordCount,
+                  done: progress.done,
+                });
+              },
+            }
           : undefined,
     });
 

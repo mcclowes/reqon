@@ -13,6 +13,7 @@ export type ExecutionEventType =
   | 'step.started'
   | 'step.completed'
   | 'effect.applied'
+  | 'page.completed'
   | 'checkpoint.advanced'
   | 'pause.created'
   | 'pause.resumed'
@@ -55,6 +56,26 @@ export interface EffectAppliedEvent extends BaseEvent {
   attempt: number;
   effectType: 'fetch' | 'store';
   effectId: string;
+}
+
+/**
+ * A page of a resumable (backfill) paginated fetch finished — its data is
+ * fetched and persisted. Carries the position to resume from: the next page
+ * index and/or cursor. `done` marks the natural end of pagination (the API had
+ * no more), distinct from stopping early on a per-run item cap, so a resume
+ * knows whether to continue or skip.
+ */
+export interface PageCompletedEvent extends BaseEvent {
+  type: 'page.completed';
+  stepId: string;
+  /** Zero-based index of the next page to fetch on resume. */
+  page: number;
+  /** Cursor to resume from (cursor-based pagination). */
+  cursor?: string;
+  /** Records persisted from this page. */
+  recordCount?: number;
+  /** True once pagination has reached its natural end. */
+  done: boolean;
 }
 
 export interface CheckpointAdvancedEvent extends BaseEvent {
@@ -108,6 +129,7 @@ export type ExecutionEvent =
   | StepStartedEvent
   | StepCompletedEvent
   | EffectAppliedEvent
+  | PageCompletedEvent
   | CheckpointAdvancedEvent
   | PauseCreatedEvent
   | PauseResumedEvent

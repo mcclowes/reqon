@@ -70,4 +70,31 @@ describe('foldLog', () => {
     expect(state.status).toBe('pending');
     expect(state.lastSeq).toBe(-1);
   });
+
+  it('tracks the latest page progress per backfill step', async () => {
+    const log = new MemoryExecutionLog();
+    const e = 'bf';
+    await log.append({ executionId: e, type: 'mission.started', mission: 'M' });
+    await log.append({
+      executionId: e,
+      type: 'page.completed',
+      stepId: 'Backfill#0',
+      page: 1,
+      cursor: 'c1',
+      recordCount: 50,
+      done: false,
+    });
+    await log.append({
+      executionId: e,
+      type: 'page.completed',
+      stepId: 'Backfill#0',
+      page: 2,
+      cursor: 'c2',
+      recordCount: 50,
+      done: false,
+    });
+
+    const state = foldLog(await log.read(e));
+    expect(state.pageProgress.get('Backfill#0')).toEqual({ page: 2, cursor: 'c2', done: false });
+  });
 });

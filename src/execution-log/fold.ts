@@ -19,6 +19,8 @@ export interface FoldedState {
   appliedEffects: Set<string>;
   /** Latest synced-at per checkpoint key. */
   checkpoints: Map<string, string>;
+  /** Resume position per backfill step id (last persisted page + cursor). */
+  pageProgress: Map<string, { page: number; cursor?: string; done: boolean }>;
   /** The pause this run is currently waiting on, if any. */
   pendingPauseId?: string;
   /** Error message if the run failed. */
@@ -32,6 +34,7 @@ export function foldLog(events: StoredEvent[]): FoldedState {
     completedSteps: new Set(),
     appliedEffects: new Set(),
     checkpoints: new Map(),
+    pageProgress: new Map(),
   };
 
   for (const event of events) {
@@ -46,6 +49,13 @@ export function foldLog(events: StoredEvent[]): FoldedState {
         break;
       case 'effect.applied':
         state.appliedEffects.add(event.effectId);
+        break;
+      case 'page.completed':
+        state.pageProgress.set(event.stepId, {
+          page: event.page,
+          cursor: event.cursor,
+          done: event.done,
+        });
         break;
       case 'checkpoint.advanced':
         state.checkpoints.set(event.key, event.syncedAt);
