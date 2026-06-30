@@ -80,12 +80,17 @@ export function loadEnv(options: CredentialsConfig = {}): LoadEnvResult {
 }
 
 /**
- * Resolve environment variable references in a string
+ * Resolve environment variable references in a string.
  *
  * Supports:
  * - $VAR_NAME
  * - ${VAR_NAME}
  * - ${VAR_NAME:-default}
+ *
+ * A reference with no value and no default is treated as *required* and throws,
+ * rather than silently resolving to '' (which previously let requests go out
+ * with an empty Authorization header). Use the `${VAR:-}` form to opt a
+ * reference into being optional with an empty fallback.
  */
 export function resolveEnvString(value: string): string {
   // Pattern for ${VAR:-default} or ${VAR}
@@ -102,16 +107,19 @@ export function resolveEnvString(value: string): string {
       return envValue;
     }
     if (defaultValue !== undefined) {
+      // Includes the empty-default escape hatch `${VAR:-}`.
       return defaultValue;
     }
-    // Return empty string if no value and no default
-    return '';
+    throw new Error(`unresolved required credential ${varName}`);
   });
 
   // Then resolve $VAR patterns (only if not already resolved)
   result = result.replace(simplePattern, (_match, varName) => {
     const envValue = process.env[varName];
-    return envValue !== undefined ? envValue : '';
+    if (envValue !== undefined) {
+      return envValue;
+    }
+    throw new Error(`unresolved required credential ${varName}`);
   });
 
   return result;

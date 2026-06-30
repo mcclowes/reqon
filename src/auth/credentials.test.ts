@@ -37,9 +37,18 @@ describe('resolveEnvString', () => {
     expect(resolveEnvString('${MISSING_VAR:-fallback}')).toBe('fallback');
   });
 
-  it('should return empty string for missing var without default', () => {
+  it('should throw for a required ${VAR} that is unset (no default)', () => {
     delete process.env.MISSING_VAR;
-    expect(resolveEnvString('prefix-${MISSING_VAR}-suffix')).toBe('prefix--suffix');
+    expect(() => resolveEnvString('prefix-${MISSING_VAR}-suffix')).toThrow(
+      'unresolved required credential MISSING_VAR'
+    );
+  });
+
+  it('should throw for a required $VAR that is unset', () => {
+    delete process.env.MISSING_VAR;
+    expect(() => resolveEnvString('Bearer $MISSING_VAR')).toThrow(
+      'unresolved required credential MISSING_VAR'
+    );
   });
 
   it('should resolve multiple variables in one string', () => {

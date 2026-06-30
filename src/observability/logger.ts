@@ -8,6 +8,7 @@
  * - Integration with event emitter
  */
 
+import { randomBytes } from 'node:crypto';
 import type { LogLevel, EventEmitter, EventType } from './events.js';
 import { redactSecrets } from '../utils/redact.js';
 
@@ -99,7 +100,12 @@ class SpanImpl implements Span {
 }
 
 function generateSpanId(): string {
-  return Math.random().toString(36).substring(2, 10);
+  // CSPRNG-backed, 16 hex chars. Never all-zero (the OTel "invalid" sentinel).
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const hex = randomBytes(8).toString('hex');
+    if (!/^0+$/.test(hex)) return hex;
+  }
+  return '1'.padEnd(16, '0');
 }
 
 // ============================================================================

@@ -72,7 +72,14 @@ export interface PageCompletedEvent extends BaseEvent {
   page: number;
   /** Cursor to resume from (cursor-based pagination). */
   cursor?: string;
-  /** Records persisted from this page. */
+  /**
+   * Records *fetched* on this page. NOTE: this is the fetched count, not the
+   * persisted count — the page's data is still only in memory when this event is
+   * recorded; the downstream store step persists it afterwards. A crash between
+   * this event and the store's `effect.applied` advances the resume cursor past a
+   * page whose data was never stored. See the known crash-window note in
+   * CODE_REVIEW.md (C2); a full fix defers this advance until after persistence.
+   */
   recordCount?: number;
   /** True once pagination has reached its natural end. */
   done: boolean;

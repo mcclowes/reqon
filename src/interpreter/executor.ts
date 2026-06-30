@@ -36,6 +36,7 @@ import type {
 import { isParallelStage } from '../ast/nodes.js';
 import type { ExecutionContext, ActionScope } from './context.js';
 import { createContext, childContext, setVariable } from './context.js';
+import { createHash } from 'node:crypto';
 import { evaluate } from './evaluator.js';
 import type { StoreAdapter } from '../stores/types.js';
 import { SourceManager, type AuthConfig } from './source-manager.js';
@@ -447,12 +448,16 @@ export class MissionExecutor {
 
     // Load already-applied effects from the log so replay skips them, and note
     // a pending pause so we can record its resumption below.
-    let resumedPauseId: string | undefined;
+    let pendingPauseId: string | undefined;
+    let alreadyResumedPauseId: string | undefined;
     if (this.executionLog) {
       const prior = await loadState(this.executionLog, this.logExecutionId);
       this.appliedEffects = new Set(prior.appliedEffects);
       this.pageProgress = prior.pageProgress;
-      resumedPauseId = prior.pendingPauseId;
+      pendingPauseId = prior.pendingPauseId;
+      // A resume trigger may have recorded `pause.resumed` already; if the run
+      // didn't finish, we still need to replay past that pause.
+      alreadyResumedPauseId = prior.pendingPauseId ? undefined : prior.resumedPauseId;
     }
 
     await this.logEvent({ type: 'mission.started', mission: mission.name });
@@ -461,20 +466,18 @@ export class MissionExecutor {
     // so the log's folded status leaves 'paused' before replay continues, and
     // load the pause's checkpoint so the replayed pause step resumes past it
     // (restoring captured state) rather than pausing again.
-    if (resumedPauseId) {
+    if (pendingPauseId) {
       await this.logEvent({
         type: 'pause.resumed',
-        pauseId: resumedPauseId,
+        pauseId: pendingPauseId,
         resumedBy: this.config.resumeFrom ? 'resume' : 'replay',
       });
-      const resumed = await this.pauseStore?.load(resumedPauseId);
-      this.resumingPause = resumed
-        ? {
-            pauseId: resumedPauseId,
-            checkpoint: resumed.checkpoint,
-            payload: resumed.webhookPayload,
-          }
-        : undefined;
+      this.resumingPause = await this.loadResumingPause(pendingPauseId);
+    } else if (alreadyResumedPauseId) {
+      // The pause was already marked resumed out of band (by a webhook/timeout
+      // trigger) but the run didn't continue past it. Replay past it now without
+      // recording a second `pause.resumed` — otherwise the step re-pauses forever.
+      this.resumingPause = await this.loadResumingPause(alreadyResumedPauseId);
     }
 
     // Initialize trace recorder if tracing is enabled
@@ -1478,9 +1481,18 @@ export class MissionExecutor {
     // applied in the log — whether by a prior run we are resuming or an earlier
     // action attempt — must not be re-applied. This is the exactly-once-on-replay
     // guarantee for store writes.
+    //
+    // The identity is keyed on the *content* being written, not just the target.
+    // A resumable backfill re-runs the same step (same stepId) once per run, each
+    // run storing a different page; keying on target alone made every run after
+    // the first collide on one id and skip the write, silently dropping every
+    // page but the first. Hashing the resolved payload keeps re-storing the same
+    // data idempotent (the upsert is a no-op anyway) while a different page is a
+    // distinct effect that applies.
+    const discriminator = `${step.target}::${this.storeContentHash(step, ctx)}`;
     const fx =
       stepId && this.logExecutionId
-        ? effectId(this.logExecutionId, stepId, 0, 'store', step.target)
+        ? effectId(this.logExecutionId, stepId, 0, 'store', discriminator)
         : undefined;
     if (fx && this.appliedEffects.has(fx)) {
       this.log(`Skipping already-applied store to ${step.target} (resume)`);
@@ -1511,6 +1523,34 @@ export class MissionExecutor {
 
     // Data is now durably stored — safe to advance any pending sync checkpoint.
     await this.flushPendingCheckpoints(ctx);
+  }
+
+  /**
+   * A stable hash of the payload a store step will write, used to make the
+   * store-effect identity content-aware. Resolving the source is a pure read of
+   * the context (the same value the handler stores); on any evaluation failure we
+   * fall back to a constant so behaviour matches the old target-only identity
+   * rather than throwing inside the dedup path.
+   */
+  /** Load a pause's checkpoint into the shape the pause step uses to resume. */
+  private async loadResumingPause(
+    pauseId: string
+  ): Promise<{ pauseId: string; checkpoint: PauseCheckpoint; payload?: unknown } | undefined> {
+    const resumed = await this.pauseStore?.load(pauseId);
+    return resumed
+      ? { pauseId, checkpoint: resumed.checkpoint, payload: resumed.webhookPayload }
+      : undefined;
+  }
+
+  private storeContentHash(step: StoreStep, ctx: ExecutionContext): string {
+    try {
+      const source = evaluate(step.source, ctx);
+      return createHash('sha1')
+        .update(JSON.stringify(source) ?? 'null')
+        .digest('hex');
+    } catch {
+      return 'unhashable';
+    }
   }
 
   private async executeMatch(

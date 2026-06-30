@@ -36,6 +36,14 @@ interface GeneratorContext {
 }
 
 function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): unknown {
+  // Depth guard: after dereferencing, a self-referential schema becomes a
+  // circular object reference (not a $ref), so the only thing that stops
+  // infinite recursion is the depth cap. Enforce it here for every path,
+  // including allOf/oneOf/anyOf below.
+  if (ctx.depth > ctx.maxDepth) {
+    return null;
+  }
+
   // Handle nullable - only return null if explicitly marked nullable
   // and we're past the top level (depth > 0). Use strict equality check
   // to avoid false positives from undefined/truthy coercion.
@@ -61,12 +69,15 @@ function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): u
     return schema.default;
   }
 
-  // Check for allOf/oneOf/anyOf
+  // Check for allOf/oneOf/anyOf. Each recursion must increment depth so the
+  // depth cap can terminate self-referential combinator schemas.
+  const deeper: GeneratorContext = { ...ctx, depth: ctx.depth + 1 };
+
   if (schema.allOf && schema.allOf.length > 0) {
     // Merge all schemas
     const merged: Record<string, unknown> = {};
     for (const subSchema of schema.allOf) {
-      const subValue = generateValue(subSchema as OpenAPIV3.SchemaObject, ctx);
+      const subValue = generateValue(subSchema as OpenAPIV3.SchemaObject, deeper);
       if (typeof subValue === 'object' && subValue !== null) {
         Object.assign(merged, subValue);
       }
@@ -75,11 +86,11 @@ function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): u
   }
 
   if (schema.oneOf && schema.oneOf.length > 0) {
-    return generateValue(schema.oneOf[0] as OpenAPIV3.SchemaObject, ctx);
+    return generateValue(schema.oneOf[0] as OpenAPIV3.SchemaObject, deeper);
   }
 
   if (schema.anyOf && schema.anyOf.length > 0) {
-    return generateValue(schema.anyOf[0] as OpenAPIV3.SchemaObject, ctx);
+    return generateValue(schema.anyOf[0] as OpenAPIV3.SchemaObject, deeper);
   }
 
   // Generate based on type

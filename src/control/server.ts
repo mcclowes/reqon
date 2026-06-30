@@ -7,6 +7,7 @@
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { parse as parseUrl } from 'node:url';
+import { timingSafeEqual } from 'node:crypto';
 import type { ExecutionState, LiveProgress } from '../execution/index.js';
 import type {
   ControlServerConfig,
@@ -57,12 +58,14 @@ export class ControlServer {
   async start(): Promise<void> {
     if (this.running) return;
 
-    // Warn loudly if exposing a state-changing server beyond loopback with no
-    // shared secret configured.
+    // Hard-refuse to expose a state-changing server beyond loopback without a
+    // shared secret. /pause, /resume, and /status would otherwise be reachable
+    // by anyone who can route to this host. Bind to loopback or set authToken.
     if (!this.isLoopback(this.config.host) && !this.config.authToken) {
-      console.warn(
-        `[Control] WARNING: binding to ${this.config.host} with no authToken — ` +
-          `/pause, /resume, and /status are exposed without authentication.`
+      throw new Error(
+        `[Control] Refusing to start: binding to non-loopback host "${this.config.host}" ` +
+          `with no authToken would expose /pause, /resume, and /status without authentication. ` +
+          `Set an authToken or bind to localhost.`
       );
     }
 
@@ -223,11 +226,26 @@ export class ControlServer {
     }
     const header = req.headers.authorization;
     const expected = `Bearer ${this.config.authToken}`;
-    if (header !== expected) {
+    if (typeof header !== 'string' || !this.safeEqual(header, expected)) {
       this.sendJson(res, 401, { error: 'Unauthorized' });
       return false;
     }
     return true;
+  }
+
+  /**
+   * Constant-time string comparison. Avoids the timing oracle of `a !== b`,
+   * which short-circuits on the first differing byte and can leak the token
+   * prefix. Length is compared first (and non-constant-time), which only
+   * reveals the token length — not its contents.
+   */
+  private safeEqual(a: string, b: string): boolean {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) {
+      return false;
+    }
+    return timingSafeEqual(bufA, bufB);
   }
 
   /**

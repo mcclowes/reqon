@@ -4,6 +4,7 @@ import { ReqonLexer } from '../lexer/index.js';
 import { ReqonExpressionParser } from './expressions.js';
 import type { IsExpression } from './expressions.js';
 import type { ReqonToken } from '../lexer/tokens.js';
+import { ParseError } from '../errors/index.js';
 
 describe('ReqonExpressionParser', () => {
   function parseExpr(source: string) {
@@ -526,6 +527,74 @@ describe('ReqonExpressionParser', () => {
         expect(expr.consequent.type).toBe('CallExpression');
         expect(expr.alternate).toMatchObject({ type: 'Literal', value: null });
       }
+    });
+  });
+
+  describe('keyword tokens as property names', () => {
+    it('parses response.page (keyword after dot)', () => {
+      const expr = parseExpr('response.page');
+      expect(expr.type).toBe('QualifiedName');
+      if (expr.type === 'QualifiedName') {
+        expect(expr.parts).toEqual(['response', 'page']);
+      }
+    });
+
+    it('parses item.key (keyword after dot)', () => {
+      const expr = parseExpr('item.key');
+      expect(expr.type).toBe('QualifiedName');
+      if (expr.type === 'QualifiedName') {
+        expect(expr.parts).toEqual(['item', 'key']);
+      }
+    });
+
+    it('parses response.cursor.next (chained keyword properties)', () => {
+      const expr = parseExpr('response.cursor.next');
+      expect(expr.type).toBe('QualifiedName');
+      if (expr.type === 'QualifiedName') {
+        expect(expr.parts).toEqual(['response', 'cursor', 'next']);
+      }
+    });
+  });
+
+  describe('is type checking with built-in keyword types', () => {
+    const asIs = (expr: Expression): Expression | IsExpression => expr;
+
+    it('parses .Total is decimal', () => {
+      const expr = asIs(parseExpr('.Total is decimal'));
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect(expr.typeCheck).toBe('decimal');
+      }
+    });
+
+    it('parses .x is int', () => {
+      const expr = asIs(parseExpr('.x is int'));
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect(expr.typeCheck).toBe('int');
+      }
+    });
+
+    it('parses .d is date', () => {
+      const expr = asIs(parseExpr('.d is date'));
+      expect(expr.type).toBe('IsExpression');
+      if (expr.type === 'IsExpression') {
+        expect(expr.typeCheck).toBe('date');
+      }
+    });
+  });
+
+  describe('recursion depth guard', () => {
+    it('throws a structured ParseError (not a RangeError) on deep nesting', () => {
+      const deep = '('.repeat(5000);
+      let caught: unknown;
+      try {
+        parseExpr(deep);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ParseError);
+      expect(caught).not.toBeInstanceOf(RangeError);
     });
   });
 });

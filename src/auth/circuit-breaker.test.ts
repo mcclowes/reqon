@@ -150,6 +150,82 @@ describe('CircuitBreaker', () => {
 
       expect(breaker.getStatus('TestAPI').state).toBe('open');
     });
+
+    it('admits only a single probe at a time (no recovery stampede)', async () => {
+      breaker.configure('TestAPI', {
+        failureThreshold: 1,
+        resetTimeout: 50,
+        successThreshold: 2,
+      });
+      breaker.recordFailure('TestAPI', undefined, 500);
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      // First caller becomes the probe and is admitted.
+      expect(breaker.canProceed('TestAPI')).toBe(true);
+      expect(breaker.getStatus('TestAPI').state).toBe('half_open');
+
+      // Every concurrent caller is denied while the probe is in flight.
+      expect(breaker.canProceed('TestAPI')).toBe(false);
+      expect(breaker.canProceed('TestAPI')).toBe(false);
+    });
+
+    it('releases the probe slot for the next probe after a partial success', () => {
+      breaker.configure('TestAPI', {
+        failureThreshold: 1,
+        resetTimeout: 0,
+        successThreshold: 2,
+      });
+      breaker.recordFailure('TestAPI', undefined, 500);
+
+      // resetTimeout 0 => immediately eligible for half-open.
+      expect(breaker.canProceed('TestAPI')).toBe(true); // probe 1 admitted
+      expect(breaker.canProceed('TestAPI')).toBe(false); // blocked while in flight
+
+      breaker.recordSuccess('TestAPI'); // probe 1 succeeds (1 of 2)
+      expect(breaker.getStatus('TestAPI').state).toBe('half_open');
+
+      // Slot released — the next probe is admitted, others still blocked.
+      expect(breaker.canProceed('TestAPI')).toBe(true); // probe 2 admitted
+      expect(breaker.canProceed('TestAPI')).toBe(false);
+
+      breaker.recordSuccess('TestAPI'); // probe 2 succeeds (2 of 2) => closed
+      expect(breaker.getStatus('TestAPI').state).toBe('closed');
+    });
+  });
+
+  describe('memory hygiene (read paths do not insert)', () => {
+    it('getStatus on an unknown key does not create an entry', () => {
+      breaker.getStatus('UnknownAPI', '/unknown');
+      expect(breaker.getAllStatuses().size).toBe(0);
+    });
+
+    it('canProceed on an unknown key does not create an entry', () => {
+      expect(breaker.canProceed('UnknownAPI', '/unknown')).toBe(true);
+      expect(breaker.getAllStatuses().size).toBe(0);
+    });
+
+    it('recordSuccess on an unknown key does not create an entry', () => {
+      breaker.recordSuccess('UnknownAPI', '/unknown');
+      expect(breaker.getAllStatuses().size).toBe(0);
+    });
+
+    it('evictStale removes idle closed circuits but keeps open ones', async () => {
+      breaker.configure('OpenAPI', { failureThreshold: 1, resetTimeout: 60000 });
+      breaker.recordFailure('OpenAPI', undefined, 500); // -> open
+      breaker.recordSuccess('ClosedAPI'); // no entry (read-only)
+      breaker.recordFailure('ClosedAPI', undefined, 404); // not a failure status -> no entry
+      breaker.recordFailure('FlakyAPI', undefined, 500); // closed, 1 failure
+
+      // Let activity age, then evict anything idle longer than 10ms.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const evicted = breaker.evictStale(10);
+
+      const statuses = breaker.getAllStatuses();
+      expect(statuses.has('OpenAPI')).toBe(true); // open circuits retained
+      expect(statuses.has('FlakyAPI')).toBe(false); // idle closed circuit evicted
+      expect(evicted).toBe(1);
+    });
   });
 
   describe('failure window', () => {

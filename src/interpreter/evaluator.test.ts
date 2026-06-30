@@ -208,6 +208,21 @@ describe('evaluate', () => {
 
       expect(evaluate(expr, ctx)).toBe(true);
     });
+
+    it('excludes (returns false) when a compared field is missing, instead of throwing', () => {
+      const ctx = createContext();
+      // `item.score > 5` where the item has no score — common in real API data.
+      const expr: Expression = {
+        type: 'BinaryExpression',
+        operator: '>',
+        left: { type: 'Identifier', name: 'score' },
+        right: { type: 'Literal', value: 5, dataType: 'number' },
+      };
+
+      expect(() => evaluate(expr, ctx, { id: 1 })).not.toThrow();
+      expect(evaluate(expr, ctx, { id: 1 })).toBe(false);
+      expect(evaluate(expr, ctx, { score: 9 })).toBe(true);
+    });
   });
 
   describe('logical expressions', () => {
@@ -487,6 +502,30 @@ describe('evaluate', () => {
   });
 
   describe('call expressions (built-in functions)', () => {
+    it('env() reads a literal-named variable but rejects a dynamic argument', () => {
+      const ctx = createContext();
+      process.env.REQON_TEST_VAR = 'secret-value';
+      try {
+        const literal: Expression = {
+          type: 'CallExpression',
+          callee: 'env',
+          arguments: [{ type: 'Literal', value: 'REQON_TEST_VAR', dataType: 'string' }],
+        };
+        expect(evaluate(literal, ctx)).toBe('secret-value');
+
+        // A dynamic argument (data-driven var name) is refused — it would let
+        // fetched data choose which env var to read.
+        const dynamic: Expression = {
+          type: 'CallExpression',
+          callee: 'env',
+          arguments: [{ type: 'Identifier', name: 'whichVar' }],
+        };
+        expect(() => evaluate(dynamic, ctx, { whichVar: 'REQON_TEST_VAR' })).toThrow();
+      } finally {
+        delete process.env.REQON_TEST_VAR;
+      }
+    });
+
     it('evaluates length function', () => {
       const ctx = createContext();
       const expr: Expression = {
@@ -826,6 +865,17 @@ describe('interpolatePath', () => {
     const result = interpolatePath('/profiles/{user.profile.id}', ctx, current);
 
     expect(result).toBe('/profiles/abc');
+  });
+
+  it('URL-encodes interpolated values so they cannot inject path or query', () => {
+    const ctx = createContext();
+    // A data-controlled id must not break out of its path segment.
+    expect(interpolatePath('/users/{id}', ctx, { id: '1/../../admin' })).toBe(
+      '/users/1%2F..%2F..%2Fadmin'
+    );
+    expect(interpolatePath('/users/{id}', ctx, { id: '1?role=admin' })).toBe(
+      '/users/1%3Frole%3Dadmin'
+    );
   });
 
   it('interpolates from context variables', () => {

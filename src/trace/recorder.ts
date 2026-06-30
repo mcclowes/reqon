@@ -123,10 +123,12 @@ export class TraceRecorder {
   }
 
   /**
-   * Get the total number of snapshots recorded
+   * Get the total number of snapshots recorded. In streaming mode the in-memory
+   * array is bounded (older snapshots live only on disk), so this reflects the
+   * true total rather than the retained window.
    */
   getSnapshotCount(): number {
-    return this.trace.snapshots.length;
+    return this.snapshotIndex;
   }
 
   private createSnapshot(
@@ -210,12 +212,20 @@ export class TraceRecorder {
     return stores;
   }
 
+  /** Cap on snapshots kept in memory while streaming (each is already on disk). */
+  private static readonly MAX_STREAMED_IN_MEMORY = 200;
+
   private async addSnapshot(snapshot: TraceSnapshot): Promise<void> {
     this.trace.snapshots.push(snapshot);
 
-    // If streaming mode, persist immediately
     if (this.config.streaming) {
+      // Persisted immediately, so the in-memory copy is only a recent window for
+      // live inspection — bound it so a long run doesn't grow without limit.
       await this.config.store.appendSnapshot(this.trace.id, snapshot);
+      const cap = TraceRecorder.MAX_STREAMED_IN_MEMORY;
+      if (this.trace.snapshots.length > cap) {
+        this.trace.snapshots.splice(0, this.trace.snapshots.length - cap);
+      }
     }
   }
 }

@@ -1,5 +1,6 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { writeFileAtomic } from '../utils/file.js';
 import type { ReqonProgram, MissionDefinition, ScheduleDefinition } from '../ast/nodes.js';
 import type { ExecutorConfig, ExecutionResult } from '../interpreter/executor.js';
 import { MissionExecutor } from '../interpreter/executor.js';
@@ -52,9 +53,19 @@ export class Scheduler {
 
     this.missions.set(mission.name, { mission, filePath });
 
-    // Create or update job state
+    // Create or update job state. A schedule that can never produce a next run
+    // (e.g. an impossible cron like Feb 31) must not abort registration — the
+    // job is registered with an undefined nextRun and the check loop isolates
+    // it so it can't starve sibling jobs.
     const existingJob = this.state.jobs[mission.name];
-    const nextRun = getNextRunTime(mission.schedule);
+    let nextRun: Date | null = null;
+    try {
+      nextRun = getNextRunTime(mission.schedule);
+    } catch (error) {
+      this.log(
+        `Mission '${mission.name}' has an unschedulable cron: ${(error as Error).message}`
+      );
+    }
 
     this.state.jobs[mission.name] = {
       id: mission.name,
@@ -142,17 +153,23 @@ export class Scheduler {
   private async checkAndRun(): Promise<void> {
     const now = new Date();
 
+    // Each job is isolated: a throw while evaluating one schedule (e.g. an
+    // impossible cron) must not break the loop and starve siblings. Due jobs
+    // are dispatched without awaiting so a slow mission can't head-of-line
+    // block the rest of the tick.
     for (const [name, job] of Object.entries(this.state.jobs)) {
-      if (!job.enabled) continue;
+      try {
+        if (!job.enabled) continue;
 
-      const scheduledMission = this.missions.get(name);
-      if (!scheduledMission) continue;
+        const scheduledMission = this.missions.get(name);
+        if (!scheduledMission) continue;
 
-      const schedule = scheduledMission.mission.schedule;
-      if (!schedule) continue; // Mission must have schedule
+        const schedule = scheduledMission.mission.schedule;
+        if (!schedule) continue; // Mission must have schedule
 
-      // Check if job should run
-      if (shouldRunNow(schedule, job.lastRun, this.config.checkInterval)) {
+        // Check if job should run
+        if (!shouldRunNow(schedule, job.lastRun, this.config.checkInterval)) continue;
+
         // Check if already running
         if (job.isRunning && schedule.skipIfRunning !== false) {
           this.emitEvent({
@@ -165,8 +182,13 @@ export class Scheduler {
           continue;
         }
 
-        // Run the job
-        await this.runJob(job, scheduledMission);
+        // Dispatch without awaiting: the loop keeps checking other jobs while
+        // this mission runs. Failures are handled inside runJob.
+        void this.runJob(job, scheduledMission).catch((error) => {
+          this.log(`Job '${name}' run error: ${(error as Error).message}`);
+        });
+      } catch (error) {
+        this.log(`Error checking job '${name}': ${(error as Error).message}`);
       }
     }
   }
@@ -251,8 +273,15 @@ export class Scheduler {
     } finally {
       job.isRunning = false;
 
-      // Calculate next run time
-      job.nextRun = getNextRunTime(scheduledMission.mission.schedule!, new Date()) ?? undefined;
+      // Calculate next run time; never let an unschedulable cron throw out of
+      // the finally block and mask the run's real outcome.
+      try {
+        job.nextRun =
+          getNextRunTime(scheduledMission.mission.schedule!, new Date()) ?? undefined;
+      } catch (error) {
+        job.nextRun = undefined;
+        this.log(`Could not compute next run for '${job.missionName}': ${(error as Error).message}`);
+      }
 
       await this.saveState();
     }
@@ -383,7 +412,9 @@ export class Scheduler {
     try {
       await mkdir(this.config.stateDir!, { recursive: true });
       const statePath = join(this.config.stateDir!, 'state.json');
-      await writeFile(statePath, JSON.stringify(this.state, null, 2));
+      // Atomic write (temp file + fsync + rename) so a crash mid-write can't
+      // truncate or corrupt state.json.
+      await writeFileAtomic(statePath, JSON.stringify(this.state, null, 2));
     } catch (error) {
       this.log(`Failed to save scheduler state: ${(error as Error).message}`);
     }

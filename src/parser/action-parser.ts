@@ -154,7 +154,7 @@ export class ActionParser extends FetchParser {
     const mappings: FieldMapping[] = [];
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
-      const field = this.consumeIdentifier('Expected field name').value;
+      const field = this.consumeName('Expected field name').value;
       this.consume(TokenType.COLON, "Expected ':'");
       const expression = this.parseExpression();
       mappings.push({ field, expression });
@@ -257,7 +257,7 @@ export class ActionParser extends FetchParser {
     const mappings: FieldMapping[] = [];
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
-      const field = this.consumeIdentifier('Expected field name').value;
+      const field = this.consumeName('Expected field name').value;
       this.consume(TokenType.COLON, "Expected ':'");
       const expression = this.parseExpression();
       mappings.push({ field, expression });

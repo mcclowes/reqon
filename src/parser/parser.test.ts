@@ -205,6 +205,46 @@ describe('ReqonParser', () => {
     }
   });
 
+  it('parses map steps with keyword tokens as field names', () => {
+    const source = `
+      mission KeywordFields {
+        source API {
+          auth: bearer,
+          base: "https://api.example.com"
+        }
+
+        store raw: memory("raw")
+        store out: memory("out")
+
+        action Normalize {
+          map response -> Out {
+            key: .id,
+            page: .p
+          }
+
+          store response -> out {
+            key: .key
+          }
+        }
+
+        run Normalize
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0];
+
+    expect(mission.type).toBe('MissionDefinition');
+    if (mission.type === 'MissionDefinition') {
+      const mapStep = mission.actions[0].steps[0];
+      expect(mapStep.type).toBe('MapStep');
+      if (mapStep.type === 'MapStep') {
+        expect(mapStep.targetSchema).toBe('Out');
+        expect(mapStep.mappings.map((m) => m.field)).toEqual(['key', 'page']);
+      }
+    }
+  });
+
   it('parses validation steps', () => {
     const source = `
       mission ValidateData {

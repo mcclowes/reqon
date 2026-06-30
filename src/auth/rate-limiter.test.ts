@@ -292,6 +292,44 @@ describe('AdaptiveRateLimiter', () => {
 
       expect(limiter.getTrackedEndpointCount()).toBe(0);
     });
+
+    it('evicts a stale key that has no resetAt header', () => {
+      // Short stale threshold so the key ages out quickly.
+      const shortLived = new AdaptiveRateLimiter({}, { maxStaleAgeMs: 50 });
+
+      // API sends no reset/retry headers — only remaining. Previously this key
+      // was immortal because eviction keyed off resetAt.
+      shortLived.recordResponse('headerless-api', { remaining: 42 });
+      expect(shortLived.getTrackedEndpointCount()).toBe(1);
+
+      // Age lastRequestAt past the stale threshold.
+      const internal = shortLived as unknown as {
+        state: Map<string, { lastRequestAt?: Date; resetAt?: Date; retryAfter?: Date }>;
+      };
+      const entry = internal.state.get('headerless-api')!;
+      entry.lastRequestAt = new Date(Date.now() - 1000);
+      expect(entry.resetAt).toBeUndefined();
+
+      shortLived.forceCleanup();
+
+      expect(shortLived.getTrackedEndpointCount()).toBe(0);
+    });
+
+    it('does not evict a key with a pending retry-after backoff', () => {
+      const shortLived = new AdaptiveRateLimiter({}, { maxStaleAgeMs: 50 });
+
+      // 429 backoff still pending 60s out, but the key looks idle.
+      shortLived.recordResponse('throttled-api', { retryAfter: 60 });
+      const internal = shortLived as unknown as {
+        state: Map<string, { lastRequestAt?: Date }>;
+      };
+      internal.state.get('throttled-api')!.lastRequestAt = new Date(Date.now() - 1000);
+
+      shortLived.forceCleanup();
+
+      // Retained: we must keep honouring the active backoff.
+      expect(shortLived.getTrackedEndpointCount()).toBe(1);
+    });
   });
 
   describe('default configuration', () => {

@@ -57,7 +57,7 @@ export class LogBackedSyncStore implements SyncStore {
   }
 
   /** No-op: the log (via `checkpoint.advanced`) is the write path. */
-  async recordSync(): Promise<void> {}
+  async recordSync(_checkpoint: SyncCheckpoint): Promise<void> {}
 
   /** Clearing a log-derived checkpoint isn't supported (the log is append-only). */
   async clear(): Promise<void> {}

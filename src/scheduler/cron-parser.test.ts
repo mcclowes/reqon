@@ -61,6 +61,38 @@ describe('parseCronExpression', () => {
     expect(() => parseCronExpression('60 * * * *')).toThrow('out of range');
     expect(() => parseCronExpression('* 25 * * *')).toThrow('out of range');
   });
+
+  it('throws a descriptive error for a zero step instead of hanging', () => {
+    // `*/0` previously produced an infinite `i += 0` loop.
+    expect(() => parseCronExpression('*/0 * * * *')).toThrow(/step/i);
+  });
+
+  it('throws a descriptive error for a non-numeric step', () => {
+    // `*/x` previously yielded a silent empty set (NaN step).
+    expect(() => parseCronExpression('*/x * * * *')).toThrow(/step/i);
+  });
+
+  it('accepts day-of-week 7 as Sunday (maps to 0)', () => {
+    const schedule = parseCronExpression('0 0 * * 7');
+    expect(schedule.dayOfWeek).toEqual([0]);
+  });
+
+  it('treats 0 and 7 as the same Sunday in a list', () => {
+    const schedule = parseCronExpression('0 0 * * 0,7');
+    expect(schedule.dayOfWeek).toEqual([0]);
+  });
+
+  it('rejects NaN from a malformed single field instead of silently matching nothing', () => {
+    expect(() => parseCronExpression('abc * * * *')).toThrow();
+  });
+
+  it('rejects a reversed range instead of yielding an empty set', () => {
+    expect(() => parseCronExpression('5-1 * * * *')).toThrow(/range/i);
+  });
+
+  it('rejects a reversed range inside a step expression', () => {
+    expect(() => parseCronExpression('5-1/2 * * * *')).toThrow(/range/i);
+  });
 });
 
 describe('getNextCronRun', () => {
@@ -314,5 +346,25 @@ describe('shouldRunNow', () => {
     };
     // Just ran; the next 5-minute boundary is still in the future.
     expect(shouldRunNow(schedule, new Date())).toBe(false);
+  });
+
+  it('fires a once-job whose runAt is in the past and has not yet run', () => {
+    // A missed tick must not strand a once-job forever; once runAt has passed
+    // and it has never run, it should fire on the next check.
+    const schedule: ScheduleDefinition = {
+      type: 'ScheduleDefinition',
+      scheduleType: 'once',
+      runAt: new Date(Date.now() - 5_000).toISOString(),
+    };
+    expect(shouldRunNow(schedule, undefined)).toBe(true);
+  });
+
+  it('does not fire a once-job whose runAt is still in the future', () => {
+    const schedule: ScheduleDefinition = {
+      type: 'ScheduleDefinition',
+      scheduleType: 'once',
+      runAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    expect(shouldRunNow(schedule, undefined)).toBe(false);
   });
 });
