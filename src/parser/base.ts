@@ -82,6 +82,17 @@ export class ReqonParserBase {
   }
 
   /**
+   * Consume a token in name/property position (after a dot, a map/transform field
+   * name, or the type name after `is`). Any reserved keyword's text is a valid name
+   * here because the position is unambiguous, so accept any non-EOF token and return
+   * it by value.
+   */
+  protected consumeName(message: string): Token {
+    if (this.isAtEnd()) throw this.error(message);
+    return this.advance();
+  }
+
+  /**
    * Check if current token is an identifier (including HTTP methods as identifiers)
    */
   protected checkIdentifier(): boolean {
