@@ -1,5 +1,36 @@
 import type { OpenAPIV3 } from 'openapi-types';
 
+/**
+ * Upper bound on the length of a string we will test against a `pattern`
+ * regex. Both the schema pattern and the response value are untrusted, so a
+ * pathological pattern (e.g. `(a+)+$`) over a long string can trigger
+ * catastrophic backtracking. Anything longer is rejected without running the
+ * regex, so validation always returns promptly.
+ */
+const MAX_PATTERN_INPUT_LENGTH = 10_000;
+
+/**
+ * Cache of compiled pattern regexes. Avoids recompiling the same (untrusted)
+ * pattern per value, and stores `null` for patterns that fail to compile so we
+ * skip them consistently.
+ */
+const patternRegexCache = new Map<string, RegExp | null>();
+
+function getPatternRegex(pattern: string): RegExp | null {
+  const cached = patternRegexCache.get(pattern);
+  if (cached !== undefined) return cached;
+
+  let regex: RegExp | null;
+  try {
+    regex = new RegExp(pattern);
+  } catch {
+    // Invalid regex: don't crash validation, just skip the pattern check.
+    regex = null;
+  }
+  patternRegexCache.set(pattern, regex);
+  return regex;
+}
+
 export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
@@ -117,14 +148,24 @@ function validateString(
   }
 
   if (schema.pattern) {
-    const regex = new RegExp(schema.pattern);
-    if (!regex.test(value)) {
+    if (value.length > MAX_PATTERN_INPUT_LENGTH) {
+      // Refuse to run an untrusted regex over an oversized string (ReDoS guard).
       errors.push({
         path,
-        message: `String does not match pattern`,
-        expected: schema.pattern,
-        actual: value,
+        message: `String too long to validate against pattern`,
+        expected: `<= ${MAX_PATTERN_INPUT_LENGTH} chars`,
+        actual: `${value.length} chars`,
       });
+    } else {
+      const regex = getPatternRegex(schema.pattern);
+      if (regex && !regex.test(value)) {
+        errors.push({
+          path,
+          message: `String does not match pattern`,
+          expected: schema.pattern,
+          actual: value,
+        });
+      }
     }
   }
 }

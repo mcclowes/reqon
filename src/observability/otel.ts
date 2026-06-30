@@ -8,6 +8,7 @@
  * For production use, consider using the official @opentelemetry packages.
  */
 
+import { randomBytes } from 'node:crypto';
 import type { ObservabilityEvent } from './events.js';
 import type { LogEntry, LogOutput } from './logger.js';
 
@@ -61,12 +62,20 @@ export function generateSpanId(): string {
   return randomHex(16);
 }
 
+/**
+ * Generate `length` random hex characters using a CSPRNG. OTel trace/span IDs
+ * must be unpredictable and must never be all-zero (the all-zero ID is the
+ * "invalid" sentinel in the spec), so we regenerate in the vanishingly
+ * unlikely event of an all-zero draw.
+ */
 function randomHex(length: number): string {
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += Math.floor(Math.random() * 16).toString(16);
+  const byteLength = Math.ceil(length / 2);
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const hex = randomBytes(byteLength).toString('hex').slice(0, length);
+    if (!/^0+$/.test(hex)) return hex;
   }
-  return result;
+  // Fallback (practically unreachable): force a non-zero leading nibble.
+  return '1'.padEnd(length, '0');
 }
 
 // ============================================================================
@@ -187,6 +196,13 @@ export class OTelEventAdapter {
   private spanBuilder: SpanBuilder;
   private spanStack: string[] = [];
   private eventToSpan: Map<string, string> = new Map();
+  /**
+   * Pending fetch spans keyed by source+path. Fetch start/complete events
+   * don't carry a correlation id, so we queue the open span ids per endpoint
+   * (FIFO) instead of a single shared `fetch:current` slot. This keeps
+   * concurrent/paginated fetches from overwriting and leaking each other.
+   */
+  private pendingFetchSpans: Map<string, string[]> = new Map();
 
   constructor(traceId?: string) {
     this.spanBuilder = new SpanBuilder(traceId);
@@ -253,6 +269,7 @@ export class OTelEventAdapter {
         error: payload.error,
       });
       this.spanStack.pop();
+      this.eventToSpan.delete('mission');
     }
   }
 
@@ -280,6 +297,7 @@ export class OTelEventAdapter {
         error: payload.error,
       });
       this.spanStack.pop();
+      this.eventToSpan.delete(`stage:${payload.stageIndex}`);
     }
   }
 
@@ -306,14 +324,20 @@ export class OTelEventAdapter {
       success: boolean;
       error?: string;
     };
-    const spanId = this.eventToSpan.get(`step:${payload.actionName}:${payload.stepIndex}`);
+    const key = `step:${payload.actionName}:${payload.stepIndex}`;
+    const spanId = this.eventToSpan.get(key);
     if (spanId) {
       this.spanBuilder.endSpan(spanId, {
         status: payload.success ? 'OK' : 'ERROR',
         error: payload.error,
       });
       this.spanStack.pop();
+      this.eventToSpan.delete(key);
     }
+  }
+
+  private fetchKey(source: string | undefined, path: string | undefined): string {
+    return `${source ?? ''} ${path ?? ''}`;
   }
 
   private startFetchSpan(event: ObservabilityEvent): void {
@@ -328,19 +352,36 @@ export class OTelEventAdapter {
         'reqon.source': payload.source,
       },
     });
-    this.eventToSpan.set('fetch:current', spanId);
+
+    const key = this.fetchKey(payload.source, payload.path);
+    const queue = this.pendingFetchSpans.get(key);
+    if (queue) {
+      queue.push(spanId);
+    } else {
+      this.pendingFetchSpans.set(key, [spanId]);
+    }
   }
 
   private endFetchSpan(event: ObservabilityEvent): void {
-    const spanId = this.eventToSpan.get('fetch:current');
+    const payload = event.payload as {
+      source?: string;
+      path?: string;
+      statusCode?: number;
+      error?: string;
+    };
+    const key = this.fetchKey(payload.source, payload.path);
+    const queue = this.pendingFetchSpans.get(key);
+    const spanId = queue?.shift();
+    if (queue && queue.length === 0) {
+      this.pendingFetchSpans.delete(key);
+    }
+
     if (spanId) {
-      const payload = event.payload as { statusCode?: number; error?: string };
       this.spanBuilder.endSpan(spanId, {
         status: payload.error ? 'ERROR' : 'OK',
         error: payload.error,
         attributes: payload.statusCode ? { 'http.status_code': payload.statusCode } : undefined,
       });
-      this.eventToSpan.delete('fetch:current');
     }
   }
 

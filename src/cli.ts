@@ -15,6 +15,7 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { fromPath, Scheduler, loadMission } from './index.js';
 import type { ScheduleEvent } from './scheduler/index.js';
 import { ReqonError } from './errors/index.js';
@@ -22,6 +23,52 @@ import { loadEnv, loadCredentials } from './auth/credentials.js';
 import { WebhookServer } from './webhook/index.js';
 import type { DebugController } from './debug/index.js';
 import { ControlServer } from './control/index.js';
+
+/**
+ * Load and resolve an --auth credentials file, turning low-level fs/JSON
+ * failures into clean, user-facing messages instead of raw stack traces.
+ */
+export async function loadAuthFile(rawPath: string): Promise<Record<string, unknown>> {
+  const authPath = resolve(rawPath);
+
+  let authContent: string;
+  try {
+    authContent = await readFile(authPath, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`auth file not found: ${authPath}`);
+    }
+    if ((err as NodeJS.ErrnoException).code === 'EISDIR') {
+      throw new Error(`auth path is a directory, not a file: ${authPath}`);
+    }
+    throw new Error(`could not read auth file ${authPath}: ${(err as Error).message}`);
+  }
+
+  let rawAuth: unknown;
+  try {
+    rawAuth = JSON.parse(authContent);
+  } catch {
+    throw new Error(`auth file is not valid JSON: ${authPath}`);
+  }
+
+  // Resolve env var references in the auth config
+  return loadCredentials(rawAuth as Record<string, unknown>);
+}
+
+/**
+ * Print an error in a clean, user-facing form (no stack trace). ReqonErrors
+ * get their rich source-context formatting; everything else gets a one-line
+ * message.
+ */
+export function reportFatalError(error: unknown): void {
+  if (error instanceof ReqonError) {
+    console.error(error.format());
+  } else if (error instanceof Error) {
+    console.error(`Error: ${error.message}`);
+  } else {
+    console.error(`Error: ${String(error)}`);
+  }
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -134,11 +181,7 @@ Control Server:
   let auth: Record<string, unknown> | undefined;
   const authIndex = args.indexOf('--auth');
   if (authIndex !== -1 && args[authIndex + 1]) {
-    const authPath = resolve(args[authIndex + 1]);
-    const authContent = await readFile(authPath, 'utf-8');
-    const rawAuth = JSON.parse(authContent);
-    // Resolve env var references in the auth config
-    auth = loadCredentials(rawAuth);
+    auth = await loadAuthFile(args[authIndex + 1]);
   }
 
   let outputPath: string | undefined;
@@ -406,4 +449,21 @@ function formatTime(date: Date): string {
   return date.toISOString().replace('T', ' ').substring(0, 19);
 }
 
-main();
+// Only auto-run when invoked directly as the CLI entry point, so the module can
+// be imported in tests without executing main() against the test runner's argv.
+const isMain =
+  typeof process.argv[1] === 'string' && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMain) {
+  // A rejected promise anywhere (including outside main's try/catch) should
+  // surface as a clean message and a non-zero exit, never a raw stack trace.
+  process.on('unhandledRejection', (reason) => {
+    reportFatalError(reason);
+    process.exit(1);
+  });
+
+  main().catch((error) => {
+    reportFatalError(error);
+    process.exit(1);
+  });
+}

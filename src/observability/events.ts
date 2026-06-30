@@ -18,7 +18,12 @@ export interface ObservabilityEvent<T = unknown> {
   mission: string;
   /** ISO timestamp */
   timestamp: string;
-  /** Duration in milliseconds (for completed events) */
+  /**
+   * Duration in milliseconds of the operation this event reports, when the
+   * payload carries one. Not set by the emitter itself: a generic "time since
+   * the previous event of any type" value was misleading, so operation timing
+   * now lives in the typed payloads instead.
+   */
   duration?: number;
   /** Event-specific payload */
   payload: T;
@@ -367,26 +372,21 @@ export class ObservabilityEmitter implements EventEmitter {
   private handlers: Map<EventType, Set<EventHandler>> = new Map();
   private allHandlers: Set<EventHandler> = new Set();
   private startTime: number;
-  private lastEventTime: number;
 
   constructor(executionId: string, mission: string) {
     this.executionId = executionId;
     this.mission = mission;
     this.startTime = Date.now();
-    this.lastEventTime = this.startTime;
   }
 
   emit<T>(type: EventType, payload: T): void {
-    const now = Date.now();
     const event: ObservabilityEvent<T> = {
       type,
       executionId: this.executionId,
       mission: this.mission,
       timestamp: new Date().toISOString(),
-      duration: now - this.lastEventTime,
       payload,
     };
-    this.lastEventTime = now;
 
     // Notify specific handlers
     const typeHandlers = this.handlers.get(type);

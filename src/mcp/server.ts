@@ -27,7 +27,13 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { z } from 'zod';
-import { resolveWithinWorkingDir as confinePath, resolveDryRun } from './sandbox.js';
+import {
+  resolveWithinWorkingDir as confinePath,
+  resolveDryRun,
+  withTimeout,
+  isStoreTypeAllowed,
+  DEFAULT_EXECUTION_TIMEOUT_MS,
+} from './sandbox.js';
 import { parse, execute, fromPath } from '../index.js';
 import { createStore, type StoreAdapter, type StoreFilter } from '../stores/index.js';
 import type { ExecutorConfig, ExecutionResult } from '../interpreter/index.js';
@@ -45,12 +51,18 @@ interface ServerConfig {
    * missions run in dryRun (no real fetches/writes) unless explicitly enabled.
    */
   allowEffects?: boolean;
+  /**
+   * Wall-clock budget (ms) for a single mission execution. Guards against an
+   * untrusted mission looping or hanging forever and wedging the server.
+   */
+  executionTimeoutMs?: number;
 }
 
 const serverConfig: ServerConfig = {
   workingDirectory: process.cwd(),
   verbose: false,
   allowEffects: false,
+  executionTimeoutMs: DEFAULT_EXECUTION_TIMEOUT_MS,
 };
 
 /**
@@ -284,7 +296,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { source, verbose, dryRun } = executeArgsSchema.parse(args);
 
         const config = createExecutorConfig({ verbose, dryRun });
-        const result = await execute(source, config);
+        const result = await withTimeout(
+          execute(source, config),
+          serverConfig.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS
+        );
 
         return {
           content: [
@@ -301,7 +316,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const safePath = resolveWithinWorkingDir(path);
         const config = createExecutorConfig({ verbose, dryRun });
-        const result = await fromPath(safePath, config);
+        const result = await withTimeout(
+          fromPath(safePath, config),
+          serverConfig.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS
+        );
 
         return {
           content: [
@@ -420,6 +438,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               {
                 type: 'text',
                 text: `Store "${name}" already registered`,
+              },
+            ],
+          };
+        }
+
+        // A file-backed store writes to disk, which is an effect. Refuse to
+        // register one unless effects are explicitly enabled, so a sandboxed
+        // (dryRun) server can't be coaxed into persisting data.
+        if (!isStoreTypeAllowed(type, serverConfig.allowEffects ?? false)) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: `File-backed stores are disabled in sandboxed mode. Start the server with --allow-effects to register a "file" store, or use type "memory".`,
               },
             ],
           };
