@@ -14,6 +14,7 @@ This directory contains examples demonstrating Reqon's features for declarative 
 | [temporal-comparison](./temporal-comparison/) | E-commerce reconciliation | Multi-source, **parallel execution**, rate limiting |
 | [incremental-sync](./incremental-sync/) | Efficient delta syncing | **`since: lastSync`**, checkpoint management, soft deletes |
 | [webhook-payment](./webhook-payment/) | Async payment flows | **`wait` steps**, webhook filtering, event handling |
+| [durable-approval](./durable-approval/) | Resource-free long wait | **`pause` + `resumeOn: webhook`**, durable execution log, restart survival |
 | [scheduled-reports](./scheduled-reports/) | Automated reporting | **`schedule: cron`**, scheduling options, alerting |
 | [circuit-breaker](./circuit-breaker/) | Resilient API calls | **Circuit breaker**, fallback sources, health monitoring |
 | [database-sync](./database-sync/) | Multi-store operations | **SQL/NoSQL stores**, upsert, partial updates |

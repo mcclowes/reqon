@@ -88,6 +88,7 @@ import {
 import {
   type PauseManager,
   type PauseStore,
+  type PauseCheckpoint,
   FilePauseStore,
   LogBackedPauseStore,
   createPauseManager,
@@ -267,6 +268,8 @@ export class MissionExecutor {
   private appliedEffects: Set<string> = new Set();
   /** Backfill page progress per step id (from the log) — resumes pagination. */
   private pageProgress: Map<string, { page: number; cursor?: string; done: boolean }> = new Map();
+  /** The pause being resumed on this run — its step replays past, not into, a pause. */
+  private resumingPause?: { pauseId: string; checkpoint: PauseCheckpoint; payload?: unknown };
   private debugController?: DebugController;
   private traceRecorder?: TraceRecorder;
   private traceStore?: TraceStore;
@@ -455,13 +458,23 @@ export class MissionExecutor {
     await this.logEvent({ type: 'mission.started', mission: mission.name });
 
     // If the prior log ended paused, this run is resuming that pause. Record it
-    // so the log's folded status leaves 'paused' before replay continues.
+    // so the log's folded status leaves 'paused' before replay continues, and
+    // load the pause's checkpoint so the replayed pause step resumes past it
+    // (restoring captured state) rather than pausing again.
     if (resumedPauseId) {
       await this.logEvent({
         type: 'pause.resumed',
         pauseId: resumedPauseId,
         resumedBy: this.config.resumeFrom ? 'resume' : 'replay',
       });
+      const resumed = await this.pauseStore?.load(resumedPauseId);
+      this.resumingPause = resumed
+        ? {
+            pauseId: resumedPauseId,
+            checkpoint: resumed.checkpoint,
+            payload: resumed.webhookPayload,
+          }
+        : undefined;
     }
 
     // Initialize trace recorder if tracing is enabled
@@ -1574,6 +1587,24 @@ export class MissionExecutor {
   ): Promise<void> {
     if (!this.pauseManager) {
       throw new Error('Pause manager not configured');
+    }
+
+    // Resuming this very pause: don't pause again. Restore the captured
+    // checkpoint (variables + response, plus any webhook payload) and fall
+    // through so the steps after the pause run to completion.
+    const resuming = this.resumingPause;
+    if (
+      resuming &&
+      resuming.checkpoint.action === actionName &&
+      resuming.checkpoint.stepIndex === stepIndex + 1
+    ) {
+      this.resumingPause = undefined;
+      for (const [key, value] of Object.entries(resuming.checkpoint.variables ?? {})) {
+        ctx.variables.set(key, value);
+      }
+      ctx.response = resuming.payload ?? resuming.checkpoint.response;
+      this.log(`Resuming past pause ${resuming.pauseId}`);
+      return;
     }
 
     // Mark execution state as paused before creating pause

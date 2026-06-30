@@ -1,0 +1,32 @@
+// Durable long wait — human-in-the-loop approval.
+//
+// The mission pauses for up to 30 days waiting on an approval webhook, holding
+// *zero* compute while it waits. When the webhook arrives — even after the
+// process has been restarted or redeployed — the run resumes from the durable
+// execution log exactly where it left off and finishes.
+//
+// This is the resource-free long wait that Temporal needs a running cluster
+// for; in Reqon it is a declarative `pause`.
+
+mission Approval {
+  source Api {
+    auth: none,
+    base: "https://api.example.test"
+  }
+
+  store approvals: memory("approvals")
+
+  action AwaitApproval {
+    // Suspend until the /approved webhook fires, or 30 days elapse.
+    pause {
+      duration: "30d",
+      resumeOn: webhook "/approved"
+    }
+
+    // Runs only after the pause resumes — on whichever process is alive then.
+    let record = { id: "req-1", status: "approved" }
+    store record -> approvals { key: .id }
+  }
+
+  run AwaitApproval
+}

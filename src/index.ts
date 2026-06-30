@@ -63,9 +63,11 @@ export {
   foldLog,
   loadState,
   effectId,
+  reduceCheckpoints,
   type ExecutionEvent,
   type StoredEvent,
   type ExecutionLogStore,
+  type CheckpointRecord,
   type FoldedState,
 } from './execution-log/index.js';
 export {
@@ -88,6 +90,7 @@ export {
   EPOCH,
   FileSyncStore,
   MemorySyncStore,
+  LogBackedSyncStore,
   type SyncCheckpoint,
   type SyncStore,
 } from './sync/index.js';
@@ -204,11 +207,15 @@ export {
   MemoryTraceStore,
   TraceRecorder,
   TraceReplayer,
+  LogTraceView,
+  traceTimelineFromLog,
   createTraceRecorder,
   createTraceReplayer,
   createExecutionTrace,
   safeClone,
   truncateForTrace,
+  type LogTimelineEntry,
+  type LogTraceSummary,
   type TraceStore,
   type TraceSnapshot,
   type StoreSnapshot as TraceStoreSnapshot,
@@ -226,6 +233,7 @@ export {
 export {
   FilePauseStore,
   MemoryPauseStore,
+  LogBackedPauseStore,
   PauseManager,
   createPauseManager,
   parseDuration,
