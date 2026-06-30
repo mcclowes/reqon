@@ -36,6 +36,7 @@ export class SqliteExecutionLog implements ExecutionLogStore {
   private insertStmt?: SqliteStatement;
   private readStmt?: SqliteStatement;
   private checkpointStmt?: SqliteStatement;
+  private pauseStmt?: SqliteStatement;
 
   constructor(private path = '.reqon-data/execution-log.sqlite') {}
 
@@ -92,6 +93,10 @@ export class SqliteExecutionLog implements ExecutionLogStore {
       `SELECT execution_id, seq, at, data FROM events
        WHERE json_extract(data, '$.type') = 'checkpoint.advanced'`
     );
+    this.pauseStmt = db.prepare(
+      `SELECT execution_id, seq, at, data FROM events
+       WHERE json_extract(data, '$.type') IN ('pause.created', 'pause.resumed')`
+    );
 
     this.db = db;
     return db;
@@ -126,5 +131,13 @@ export class SqliteExecutionLog implements ExecutionLogStore {
       (r) => ({ ...(JSON.parse(r.data) as ExecutionEvent), seq: r.seq, at: r.at }) as StoredEvent
     );
     return reduceCheckpoints(events, mission);
+  }
+
+  async listPauses(): Promise<StoredEvent[]> {
+    await this.ensureDb();
+    const rows = this.pauseStmt!.all({}) as Array<{ seq: number; at: string; data: string }>;
+    return rows.map(
+      (r) => ({ ...(JSON.parse(r.data) as ExecutionEvent), seq: r.seq, at: r.at }) as StoredEvent
+    );
   }
 }

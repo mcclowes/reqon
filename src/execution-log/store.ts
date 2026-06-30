@@ -31,6 +31,17 @@ export interface ExecutionLogStore {
    * filtered by mission). The read model for log-backed incremental sync.
    */
   listCheckpoints(mission?: string): Promise<CheckpointRecord[]>;
+  /**
+   * All pause lifecycle events (pause.created / pause.resumed) across every
+   * execution in this store, in no guaranteed order. The raw input the
+   * log-backed pause store folds into pause state.
+   */
+  listPauses(): Promise<StoredEvent[]>;
+}
+
+/** True for the pause lifecycle events the pause read-model folds. */
+function isPauseEvent(event: StoredEvent): boolean {
+  return event.type === 'pause.created' || event.type === 'pause.resumed';
 }
 
 /**
@@ -94,6 +105,12 @@ export class MemoryExecutionLog implements ExecutionLogStore {
     for (const log of this.events.values()) all.push(...log);
     return reduceCheckpoints(all, mission);
   }
+
+  async listPauses(): Promise<StoredEvent[]> {
+    const pauses: StoredEvent[] = [];
+    for (const log of this.events.values()) pauses.push(...log.filter(isPauseEvent));
+    return pauses;
+  }
 }
 
 /**
@@ -137,11 +154,13 @@ export class FileExecutionLog implements ExecutionLogStore {
     }
 
     const stored = { ...event, seq, at: new Date().toISOString() } as StoredEvent;
-    await appendFile(
-      this.pathFor(event.executionId),
-      `${prefix}${JSON.stringify(stored)}\n`,
-      'utf-8'
-    );
+    // The log can carry resume state (e.g. a pause checkpoint's captured
+    // variables), so create files owner-only (0o600) — never world-readable.
+    // mode applies on creation; appends to an existing file keep its mode.
+    await appendFile(this.pathFor(event.executionId), `${prefix}${JSON.stringify(stored)}\n`, {
+      encoding: 'utf-8',
+      mode: 0o600,
+    });
     this.counts.set(event.executionId, seq + 1);
     return stored;
   }
@@ -151,6 +170,15 @@ export class FileExecutionLog implements ExecutionLogStore {
   }
 
   async listCheckpoints(mission?: string): Promise<CheckpointRecord[]> {
+    return reduceCheckpoints(await this.readAll(), mission);
+  }
+
+  async listPauses(): Promise<StoredEvent[]> {
+    return (await this.readAll()).filter(isPauseEvent);
+  }
+
+  /** Read and parse every execution's events in this directory. */
+  private async readAll(): Promise<StoredEvent[]> {
     let files: string[];
     try {
       files = await readdir(this.dir);
@@ -163,7 +191,7 @@ export class FileExecutionLog implements ExecutionLogStore {
       if (!file.endsWith('.jsonl')) continue;
       all.push(...this.parse(await readFile(join(this.dir, file), 'utf-8')));
     }
-    return reduceCheckpoints(all, mission);
+    return all;
   }
 
   private async readRaw(executionId: string): Promise<string> {

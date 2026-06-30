@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { rmSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { rmSync, mkdtempSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FileExecutionLog } from './store.js';
@@ -51,5 +51,14 @@ describe('FileExecutionLog durability', () => {
     const events = await log.read('e2');
     expect(events).toHaveLength(1); // torn line skipped, intact event survives
     expect(events[0].type).toBe('mission.started');
+  });
+
+  it('creates log files owner-only (0o600) — they can hold resume state', async () => {
+    const dir = freshDir();
+    const log = new FileExecutionLog(dir);
+    await log.append({ executionId: 'e3', type: 'mission.started', mission: 'M' });
+
+    const mode = statSync(join(dir, 'e3.jsonl')).mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 });
