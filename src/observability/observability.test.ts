@@ -53,7 +53,7 @@ describe('ObservabilityEmitter', () => {
     expect(handler).toHaveBeenCalledTimes(1); // Still 1, not called again
   });
 
-  it('should include timestamp and duration in events', () => {
+  it('should include a timestamp in events', () => {
     const handler = vi.fn();
     emitter.onAll(handler);
 
@@ -62,7 +62,18 @@ describe('ObservabilityEmitter', () => {
     const event = handler.mock.calls[0][0] as ObservabilityEvent;
     expect(event.timestamp).toBeDefined();
     expect(typeof event.timestamp).toBe('string');
-    expect(event.duration).toBeGreaterThanOrEqual(0);
+  });
+
+  it('does not stamp a misleading inter-event duration on emitted events', () => {
+    const handler = vi.fn();
+    emitter.onAll(handler);
+
+    emitter.emit('mission.start', {});
+    emitter.emit('stage.start', { stageIndex: 0, stageName: 'a' });
+
+    // The emitter no longer fabricates a "gap since previous event" duration.
+    const second = handler.mock.calls[1][0] as ObservabilityEvent;
+    expect(second.duration).toBeUndefined();
   });
 
   it('should handle errors in handlers gracefully', () => {
@@ -343,7 +354,7 @@ describe('OpenTelemetry', () => {
         executionId: 'exec-1',
         mission: 'test',
         timestamp: new Date().toISOString(),
-        payload: { statusCode: 200 },
+        payload: { source: 'api', method: 'GET', path: '/users', statusCode: 200 },
       });
 
       const spans = adapter.getSpans();
@@ -366,11 +377,100 @@ describe('Integration', () => {
     emitter.emit('mission.start', { stageCount: 1, isResume: false });
     emitter.emit('stage.start', { stageIndex: 0, stageName: 'fetch' });
     emitter.emit('fetch.start', { source: 'api', method: 'GET', path: '/users' });
-    emitter.emit('fetch.complete', { statusCode: 200, recordCount: 10 });
+    emitter.emit('fetch.complete', {
+      source: 'api',
+      method: 'GET',
+      path: '/users',
+      statusCode: 200,
+      recordCount: 10,
+    });
     emitter.emit('stage.complete', { stageIndex: 0, success: true });
     emitter.emit('mission.complete', { success: true });
 
     const spans = adapter.getSpans();
     expect(spans.length).toBeGreaterThan(0);
+  });
+});
+
+describe('crypto-backed IDs', () => {
+  it('generates 32-char trace IDs and 16-char span IDs as lowercase hex', () => {
+    const traceId = generateTraceId();
+    const spanId = generateSpanId();
+
+    expect(traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(spanId).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it('never emits an all-zero ID', () => {
+    for (let i = 0; i < 100; i++) {
+      expect(generateTraceId()).not.toMatch(/^0+$/);
+      expect(generateSpanId()).not.toMatch(/^0+$/);
+    }
+  });
+
+  it('generates unique IDs across calls', () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 1000; i++) {
+      ids.add(generateSpanId());
+    }
+    expect(ids.size).toBe(1000);
+  });
+});
+
+describe('overlapping fetch spans', () => {
+  it('ends both spans of two interleaved fetches with none leaked', () => {
+    const adapter = new OTelEventAdapter();
+
+    const fetchStart = (path: string) =>
+      adapter.processEvent({
+        type: 'fetch.start',
+        executionId: 'e',
+        mission: 'm',
+        timestamp: new Date().toISOString(),
+        payload: { source: 'api', method: 'GET', path },
+      });
+    const fetchComplete = (path: string, statusCode: number) =>
+      adapter.processEvent({
+        type: 'fetch.complete',
+        executionId: 'e',
+        mission: 'm',
+        timestamp: new Date().toISOString(),
+        payload: { source: 'api', method: 'GET', path, statusCode, recordCount: 0 },
+      });
+
+    // Two overlapping fetches to distinct endpoints: start A, start B, then
+    // complete both. With the old single-slot keying, one span would leak.
+    fetchStart('/a');
+    fetchStart('/b');
+    fetchComplete('/a', 200);
+    fetchComplete('/b', 201);
+
+    const spans = adapter.getSpans();
+    expect(spans).toHaveLength(2);
+    // Both spans ended (endTimeUnixNano set, not the '0' sentinel).
+    expect(spans.every((s) => s.endTimeUnixNano !== '0')).toBe(true);
+    const names = spans.map((s) => s.name).sort();
+    expect(names).toEqual(['fetch:GET /a', 'fetch:GET /b']);
+  });
+
+  it('handles concurrent fetches to the same endpoint (pagination)', () => {
+    const adapter = new OTelEventAdapter();
+    const ev = (type: string, extra: Record<string, unknown>) =>
+      adapter.processEvent({
+        type,
+        executionId: 'e',
+        mission: 'm',
+        timestamp: new Date().toISOString(),
+        payload: { source: 'api', method: 'GET', path: '/page', ...extra },
+      });
+
+    ev('fetch.start', {});
+    ev('fetch.start', {});
+    ev('fetch.complete', { statusCode: 200, recordCount: 0 });
+    ev('fetch.complete', { statusCode: 200, recordCount: 0 });
+
+    const spans = adapter.getSpans();
+    expect(spans).toHaveLength(2);
+    expect(spans.every((s) => s.endTimeUnixNano !== '0')).toBe(true);
   });
 });

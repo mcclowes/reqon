@@ -23,12 +23,37 @@ export interface OASSource {
 // Cache loaded specs to avoid re-parsing
 const specCache = new Map<string, OASSource>();
 
-export async function loadOAS(specPath: string, forceReload = false): Promise<OASSource> {
+export interface LoadOASOptions {
+  /** Bypass the spec cache and re-parse. */
+  forceReload?: boolean;
+  /**
+   * Allow `$ref` pointers to external documents, including remote http(s)
+   * URLs. Off by default: an OAS spec is often untrusted input, and resolving
+   * external $refs lets the parser fetch arbitrary hosts/files — an SSRF and
+   * resource-exhaustion sink. When false, only internal `#/...` references are
+   * resolved; external ones are not fetched.
+   */
+  allowExternalRefs?: boolean;
+}
+
+export async function loadOAS(
+  specPath: string,
+  optionsOrForceReload: LoadOASOptions | boolean = {}
+): Promise<OASSource> {
+  // Back-compat: a bare boolean used to mean `forceReload`.
+  const options: LoadOASOptions =
+    typeof optionsOrForceReload === 'boolean'
+      ? { forceReload: optionsOrForceReload }
+      : optionsOrForceReload;
+  const { forceReload = false, allowExternalRefs = false } = options;
+
   if (!forceReload && specCache.has(specPath)) {
     return specCache.get(specPath)!;
   }
 
-  const api = (await SwaggerParser.dereference(specPath)) as OpenAPISpec;
+  // Default-deny external reference resolution to prevent SSRF / remote fetches.
+  const parserOptions = allowExternalRefs ? {} : { resolve: { external: false } };
+  const api = (await SwaggerParser.dereference(specPath, parserOptions)) as OpenAPISpec;
 
   const baseUrl = extractBaseUrl(api);
   const operations = extractOperations(api);
@@ -47,9 +72,27 @@ export async function loadOAS(specPath: string, forceReload = false): Promise<OA
 
 function extractBaseUrl(spec: OpenAPISpec): string {
   if (spec.servers && spec.servers.length > 0) {
-    return spec.servers[0].url;
+    return resolveServerUrl(spec.servers[0]);
   }
   return '';
+}
+
+/**
+ * Resolve `{variable}` templating in a server URL using each variable's
+ * declared default. A template variable with no default is rejected rather
+ * than left raw (a raw `{var}` would otherwise be sent as part of request
+ * URLs).
+ */
+function resolveServerUrl(server: OpenAPIV3.ServerObject): string {
+  return server.url.replace(/\{([^{}]+)\}/g, (_match, name: string) => {
+    const variable = server.variables?.[name];
+    if (variable && variable.default !== undefined && variable.default !== '') {
+      return String(variable.default);
+    }
+    throw new Error(
+      `OAS server URL variable '{${name}}' has no default value (in "${server.url}")`
+    );
+  });
 }
 
 function extractOperations(spec: OpenAPISpec): Map<string, OASOperation> {
