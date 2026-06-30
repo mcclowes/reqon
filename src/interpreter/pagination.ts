@@ -280,6 +280,12 @@ export class CursorPaginationStrategy implements PaginationStrategy {
  * Create the appropriate pagination strategy based on config
  */
 export function createPaginationStrategy(config: PaginationConfig): PaginationStrategy {
+  // A non-positive page size makes every page request the same offset and makes
+  // the `items.length >= pageSize` termination test always true, so pagination
+  // re-fetches page one until it hits the page cap. Reject it up front.
+  if (!Number.isFinite(config.pageSize) || config.pageSize < 1) {
+    throw new Error(`Pagination page size must be a positive integer, got ${config.pageSize}`);
+  }
   switch (config.type) {
     case 'offset':
       return new OffsetPaginationStrategy(config);

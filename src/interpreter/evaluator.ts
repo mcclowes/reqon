@@ -251,8 +251,19 @@ export function evaluate(
           return Math.ceil(toNumber(args[0], 'ceil'));
         case 'now':
           return new Date().toISOString();
-        case 'env':
-          return process.env[args[0] as string] ?? '';
+        case 'env': {
+          // The variable name must be a static string literal. A dynamic argument
+          // (e.g. env(response.field)) would let fetched/untrusted data choose
+          // which environment variable is read, exfiltrating secrets.
+          const nameExpr = expr.arguments[0];
+          if (!nameExpr || nameExpr.type !== 'Literal') {
+            throw new EvaluatorError(
+              `env() requires a string-literal variable name, not a dynamic expression`,
+              { expression: 'env' }
+            );
+          }
+          return process.env[String(args[0])] ?? '';
+        }
         default:
           throw new UnsupportedOperationError(`function: ${expr.callee}`, 'call expression');
       }
@@ -332,7 +343,11 @@ export function interpolatePath(path: string, ctx: ExecutionContext, current?: u
       }
     }
 
-    return String(value ?? '');
+    // URL-encode each interpolated value so a path param can't inject path
+    // segments, query strings, or fragments into the request target. Path params
+    // are single segments, so encoding (which escapes '/', '?', '#', etc.) is the
+    // correct treatment.
+    return encodeURIComponent(String(value ?? ''));
   });
 }
 
@@ -364,12 +379,24 @@ function toNumber(value: unknown, operator: string): number {
   });
 }
 
+/** Coerce for comparison, yielding NaN (not a throw) for nullish/non-numeric. */
+function toComparable(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'string') return Number(value);
+  return NaN;
+}
+
 /**
- * Safely perform arithmetic comparison, with proper type coercion.
+ * Arithmetic comparison for `where`/`match`/`validate` guards. A missing or
+ * non-numeric operand makes the comparison false (the record is excluded) rather
+ * than throwing — real API data routinely omits fields, and one missing field
+ * shouldn't abort the whole stage.
  */
 function compareNumbers(left: unknown, right: unknown, operator: string): boolean {
-  const leftNum = toNumber(left, operator);
-  const rightNum = toNumber(right, operator);
+  const leftNum = toComparable(left);
+  const rightNum = toComparable(right);
+  if (Number.isNaN(leftNum) || Number.isNaN(rightNum)) return false;
 
   switch (operator) {
     case '<':

@@ -1,5 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { HttpClient, BearerAuthProvider, OAuth2AuthProvider } from './http.js';
+import { HttpClient, BearerAuthProvider, OAuth2AuthProvider, parseRetryAfterMs } from './http.js';
+
+describe('parseRetryAfterMs', () => {
+  const MAX = 60_000;
+  it('parses delta-seconds and clamps to max', () => {
+    expect(parseRetryAfterMs('30', MAX)).toBe(30_000);
+    expect(parseRetryAfterMs('999999', MAX)).toBe(MAX); // clamped, no multi-hour sleep
+  });
+  it('returns undefined (not NaN) for an HTTP-date in the past and unparseable input', () => {
+    expect(parseRetryAfterMs('Wed, 21 Oct 2015 07:28:00 GMT', MAX)).toBe(0); // past date → 0
+    expect(parseRetryAfterMs('not-a-number', MAX)).toBeUndefined();
+    expect(parseRetryAfterMs(null, MAX)).toBeUndefined();
+  });
+});
 
 describe('HttpClient', () => {
   let originalFetch: typeof globalThis.fetch;

@@ -6,6 +6,31 @@ import { sleep } from '../utils/async.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
 
+/**
+ * Parse a `Retry-After` header into a delay in ms, clamped to `maxDelayMs`.
+ * The header may be delta-seconds (`120`) or an HTTP-date; a date in the past or
+ * an unparseable value yields 0 and `undefined` respectively. Clamping stops a
+ * hostile/broken server from pinning the client for hours, and the date branch
+ * stops `parseInt` from turning a date into `NaN` → `sleep(NaN)` → a tight loop.
+ */
+export function parseRetryAfterMs(
+  value: string | null | undefined,
+  maxDelayMs: number
+): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const seconds = Number(trimmed);
+  let ms: number;
+  if (trimmed !== '' && Number.isFinite(seconds)) {
+    ms = seconds * 1000;
+  } else {
+    const when = Date.parse(trimmed);
+    if (Number.isNaN(when)) return undefined;
+    ms = when - Date.now();
+  }
+  return Math.min(Math.max(ms, 0), maxDelayMs);
+}
+
 /** Maximum buffered response body size (10 MiB) before the request is rejected. */
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
@@ -126,21 +151,22 @@ export class HttpClient {
 
           // Add retry-after from 429 responses
           if (response.status === 429) {
-            const retryAfter = response.headers.get('Retry-After');
-            if (retryAfter) {
-              rateLimitInfo.retryAfter = parseInt(retryAfter, 10);
+            const ms = parseRetryAfterMs(response.headers.get('Retry-After'), maxDelay);
+            if (ms !== undefined) {
+              rateLimitInfo.retryAfter = Math.ceil(ms / 1000);
             }
           }
 
           this.config.rateLimiter.recordResponse(this.config.sourceName, rateLimitInfo, req.path);
         }
 
-        // Handle rate limiting
-        if (response.status === 429) {
-          const retryAfter = response.headers.get('Retry-After');
-          const delay = retryAfter
-            ? parseInt(retryAfter, 10) * 1000
-            : this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+        // Handle rate limiting: retry only while attempts remain. A 429 on the
+        // final attempt falls through to the >=400 handler below, which throws a
+        // FetchError carrying status 429 — not the generic "all retries" error.
+        if (response.status === 429 && retriable && attempt < maxAttempts) {
+          const delay =
+            parseRetryAfterMs(response.headers.get('Retry-After'), maxDelay) ??
+            this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
           await sleep(delay);
           continue;
         }
