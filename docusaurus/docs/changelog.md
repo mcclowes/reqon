@@ -16,6 +16,30 @@ _No changes yet._
 
 ---
 
+## 0.4.0
+
+_Released 2026-06-30_
+
+### Added
+
+- **Append-only execution event log** — the durable foundation for execution state. The executor emits a structured event log, and resuming from it skips already-applied store effects.
+- **Durable execution-log backends** — transactional `SqliteExecutionLog` and multi-node `PostgresExecutionLog`, alongside the file store.
+- **Pause, incremental sync, and trace as views over the execution log** — unified on the single source of truth, including logged `checkpoint.advanced` and pause lifecycle events.
+- **Crash-injection proof suite** with self-healing of a torn execution-log tail, plus `DURABILITY.md` documenting the tested guarantees.
+- **Resumable backfill pagination** on the event log.
+- **Stable `Idempotency-Key`** for mutating fetches in durable mode.
+
+### Fixed
+
+- **Security hardening** — redact secrets in logs, errors, and durable trace files; lock down token/pause files; confine store paths to the base directory (path traversal); validate and escape PostgREST filters and guard full-table clears; sandbox the MCP server (dryRun default, path confinement, arg validation).
+- **Resilience and correctness** — per-request HTTP timeout; gate retries on idempotency; treat 4xx as errors and cap empty/non-JSON responses; single-flight OAuth2 refresh; bound pagination memory and stop dropping/looping pages; require a real key for store dedup with deep-merge; fix `setTimeout` overflow on long timers; POSIX cron OR-fields evaluated in timezone with missed-tick catch-up; resume paused executions exactly once; isolate per-action state in parallel stages; atomic, crash-consistent file and trace writes.
+
+### Changed
+
+- CI drops EOL Node 18; dependabot updates grouped monthly with minor/patch auto-merge.
+
+---
+
 ## 0.3.0
 
 _Released 2025-01-08_
