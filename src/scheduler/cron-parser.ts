@@ -51,7 +51,7 @@ function parseField(field: string, min: number, max: number, allowSundaySeven = 
   const toInt = (token: string, label: string): number => {
     const n = parseInt(token, 10);
     if (!Number.isInteger(n) || !/^[+-]?\d+$/.test(token.trim())) {
-      throw new Error(`Invalid cron field value '${token}' in '${field}': expected an integer`);
+      throw new Error(`Invalid cron ${label} '${token}' in '${field}': expected an integer`);
     }
     return n;
   };

@@ -2,6 +2,8 @@
 
 _A holistic review of the Reqon DSL runtime (v0.3.0, 45k LOC, 122 source files). Reviewed by a skeptical onboarding engineer. Findings are backed by file:line references; the most consequential ones were reproduced or confirmed at the source._
 
+> **Update — fixes applied.** Most of the critical and high findings below have since been fixed on `fix/code-review-findings`, each with a regression test. See [the disposition table](#fixes-applied) at the end for what landed and what was deliberately deferred. The suite went from 1,155 to 1,226 passing tests, and `npm run typecheck` is green again.
+
 ---
 
 ## Verdict up front
@@ -337,3 +339,48 @@ It's not all bad, and it's worth knowing what to protect:
 6. **H2 / H3 — `encodeURIComponent` interpolated paths** and disable external `$ref` resolution plus bound regex input in the OAS layer.
 
 The bones are good. The problem is a gap between what the code claims and what it does, and a test suite that confirms the claims instead of the behavior. Close that gap and this becomes a solid system.
+
+---
+
+## Fixes applied
+
+What landed on `fix/code-review-findings`, with a regression test for each. Numbering matches the C/H/M sections above.
+
+### Fixed
+
+| # | Finding | Fix |
+|---|---------|-----|
+| C1 | Backfill drops all but the first page | Store-effect identity now hashes the payload, so each page is a distinct effect. Regression test asserts on **store contents**, not log events. |
+| C3 | Pause re-resume infinite loop | Executor folds `resumedPauseId` out of the log and replays past an already-resumed pause instead of creating a new one. |
+| C4 | `*/0` cron hang | Cron step validated as an integer `>= 1`; `*/0` and `*/x` throw at parse time. |
+| C5 | One bad cron starves the scheduler | Each job's check is wrapped in try/catch; missions dispatched without `await` (also fixes H9 head-of-line blocking); impossible day/month combos fail fast. |
+| C6 | `response.page` won't parse | Single `consumeName()` accepts keyword tokens in name/property position; fixes property access, map field names, and `is <type>`. |
+| H1 | Red typecheck on `main` | Test doubles realigned to the `ExecutionLogStore` interface; `recordSync` signature fixed. |
+| H2 | Path-param injection | Interpolated path values are `encodeURIComponent`-escaped. |
+| H7 | Rate limiter never evicts | Evicts by `lastRequestAt` staleness regardless of reset header. |
+| H8 | Circuit-breaker half-open stampede + leak | Single in-flight probe in half-open; read paths no longer create entries; `evictStale` added; `getAllStatuses` no longer corrupts URL keys. |
+| H11 | Trace memory + OTel span leaks | Streamed snapshots bounded to a recent window; OTel fetch spans keyed per source+path; stage/step span entries deleted on end. |
+| H10 | CLI stack-trace crashes | `main().catch()` + `unhandledRejection` guard; auth-file errors become clean messages. |
+| H3 | OAS SSRF + ReDoS | External `$ref` resolution off by default; pattern input length-bounded and regexes cached. |
+| M6 | Non-constant-time auth + off-loopback warn | `crypto.timingSafeEqual`; control server hard-refuses to bind a non-loopback host with no token. |
+| M8 | OAuth refresh swallows errors | Non-2xx (and 2xx-without-token) refreshes throw instead of setting `Bearer undefined`. |
+| M9 | Cron compat | DOW `7` = Sunday, `NaN` rejected, reversed ranges rejected, missed `once` ticks still fire. |
+| M10 | Comparisons throw on missing fields | `<`/`>`/`<=`/`>=` exclude missing/non-numeric operands instead of aborting the stage. |
+| M11 | `env()` data-driven exfil | `env()` requires a string-literal name. |
+| M13 | `pageSize <= 0` infinite re-fetch | Rejected at the strategy factory. |
+| M14 | Retry-After / refresh handling | Parses delta-seconds or HTTP-date, clamps to `maxDelay`; 429 on the final attempt surfaces a real `FetchError`. |
+| M15 | OAS mock recursion / server templating | `allOf`/`oneOf`/`anyOf` recurse with a depth bound; `{variable}` server URLs resolved. |
+| M16 | Wrong metrics + weak IDs | Fabricated per-event `duration` removed; trace/span IDs use `crypto.randomBytes`. |
+| M7 | MCP untrusted-mission DoS | Execution timeout around untrusted missions; file-store registration gated behind `allowEffects`. |
+| L | Misc | Unset required `${VAR}` now throws; scheduler state written atomically. |
+
+### Deliberately deferred (with reasons)
+
+These need a dedicated change with its own design and integration test; a rushed patch would have made them worse.
+
+- **C2 — page-completed-before-persist crash window.** A correct fix defers the resume-cursor advance until after the downstream store step, which restructures how backfill pagination and the store step interact. Documented honestly in the `page.completed` type; the cheap docstring lie is gone.
+- **C3 (the dead wiring half).** The corruption is fixed, but `handleWebhook`/`startMonitoring` still need an orchestration layer to actually re-invoke a paused mission. That's a feature, not a patch, and needs an end-to-end test that delivers a real webhook over HTTP.
+- **H4 — non-determinism vs exactly-once.** Detecting `now()`/`anyOf` in durable contexts generally is non-trivial; left documented.
+- **H5/H6 — replay determinism claim, file-log fsync.** Event-sourced replay-of-outputs and power-loss durability are design-level changes to the log format.
+- **M1/M2/M3 — redaction and pause checkpoint typing.** Tightening the redaction denylist risks under-redacting real secrets (over-redaction is the safer failure), and pause checkpoints can't both redact a secret and restore it on resume; both are inherent tradeoffs worth a deliberate decision, not a drive-by edit.
+- **`basic`/`api_key` providers.** Lives in a separate credential path; needs the real credential schema to implement correctly.
