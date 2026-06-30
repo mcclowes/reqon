@@ -4,3 +4,5 @@ export { generateCheckpointKey, formatSinceDate, parseSinceDate, EPOCH } from '.
 
 export type { SyncStore } from './store.js';
 export { FileSyncStore, MemorySyncStore } from './store.js';
+
+export { LogBackedSyncStore } from './log-store.js';

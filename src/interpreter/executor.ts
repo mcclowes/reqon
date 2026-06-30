@@ -50,7 +50,7 @@ import {
   type ExecutionStore,
   FileExecutionStore,
 } from '../execution/index.js';
-import { type SyncStore, FileSyncStore } from '../sync/index.js';
+import { type SyncStore, FileSyncStore, LogBackedSyncStore } from '../sync/index.js';
 import { FetchHandler } from './fetch-handler.js';
 import {
   ForHandler,
@@ -663,10 +663,14 @@ export class MissionExecutor {
     this.log(`Executing mission: ${mission.name}`);
     this.missionName = mission.name;
 
-    // Initialize sync store
+    // Initialize sync store. In durable mode the execution log is the single
+    // source of truth, so sync checkpoints are read back as a view over the log
+    // rather than from a separate sync file.
     this.syncStore =
       this.config.syncStore ??
-      new FileSyncStore(mission.name, `${this.config.dataDir ?? '.reqon-data'}/sync`);
+      (this.executionLog
+        ? new LogBackedSyncStore(this.executionLog, mission.name)
+        : new FileSyncStore(mission.name, `${this.config.dataDir ?? '.reqon-data'}/sync`));
 
     // Initialize sources using SourceManager
     await this.sourceManager.initializeSources(mission.sources, this.ctx);
@@ -1313,6 +1317,8 @@ export class MissionExecutor {
             type: 'checkpoint.advanced',
             key,
             syncedAt: syncedAt.toISOString(),
+            recordCount: Array.isArray(data) ? data.length : undefined,
+            mission: this.missionName,
           });
         }
       });

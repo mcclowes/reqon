@@ -15,7 +15,8 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { ExecutionEvent, StoredEvent } from './events.js';
-import type { ExecutionLogStore } from './store.js';
+import type { CheckpointRecord, ExecutionLogStore } from './store.js';
+import { reduceCheckpoints } from './store.js';
 
 /** The slice of the better-sqlite3 API this adapter uses. */
 interface SqliteStatement {
@@ -34,6 +35,7 @@ export class SqliteExecutionLog implements ExecutionLogStore {
   private db?: SqliteDatabase;
   private insertStmt?: SqliteStatement;
   private readStmt?: SqliteStatement;
+  private checkpointStmt?: SqliteStatement;
 
   constructor(private path = '.reqon-data/execution-log.sqlite') {}
 
@@ -86,6 +88,10 @@ export class SqliteExecutionLog implements ExecutionLogStore {
     this.readStmt = db.prepare(
       `SELECT seq, at, data FROM events WHERE execution_id = @id ORDER BY seq ASC`
     );
+    this.checkpointStmt = db.prepare(
+      `SELECT execution_id, seq, at, data FROM events
+       WHERE json_extract(data, '$.type') = 'checkpoint.advanced'`
+    );
 
     this.db = db;
     return db;
@@ -111,5 +117,14 @@ export class SqliteExecutionLog implements ExecutionLogStore {
       data: string;
     }>;
     return rows.map((r) => ({ ...(JSON.parse(r.data) as ExecutionEvent), seq: r.seq, at: r.at }));
+  }
+
+  async listCheckpoints(mission?: string): Promise<CheckpointRecord[]> {
+    await this.ensureDb();
+    const rows = this.checkpointStmt!.all({}) as Array<{ seq: number; at: string; data: string }>;
+    const events = rows.map(
+      (r) => ({ ...(JSON.parse(r.data) as ExecutionEvent), seq: r.seq, at: r.at }) as StoredEvent
+    );
+    return reduceCheckpoints(events, mission);
   }
 }

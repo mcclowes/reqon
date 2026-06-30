@@ -12,7 +12,8 @@
  * distinct, contiguous sequence numbers.
  */
 import type { ExecutionEvent, StoredEvent } from './events.js';
-import type { ExecutionLogStore } from './store.js';
+import type { CheckpointRecord, ExecutionLogStore } from './store.js';
+import { reduceCheckpoints } from './store.js';
 
 /** The slice of the `pg` API this adapter uses. */
 interface PgQueryResult<R> {
@@ -127,6 +128,15 @@ export class PostgresExecutionLog implements ExecutionLogStore {
     );
     // jsonb comes back already parsed; overlay the assigned seq + recorded time.
     return res.rows.map((r) => ({ ...r.data, seq: r.seq, at: r.at }));
+  }
+
+  async listCheckpoints(mission?: string): Promise<CheckpointRecord[]> {
+    const pool = await this.ensure();
+    const res = await pool.query<{ seq: number; at: string; data: ExecutionEvent }>(
+      `SELECT seq, at, data FROM ${this.table} WHERE data->>'type' = 'checkpoint.advanced'`
+    );
+    const events = res.rows.map((r) => ({ ...r.data, seq: r.seq, at: r.at }) as StoredEvent);
+    return reduceCheckpoints(events, mission);
   }
 
   /** Drop all rows. Intended for test setup, not production use. */

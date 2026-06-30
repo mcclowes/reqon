@@ -61,6 +61,12 @@ export interface CheckpointAdvancedEvent extends BaseEvent {
   type: 'checkpoint.advanced';
   key: string;
   syncedAt: string;
+  /** Records fetched in the sync that advanced this checkpoint. */
+  recordCount?: number;
+  /** Opaque pagination cursor to resume from (cursor-based incremental sync). */
+  cursor?: string;
+  /** Mission that advanced the checkpoint (lets a shared log filter by mission). */
+  mission?: string;
 }
 
 export interface PauseCreatedEvent extends BaseEvent {
