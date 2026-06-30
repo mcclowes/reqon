@@ -340,6 +340,14 @@ describe('Pagination Strategies', () => {
   });
 
   describe('createPaginationStrategy', () => {
+    it('rejects a non-positive page size instead of looping forever', () => {
+      for (const pageSize of [0, -5, NaN]) {
+        expect(() =>
+          createPaginationStrategy({ type: 'offset', param: 'offset', pageSize })
+        ).toThrow(/page size/i);
+      }
+    });
+
     it('creates OffsetPaginationStrategy for offset type', () => {
       const config: PaginationConfig = {
         type: 'offset',
