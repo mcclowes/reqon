@@ -195,9 +195,11 @@ export class SourceParser extends ReqonExpressionParser {
           );
           break;
         case 'failureRate':
-          config.failureRate = parseInt(
-            this.consume(TokenType.NUMBER, 'Expected number').value,
-            10
+          // A proportion, not a count: parseInt would floor 0.25 to 0, which
+          // the breaker reads as "rate mode disabled" and silently falls back
+          // to the absolute threshold this setting exists to replace.
+          config.failureRate = parseFloat(
+            this.consume(TokenType.NUMBER, 'Expected number').value
           );
           break;
         case 'minimumRequests':

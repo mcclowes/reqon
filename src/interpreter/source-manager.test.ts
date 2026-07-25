@@ -70,3 +70,32 @@ describe('SourceManager proxy wiring', () => {
     ).rejects.toThrow(/API.*proxy.*\[1\].*empty/i);
   });
 });
+
+describe('SourceManager circuit breaker logging', () => {
+  const logFor = async (config: string): Promise<string> => {
+    const lines: string[] = [];
+    const manager = new SourceManager(
+      { log: (message) => lines.push(message) },
+      { rateLimiter: new AdaptiveRateLimiter(), circuitBreaker: new CircuitBreaker() }
+    );
+    await manager.initializeSource(sourceFrom(config), createContext());
+    return lines.find((line) => line.startsWith('Circuit breaker config')) ?? '';
+  };
+
+  it('reports rate mode rather than an absolute threshold it was never given', async () => {
+    const line = await logFor(
+      `circuitBreaker: { failureRate: 0.25, minimumRequests: 50, resetTimeout: 120 }`
+    );
+
+    expect(line).toContain('failureRate=0.25');
+    expect(line).toContain('minimumRequests=50');
+    expect(line).not.toContain('failureThreshold');
+  });
+
+  it('still reports an absolute threshold when that is what was configured', async () => {
+    const line = await logFor(`circuitBreaker: { failureThreshold: 5, resetTimeout: 120 }`);
+
+    expect(line).toContain('failureThreshold=5');
+    expect(line).not.toContain('failureRate');
+  });
+});
