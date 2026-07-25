@@ -593,15 +593,15 @@ describe('Scheduler', () => {
         stores: new Map(),
       };
 
-      const spy = vi
-        .spyOn(MissionExecutor.prototype, 'execute')
-        .mockImplementation(async function (program: ReqonProgram): Promise<ExecutionResult> {
-          const name = (program.statements[0] as MissionDefinition).name;
-          if (name === 'slowMission') {
-            await slowGate; // hangs until released
-          }
-          return result;
-        });
+      const spy = vi.spyOn(MissionExecutor.prototype, 'execute').mockImplementation(async function (
+        program: ReqonProgram
+      ): Promise<ExecutionResult> {
+        const name = (program.statements[0] as MissionDefinition).name;
+        if (name === 'slowMission') {
+          await slowGate; // hangs until released
+        }
+        return result;
+      });
 
       try {
         const slow = createMission('slowMission', {

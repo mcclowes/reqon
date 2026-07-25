@@ -55,6 +55,14 @@ export class ForHandler implements StepHandler<ForStep> {
     let processedCount = 0;
     let failedCount = 0;
 
+    // A debugger needs deterministic, one-at-a-time stepping, so it wins over
+    // any declared concurrency.
+    const concurrency = this.deps.debugController ? 1 : (step.concurrency ?? 1);
+    if (concurrency > 1) {
+      await this.executeConcurrently(step, filtered, concurrency, originalCount);
+      return;
+    }
+
     // Execute steps for each item
     for (let i = 0; i < filtered.length; i++) {
       const item = filtered[i];
@@ -152,8 +160,85 @@ export class ForHandler implements StepHandler<ForStep> {
     return collection;
   }
 
-  private async executeForItem(step: ForStep, item: unknown): Promise<void> {
+  /**
+   * Run iterations with a bounded number in flight.
+   *
+   * Failure is fail-fast on the queue: the first error stops workers pulling new
+   * items, iterations already in flight are allowed to finish, and the first
+   * error is then rethrown. That keeps the sequential path's "stop on error"
+   * promise without abandoning half-done work mid-write.
+   */
+  private async executeConcurrently(
+    step: ForStep,
+    items: unknown[],
+    concurrency: number,
+    originalCount: number
+  ): Promise<void> {
+    let next = 0;
+    let processedCount = 0;
+    let firstError: unknown;
+
+    const worker = async (): Promise<void> => {
+      for (let i = next++; i < items.length; i = next++) {
+        if (firstError !== undefined) return;
+
+        this.deps.emit?.('loop.iteration', {
+          variable: step.variable,
+          itemIndex: i,
+          totalItems: items.length,
+        });
+
+        try {
+          await this.executeForItem(step, items[i], `[${i}]`);
+          processedCount++;
+        } catch (error) {
+          firstError ??= error;
+          return;
+        }
+
+        // Heartbeat on completions rather than a loop counter: with workers
+        // interleaving, completions are the only monotonic measure of progress.
+        if (processedCount % LOOP_HEARTBEAT_INTERVAL === 0) {
+          await this.deps.checkPause?.();
+          this.deps.emit?.('loop.heartbeat', {
+            variable: step.variable,
+            current: processedCount,
+            total: items.length,
+            processedCount,
+          });
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+
+    this.deps.emit?.('loop.complete', {
+      variable: step.variable,
+      totalItems: items.length,
+      itemsProcessed: processedCount,
+      itemsSkipped: originalCount - items.length,
+      itemsFailed: firstError === undefined ? 0 : 1,
+    });
+
+    if (firstError !== undefined) throw firstError;
+  }
+
+  /**
+   * @param idPrefix - set for concurrent iterations, giving the item its own
+   * step-index namespace so interleaving can't scramble step ids.
+   */
+  private async executeForItem(step: ForStep, item: unknown, idPrefix?: string): Promise<void> {
     const childCtx = childContext(this.deps.ctx);
+    if (idPrefix !== undefined) {
+      const parent = this.deps.ctx.actionScope;
+      childCtx.actionScope = {
+        stepIndex: 0,
+        attempt: parent?.attempt ?? 0,
+        // Shared by reference: checkpoints belong to the action, not the item.
+        pendingCheckpoints: parent?.pendingCheckpoints ?? [],
+        idPrefix: `${parent?.idPrefix ?? ''}${idPrefix}`,
+      };
+    }
     setVariable(childCtx, step.variable, item);
 
     try {

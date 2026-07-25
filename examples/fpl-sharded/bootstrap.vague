@@ -1,0 +1,45 @@
+// FPL bulk reference data - the cheap path.
+//
+// Before reaching for proxies and a worker fleet, check whether you need them.
+// Every player, team, and gameweek in the game comes back in ONE request. Most
+// FPL projects need this file and nothing else.
+
+mission FplBootstrap {
+
+  source FPL {
+    auth: none,
+    base: "https://fantasy.premierleague.com/api",
+    headers: {
+      "User-Agent": "reqon-fpl-example"
+    },
+    rateLimit: {
+      maxWait: 120,
+      fallbackRpm: 60
+    }
+  }
+
+  store players: file("fpl_players")
+  store teams: file("fpl_teams")
+  store gameweeks: file("fpl_gameweeks")
+
+  action FetchBootstrap {
+    get "/bootstrap-static/"
+
+    store response.elements -> players {
+      key: .id,
+      upsert: true
+    }
+
+    store response.teams -> teams {
+      key: .id,
+      upsert: true
+    }
+
+    store response.events -> gameweeks {
+      key: .id,
+      upsert: true
+    }
+  }
+
+  run FetchBootstrap
+}

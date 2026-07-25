@@ -114,6 +114,24 @@ source Petstore from "./petstore-openapi.yaml" {
 }
 ```
 
+#### Egress proxies
+
+A source can route its requests through a proxy, or rotate round-robin across a
+pool. Rate limit and circuit breaker state are keyed per proxy, so each egress
+IP gets its own budget and one failing proxy opens only its own circuit.
+
+```vague
+source API {
+  auth: none,
+  base: "https://api.example.com",
+  proxy: [env("PROXY_A"), env("PROXY_B")]
+}
+```
+
+Needs the optional peer dependency `undici`. See
+[examples/fpl-sharded](./examples/fpl-sharded/) for the full sharded-fetch
+pattern.
+
 ### Stores
 
 ```vague
@@ -158,6 +176,21 @@ for item in collection where .status == "pending" {
   // nested steps
 }
 ```
+
+Loops are sequential by default. `concurrency N` bounds how many iterations run
+at once, which is what lets one worker saturate a proxy pool or a generous rate
+limit:
+
+```vague
+for id in ids concurrency 8 {
+  get "/entry/{id.id}"
+  store response -> entries { key: .id, upsert: true }
+}
+```
+
+Iterations get their own scope, so `response` and the loop variable stay
+isolated. Stores are shared, so concurrent writes to the same key are
+last-writer-wins.
 
 ### Mapping
 

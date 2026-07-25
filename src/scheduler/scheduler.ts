@@ -62,9 +62,7 @@ export class Scheduler {
     try {
       nextRun = getNextRunTime(mission.schedule);
     } catch (error) {
-      this.log(
-        `Mission '${mission.name}' has an unschedulable cron: ${(error as Error).message}`
-      );
+      this.log(`Mission '${mission.name}' has an unschedulable cron: ${(error as Error).message}`);
     }
 
     this.state.jobs[mission.name] = {
@@ -276,11 +274,12 @@ export class Scheduler {
       // Calculate next run time; never let an unschedulable cron throw out of
       // the finally block and mask the run's real outcome.
       try {
-        job.nextRun =
-          getNextRunTime(scheduledMission.mission.schedule!, new Date()) ?? undefined;
+        job.nextRun = getNextRunTime(scheduledMission.mission.schedule!, new Date()) ?? undefined;
       } catch (error) {
         job.nextRun = undefined;
-        this.log(`Could not compute next run for '${job.missionName}': ${(error as Error).message}`);
+        this.log(
+          `Could not compute next run for '${job.missionName}': ${(error as Error).message}`
+        );
       }
 
       await this.saveState();

@@ -37,6 +37,7 @@ export class SourceParser extends ReqonExpressionParser {
     let validateResponses: boolean | undefined;
     let rateLimit: RateLimitSourceConfig | undefined;
     let circuitBreaker: CircuitBreakerSourceConfig | undefined;
+    let proxy: Expression[] | undefined;
     const headers: Record<string, Expression> = {};
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
@@ -65,6 +66,8 @@ export class SourceParser extends ReqonExpressionParser {
         rateLimit = this.parseRateLimitConfig();
       } else if (key === 'circuitBreaker') {
         circuitBreaker = this.parseCircuitBreakerConfig();
+      } else if (key === 'proxy') {
+        proxy = this.parseProxyConfig();
       }
 
       this.match(TokenType.COMMA);
@@ -81,7 +84,30 @@ export class SourceParser extends ReqonExpressionParser {
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       rateLimit,
       circuitBreaker,
+      proxy,
     };
+  }
+
+  /**
+   * `proxy: <expr>` or `proxy: [<expr>, ...]`. Both normalize to a pool so the
+   * runtime has one shape to deal with. Entries stay unevaluated expressions so
+   * `env("PROXY_URL")` resolves at mission start, not parse time.
+   */
+  protected parseProxyConfig(): Expression[] {
+    if (!this.match(TokenType.LBRACKET)) {
+      return [this.parseExpression()];
+    }
+
+    const pool: Expression[] = [];
+    while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
+      pool.push(this.parseExpression());
+      this.match(TokenType.COMMA);
+    }
+    this.consume(TokenType.RBRACKET, "Expected ']' after proxy pool");
+
+    if (pool.length === 0) throw this.error('Proxy pool must have at least one entry');
+
+    return pool;
   }
 
   protected parseRateLimitConfig(): RateLimitSourceConfig {

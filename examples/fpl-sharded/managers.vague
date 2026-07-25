@@ -1,0 +1,99 @@
+// FPL per-manager history - the sharded fan-out.
+//
+// Demonstrates: proxy pool egress, for-loop concurrency, shard-by-env.
+//
+// One worker runs this file. The orchestrator (k8s Job, Fly Machines, a GitHub
+// Actions matrix) starts N of them, each with its own shard file and its own
+// slice of the proxy pool. Requests leave through the proxies, rate limit and
+// circuit breaker state is tracked per egress IP, and every worker upserts into
+// the same PostgREST table.
+
+mission FplManagerHistory {
+
+  source FPL {
+    auth: none,
+    base: "https://fantasy.premierleague.com/api",
+
+    headers: {
+      "User-Agent": env("FPL_USER_AGENT")
+    },
+
+    // Each entry is one egress IP, rotated round-robin per request attempt.
+    // Rate limit and breaker state are keyed per proxy, so this worker gets
+    // four independent budgets rather than four ways to burn one.
+    proxy: [
+      env("FPL_PROXY_1"),
+      env("FPL_PROXY_2"),
+      env("FPL_PROXY_3"),
+      env("FPL_PROXY_4")
+    ],
+
+    // FPL sends no rate limit headers, so the fallback is what actually governs
+    // pacing. This is per proxy: 30rpm x 4 proxies = 120rpm for the worker.
+    // Start conservative and raise it only if you see no 429s.
+    rateLimit: {
+      strategy: throttle,
+      maxWait: 300,
+      fallbackRpm: 30
+    },
+
+    // A proxy that starts failing drops out on its own rather than poisoning
+    // the run. Only that proxy's circuit opens - the others keep working.
+    circuitBreaker: {
+      failureThreshold: 5,
+      resetTimeout: 120,
+      failureWindow: 60
+    }
+  }
+
+  // The orchestrator writes this worker's slice of manager IDs before start,
+  // as a JSON object keyed by id: { "12": { "id": 12 }, "97": { "id": 97 } }.
+  // Reqon has no range() builtin, so the ID list is an input, not a generated
+  // sequence.
+  store shard: file("fpl_shard")
+
+  // Every worker upserts into one table. Shards are disjoint, so there's no
+  // last-writer-wins race between machines.
+  store managers: postgrest("fpl_manager_history")
+
+  schema ManagerHistory {
+    id: number,
+    current: array,
+    past: array,
+    chips: array
+  }
+
+  action FetchManagerHistory {
+    // Eight iterations in flight. Roughly pool size x 2: enough to keep every
+    // proxy busy while one is waiting on the wire, low enough that the
+    // per-proxy throttle is what paces the run, not the socket count.
+    for entry in shard concurrency 8 {
+
+      get "/entry/{entry.id}/history/" {
+        source: FPL,
+        retry: {
+          maxAttempts: 5,
+          backoff: exponential,
+          initialDelay: 2000,
+          maxDelay: 120000
+        }
+      }
+
+      // The history payload carries no manager id, so graft it on from the
+      // loop variable - otherwise there's nothing to key the upsert on.
+      map response -> ManagerHistory {
+        id: entry.id,
+        current: .current,
+        past: .past,
+        chips: .chips
+      }
+
+      store response -> managers {
+        key: .id,
+        upsert: true
+      }
+    }
+  }
+
+  run FetchManagerHistory
+}

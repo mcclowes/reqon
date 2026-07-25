@@ -5,6 +5,7 @@ import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js'
 import { sleep } from '../utils/async.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
+import type { ProxyPool } from './proxy.js';
 
 /**
  * Parse a `Retry-After` header into a delay in ms, clamped to `maxDelayMs`.
@@ -44,6 +45,12 @@ export interface HttpClientConfig {
   sourceName?: string;
   /** Default per-request timeout in ms (overridden by RetryConfig.timeout) */
   timeout?: number;
+  /**
+   * Egress proxies to rotate through. Each attempt leaves via the next proxy in
+   * the pool, and rate limit / circuit breaker state is tracked per proxy so one
+   * IP's 429s or failures don't throttle or trip the rest.
+   */
+  proxyPool?: ProxyPool;
 }
 
 export interface AuthProvider {
@@ -111,34 +118,37 @@ export class HttpClient {
     // rotating refresh token on every 401 retry attempt.
     let hasRefreshed = false;
 
-    // Check circuit breaker before attempting requests
-    if (this.config.circuitBreaker && this.config.sourceName) {
-      // This will throw CircuitBreakerError if circuit is open
-      this.config.circuitBreaker.ensureCanProceed(this.config.sourceName, req.path);
-    }
-
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Outside the try on purpose. A proxy that can't be constructed is a
+      // configuration fault, not a transient network error: retrying it wastes
+      // attempts, and swallowing it would silently fall back to direct egress
+      // and leak the real IP the pool exists to hide.
+      const lane = await this.config.proxyPool?.acquire();
+      // Resilience state is per egress IP. Sharing one key across a pool would
+      // throttle every proxy to a single IP's budget and let one bad proxy trip
+      // the breaker for all of them.
+      const laneKey =
+        this.config.sourceName && lane
+          ? `${this.config.sourceName}@${lane.label}`
+          : this.config.sourceName;
+
       try {
-        // Re-check circuit breaker on retries (state may have changed)
-        if (attempt > 1 && this.config.circuitBreaker && this.config.sourceName) {
-          if (!this.config.circuitBreaker.canProceed(this.config.sourceName, req.path)) {
-            // Circuit opened during retries, fail fast
-            throw new CircuitBreakerError(
-              this.config.sourceName,
-              req.path,
-              this.config.circuitBreaker
-                .getStatus(this.config.sourceName, req.path)
-                .nextAttemptTime?.getTime() ?? 0 - Date.now()
-            );
-          }
+        // Check the circuit breaker before each attempt; state may have changed
+        // during a retry backoff. Throws CircuitBreakerError if open, which the
+        // catch below re-throws rather than retrying.
+        if (this.config.circuitBreaker && laneKey) {
+          this.config.circuitBreaker.ensureCanProceed(laneKey, req.path);
         }
 
         // Wait for rate limit capacity if we have a rate limiter
-        if (this.config.rateLimiter && this.config.sourceName) {
-          await this.config.rateLimiter.waitForCapacity(this.config.sourceName, req.path);
+        if (this.config.rateLimiter && laneKey) {
+          await this.config.rateLimiter.waitForCapacity(laneKey, req.path);
         }
 
-        const response = await this.fetchWithTimeout(url, fetchOptions, timeout, req.method);
+        const attemptOptions = lane
+          ? ({ ...fetchOptions, dispatcher: lane.dispatcher } as RequestInit)
+          : fetchOptions;
+        const response = await this.fetchWithTimeout(url, attemptOptions, timeout, req.method);
 
         // Extract and record rate limit info from response headers
         const responseHeaders: Record<string, string> = {};
@@ -146,7 +156,7 @@ export class HttpClient {
           responseHeaders[key] = value;
         });
 
-        if (this.config.rateLimiter && this.config.sourceName) {
+        if (this.config.rateLimiter && laneKey) {
           const rateLimitInfo = parseRateLimitHeaders(responseHeaders);
 
           // Add retry-after from 429 responses
@@ -157,7 +167,7 @@ export class HttpClient {
             }
           }
 
-          this.config.rateLimiter.recordResponse(this.config.sourceName, rateLimitInfo, req.path);
+          this.config.rateLimiter.recordResponse(laneKey, rateLimitInfo, req.path);
         }
 
         // Handle rate limiting: retry only while attempts remain. A 429 on the
@@ -174,12 +184,8 @@ export class HttpClient {
         // Handle server errors with retry
         if (response.status >= 500) {
           // Record failure in circuit breaker
-          if (this.config.circuitBreaker && this.config.sourceName) {
-            this.config.circuitBreaker.recordFailure(
-              this.config.sourceName,
-              req.path,
-              response.status
-            );
+          if (this.config.circuitBreaker && laneKey) {
+            this.config.circuitBreaker.recordFailure(laneKey, req.path, response.status);
           }
 
           if (retriable && attempt < maxAttempts) {
@@ -221,8 +227,8 @@ export class HttpClient {
         const data = await this.parseResponseBody<T>(response, url, req.method);
 
         // Record success in circuit breaker
-        if (this.config.circuitBreaker && this.config.sourceName && response.status < 500) {
-          this.config.circuitBreaker.recordSuccess(this.config.sourceName, req.path);
+        if (this.config.circuitBreaker && laneKey && response.status < 500) {
+          this.config.circuitBreaker.recordSuccess(laneKey, req.path);
         }
 
         return {
@@ -245,13 +251,8 @@ export class HttpClient {
         }
 
         // Record network errors in circuit breaker
-        if (this.config.circuitBreaker && this.config.sourceName) {
-          this.config.circuitBreaker.recordFailure(
-            this.config.sourceName,
-            req.path,
-            undefined,
-            true
-          );
+        if (this.config.circuitBreaker && laneKey) {
+          this.config.circuitBreaker.recordFailure(laneKey, req.path, undefined, true);
         }
 
         // A network error on a non-idempotent write is ambiguous: the request

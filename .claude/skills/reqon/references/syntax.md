@@ -65,12 +65,42 @@ source API {
   auth: bearer,
   base: "https://api.example.com",
   rateLimit: {
-    strategy: "pause",    // or "queue"
+    strategy: throttle,   // or fail (bare identifier, not a string)
     maxWait: 60,          // seconds
     fallbackRpm: 60       // requests per minute fallback
   }
 }
 ```
+
+### Egress Proxies
+
+Route a source's requests through one or more proxies. A list is a pool,
+rotated round-robin per request attempt, so a retry after a 429 leaves from a
+different IP than the attempt that earned it.
+
+```
+source API {
+  auth: none,
+  base: "https://api.example.com",
+  proxy: env("PROXY_URL")
+}
+
+source Pooled {
+  auth: none,
+  base: "https://api.example.com",
+  proxy: [env("PROXY_A"), env("PROXY_B"), "http://user:pass@host:3128"]
+}
+```
+
+Rate limit and circuit breaker state are keyed per proxy, so each egress IP gets
+its own budget and one failing proxy opens only its own circuit. Combined with
+`fallbackRpm`, a source's total rate is `fallbackRpm x pool size`.
+
+An entry resolving to an empty value (typically an unset env var) is an error,
+not a shorter pool: quietly dropping a proxy would concentrate the run's whole
+rate onto the survivors.
+
+Requires the optional peer dependency: `npm install undici`.
 
 ## Stores
 
@@ -170,7 +200,32 @@ for user in users where .active == true {
 for item in items where .status == "pending" and .priority > 5 {
   // process filtered items
 }
+
+// Concurrent loop - up to 8 iterations in flight
+for id in ids concurrency 8 {
+  get "/entry/{id.id}"
+  store response -> entries { key: .id, upsert: true }
+}
+
+// concurrency goes after the where clause
+for item in items where .active concurrency 4 {
+  // ...
+}
 ```
+
+Loops are sequential by default. `concurrency N` bounds how many iterations run
+at once, which is what lets one worker use a whole proxy pool or a generous rate
+limit.
+
+Notes:
+
+- Each iteration already has its own scope, so `response` and the loop variable
+  stay isolated. Stores are shared, so iterations writing the same key are
+  last-writer-wins; give them disjoint keys.
+- On failure the loop stops taking new items, lets in-flight iterations finish,
+  then rethrows the first error.
+- Attaching the debugger forces sequential iteration so stepping stays
+  deterministic.
 
 ## Mapping
 

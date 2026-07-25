@@ -12,7 +12,11 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
-_No changes yet._
+### Added
+
+- **Egress proxy pools on sources** — `proxy: env("PROXY_URL")` for one proxy, or a list for a pool rotated round-robin per request attempt. Rate limit and circuit breaker state are keyed per proxy, so each egress IP gets its own budget and one failing proxy opens only its own circuit. A retry after a 429 leaves from a different IP than the attempt that earned it. Needs the optional peer dependency `undici`.
+- **`concurrency N` on `for` loops** — bounded fan-out for bulk fetches, replacing strictly sequential iteration. Defaults to sequential, so existing missions are unchanged. Concurrent iterations get their own step-index namespace, keeping step ids deterministic for durable resume; the debugger forces sequential iteration.
+- **`fpl-sharded` example** — sharded bulk fetch across IPs, and a note on when the one-request version is all you need.
 
 ---
 

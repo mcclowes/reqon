@@ -237,6 +237,59 @@ for user in users {
 }
 ```
 
+## Concurrency
+
+Loops are sequential by default: one item finishes before the next starts. For
+bulk fetches that means a worker issues one request at a time, which usually
+leaves most of its rate limit unused.
+
+`concurrency N` bounds how many iterations run at once:
+
+```vague
+action FetchManagers {
+  for entry in shard concurrency 8 {
+    get "/entry/{entry.id}/history/"
+    store response -> managers { key: .id, upsert: true }
+  }
+}
+```
+
+It goes after the `where` clause when both are present:
+
+```vague
+for item in items where .status == "pending" concurrency 4 {
+  // ...
+}
+```
+
+### What is and isn't shared
+
+Each iteration already runs in its own scope, so the loop variable and
+`response` stay isolated. Stores are shared, so two iterations writing the same
+key are last-writer-wins. Give concurrent iterations disjoint keys.
+
+### Failure behaviour
+
+On the first error the loop stops taking new items, lets the iterations already
+in flight finish, then rethrows that error. Nothing is abandoned mid-write, but
+the remaining items are not started.
+
+### Interaction with other features
+
+- **Rate limiting** still applies. Concurrency is an upper bound on iterations
+  in flight, not a licence to exceed the source's configured rate. Pair a high
+  concurrency with a [proxy pool](../http/rate-limiting.md) if you need the
+  extra throughput to actually land.
+- **The debugger** forces sequential iteration, so stepping stays deterministic.
+- **Durable resume** is safe: concurrent iterations get their own step-index
+  namespace derived from item position, so step ids stay stable across replays.
+
+### Picking a number
+
+Start at roughly the number of independent egress lanes you have, and raise it
+only while the source keeps up. A concurrency far above what the rate limiter
+allows just parks iterations in the limiter's queue.
+
 ## Performance considerations
 
 ### Batch operations
@@ -261,7 +314,8 @@ post "/users/batch" {
 
 ### Parallel processing
 
-For independent operations, consider parallel actions:
+To overlap iterations of one loop, use [`concurrency`](#concurrency). To run
+different actions at the same time, use a parallel stage:
 
 ```vague
 run [FetchOrders, FetchProducts, FetchCustomers] then MergeData

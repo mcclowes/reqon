@@ -45,6 +45,12 @@ export interface SourceConfig {
   validateResponses?: boolean; // Validate responses against OAS schema
   rateLimit?: RateLimitSourceConfig; // Rate limiting configuration
   circuitBreaker?: CircuitBreakerSourceConfig; // Circuit breaker configuration
+  /**
+   * Egress proxies, always normalized to a pool. A bare `proxy: "..."` parses
+   * to a one-entry pool; a list rotates round-robin per request attempt so a
+   * source's requests spread across several IPs.
+   */
+  proxy?: Expression[];
 }
 
 export interface CircuitBreakerSourceConfig {
@@ -315,6 +321,13 @@ export interface ForStep {
   collection: Expression;
   condition?: Expression; // where clause
   steps: ActionStep[];
+  /**
+   * Max iterations in flight. Absent (the default) runs strictly sequentially.
+   * Iterations already get their own child context, so the loop variable and
+   * `response` stay isolated; stores are shared, so concurrent iterations
+   * writing the same key are last-writer-wins.
+   */
+  concurrency?: number;
 }
 
 // map invoice -> StandardInvoice { id: .InvoiceID, ... }

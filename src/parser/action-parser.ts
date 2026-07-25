@@ -128,6 +128,8 @@ export class ActionParser extends FetchParser {
       condition = this.parseExpression();
     }
 
+    const concurrency = this.parseConcurrencyClause();
+
     this.consume(TokenType.LBRACE, "Expected '{'");
     const steps: ActionStep[] = [];
 
@@ -138,7 +140,25 @@ export class ActionParser extends FetchParser {
 
     this.consume(TokenType.RBRACE, "Expected '}'");
 
-    return { type: 'ForStep', variable, collection, condition, steps };
+    return { type: 'ForStep', variable, collection, condition, steps, concurrency };
+  }
+
+  /**
+   * Optional `concurrency N` between a for loop's header and its body.
+   * A soft keyword: `concurrency` stays a usable identifier everywhere else.
+   */
+  private parseConcurrencyClause(): number | undefined {
+    if (!this.check(TokenType.IDENTIFIER) || this.peek().value !== 'concurrency') {
+      return undefined;
+    }
+    this.advance();
+
+    const token = this.consume(TokenType.NUMBER, 'Expected a number after concurrency');
+    const value = parseInt(token.value, 10);
+    if (!Number.isInteger(value) || value < 1) {
+      throw this.error(`Concurrency must be at least 1, got: ${token.value}`);
+    }
+    return value;
   }
 
   /**
