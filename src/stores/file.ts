@@ -47,6 +47,10 @@ export class FileStore implements StoreAdapter {
   private initError: Error | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingWrite: Promise<void> | null = null;
+  /** Tail of the write chain; keeps disk writes from overlapping. */
+  private writeChain: Promise<void> = Promise.resolve();
+  /** A queued write that has not started serialising yet, so it can be shared. */
+  private coalescedWrite: Promise<void> | null = null;
 
   /**
    * Create a FileStore with async initialization (recommended).
@@ -140,7 +144,38 @@ export class FileStore implements StoreAdapter {
     }, this.options.debounceMs);
   }
 
-  private async writeToDisk(): Promise<void> {
+  /**
+   * Queue a write behind any that are already running.
+   *
+   * A write serialises the whole map, so concurrent callers must not overlap:
+   * two writes started from different states rename over the same target, and
+   * whichever lands second wins regardless of which state is newer. Under
+   * `for ... concurrency N` that silently drops keys the map still reports as
+   * stored.
+   *
+   * Callers that arrive before a queued write starts serialising share it -
+   * their mutation is already in the map, so that write will include it.
+   */
+  private writeToDisk(): Promise<void> {
+    if (this.coalescedWrite) {
+      return this.coalescedWrite;
+    }
+
+    const write = this.writeChain
+      .catch(() => {})
+      .then(() => {
+        // Cleared before serialising, so anything mutating after this point
+        // queues a fresh write rather than assuming this one covers it.
+        this.coalescedWrite = null;
+        return this.serializeToDisk();
+      });
+
+    this.coalescedWrite = write;
+    this.writeChain = write.catch(() => {});
+    return write;
+  }
+
+  private async serializeToDisk(): Promise<void> {
     const obj = Object.fromEntries(this.data);
     const content = serialize(obj, this.options.pretty);
     await writeFileAtomic(this.filePath, content);
