@@ -12,7 +12,7 @@ action FetchPRs {
     until: length(response) == 0,
     retry: {
       maxAttempts: 3,
-      backoff: "exponential",
+      backoff: exponential,
       initialDelay: 1000
     }
   }
@@ -20,7 +20,7 @@ action FetchPRs {
   // Handle different response types
   match response {
     // Success - store PRs
-    [GitHubPR] -> {
+    GitHubPR -> {
       store response -> prs_raw { key: .id }
     },
 

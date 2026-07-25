@@ -63,14 +63,12 @@ mission IncrementalCustomerSync {
     // 2. Adds it as a query parameter (configurable via sinceParam)
     // 3. Updates the checkpoint on successful completion
     get "/customers" {
-      since: lastSync,
-      sinceParam: "modified_after",    // API parameter name
-      sinceFormat: "iso",              // ISO 8601 format
+      since: lastSync { param: "modified_after", format: iso },
       paginate: cursor(cursor, 100, "meta.next_cursor"),
       until: response.data.length == 0,
       retry: {
         maxAttempts: 3,
-        backoff: "exponential",
+        backoff: exponential,
         initialDelay: 1000
       }
     }
@@ -89,7 +87,7 @@ mission IncrementalCustomerSync {
           }
 
           validate response {
-            assume .email contains "@"
+            assume .email != null
             assume length(.name) > 0
           }
 
@@ -106,7 +104,6 @@ mission IncrementalCustomerSync {
           error: response.error,
           timestamp: now()
         } -> sync_errors { key: now() }
-        abort "Failed to sync customers"
       },
 
       _ -> skip
@@ -119,9 +116,7 @@ mission IncrementalCustomerSync {
 
   action SyncContacts {
     get "/contacts" {
-      since: lastSync,
-      sinceParam: "updated_since",
-      sinceFormat: "unix",             // Unix epoch seconds
+      since: lastSync { param: "updated_since", format: unix },
       paginate: offset(offset, 200),
       until: response.contacts.length == 0
     }
@@ -155,9 +150,7 @@ mission IncrementalCustomerSync {
   action SyncDeleted {
     // Many APIs provide a separate endpoint for deleted records
     get "/customers/deleted" {
-      since: lastSync,
-      sinceParam: "deleted_after",
-      sinceFormat: "iso"
+      since: lastSync { param: "deleted_after", format: iso }
     }
 
     match response {

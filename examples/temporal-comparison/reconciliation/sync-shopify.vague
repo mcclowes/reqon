@@ -3,7 +3,7 @@
 action SyncShopifyOrders {
   // Get last sync timestamp for incremental sync
   get "/orders.json" {
-    source: "Shopify",
+    source: Shopify,
     body: {
       "status": "any",
       "updated_at_min": sync_state.get("shopify_orders_last_sync"),
@@ -13,7 +13,7 @@ action SyncShopifyOrders {
     until: response.orders.length == 0,
     retry: {
       maxAttempts: 5,
-      backoff: "exponential",
+      backoff: exponential,
       initialDelay: 2000,
       maxDelay: 60000
     }

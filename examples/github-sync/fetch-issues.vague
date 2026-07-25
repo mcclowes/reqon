@@ -12,7 +12,7 @@ action FetchIssues {
     until: length(response) == 0,
     retry: {
       maxAttempts: 3,
-      backoff: "exponential",
+      backoff: exponential,
       initialDelay: 1000
     }
   }
@@ -20,7 +20,7 @@ action FetchIssues {
   // Handle different response types with schema matching
   match response {
     // Success - continue processing
-    [GitHubIssue] -> {
+    GitHubIssue -> {
       store response -> issues_raw { key: .id }
     },
 

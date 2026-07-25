@@ -2,7 +2,7 @@
 
 action SyncStripePayments {
   get "/payment_intents" {
-    source: "Stripe",
+    source: Stripe,
     body: {
       "limit": 100,
       "created[gte]": sync_state.get("stripe_payments_last_sync"),
@@ -12,7 +12,7 @@ action SyncStripePayments {
     until: response.has_more == false,
     retry: {
       maxAttempts: 3,
-      backoff: "exponential",
+      backoff: exponential,
       initialDelay: 1000
     }
   },
@@ -29,9 +29,9 @@ action SyncStripePayments {
         "canceled" => "voided",
         _ => .status
       },
-      method: .payment_method_types[0],
-      captured_at: .charges.data[0].created,
-      refunded_amount: .charges.data[0].amount_refunded / 100
+      method: first(.payment_method_types),
+      captured_at: first(.charges.data).created,
+      refunded_amount: first(.charges.data).amount_refunded / 100
     },
 
     store response -> payments { key: .payment_id, upsert: true }

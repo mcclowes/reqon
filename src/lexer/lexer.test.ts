@@ -182,6 +182,32 @@ describe('ReqonLexer', () => {
 
       expect(() => lexer.tokenize()).toThrow("Unexpected character '@'");
     });
+
+    it('tokenizes the not-equals operator (!=)', () => {
+      const lexer = new ReqonLexer('.status != "active"');
+      const tokens = lexer.tokenize();
+
+      const notEquals = tokens.find((t: Token) => t.type === ReqonTokenType.NOT_EQUALS);
+      expect(notEquals).toBeDefined();
+      expect(notEquals?.value).toBe('!=');
+    });
+
+    it('tokenizes a bare bang (!)', () => {
+      const lexer = new ReqonLexer('!ready');
+      const tokens = lexer.tokenize();
+
+      expect(tokens[0].type).toBe(ReqonTokenType.BANG);
+      expect(tokens[0].value).toBe('!');
+      expect(tokens[1].type).toBe(TokenType.IDENTIFIER);
+    });
+
+    it('tracks column position of != correctly', () => {
+      const lexer = new ReqonLexer('a != b');
+      const tokens = lexer.tokenize();
+
+      const notEquals = tokens.find((t: Token) => t.type === ReqonTokenType.NOT_EQUALS);
+      expect(notEquals?.column).toBe(3);
+    });
   });
 
   describe('comments', () => {

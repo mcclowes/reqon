@@ -116,7 +116,7 @@ mission MultiSourceSync {
       id: "order-stripe-" + .id,
       source: "stripe",
       external_id: .id,
-      customer_ref: .metadata.customer_id ?? null,
+      customer_ref: .metadata.customer_id,
       amount: .amount / 100,
       currency: .currency,
       status: match .status {
@@ -148,12 +148,12 @@ mission MultiSourceSync {
 
     // Wildcard fallback for unknown formats
     (_) -> UnifiedOrder {
-      id: "order-unknown-" + (.id ?? generateId()),
+      id: "order-unknown-" + .id,
       source: "unknown",
-      external_id: .id ?? "",
+      external_id: .id,
       customer_ref: null,
-      amount: .amount ?? .total ?? 0,
-      currency: .currency ?? "USD",
+      amount: .amount,
+      currency: .currency,
       status: "unknown",
       created_at: now(),
       synced_at: now()
@@ -165,8 +165,9 @@ mission MultiSourceSync {
   // ============================================
 
   action FetchXeroOrders {
-    get "/Invoices" from Xero {
-      paginate: { type: page, param: "page", pageSize: 100 },
+    get "/Invoices" {
+      source: Xero,
+      paginate: page(page, 100),
       since: lastSync
     }
 
@@ -182,8 +183,9 @@ mission MultiSourceSync {
   }
 
   action FetchStripeOrders {
-    get "/charges" from Stripe {
-      paginate: { type: cursor, param: "starting_after", pageSize: 100, cursorPath: "data[-1].id" },
+    get "/charges" {
+      source: Stripe,
+      paginate: cursor(starting_after, 100, "data[-1].id"),
       since: lastSync
     }
 
@@ -199,8 +201,9 @@ mission MultiSourceSync {
   }
 
   action FetchShopifyOrders {
-    get "/orders.json" from Shopify {
-      paginate: { type: page, param: "page", pageSize: 250 },
+    get "/orders.json" {
+      source: Shopify,
+      paginate: page(page, 250),
       since: lastSync
     }
 

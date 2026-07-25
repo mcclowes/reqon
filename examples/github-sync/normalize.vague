@@ -52,7 +52,7 @@ action Normalize {
         _ => "unknown"
       },
       author: .user.login,
-      labels: [],
+      labels: .labels,
       created_at: .created_at,
       updated_at: .updated_at,
       synced_at: now()

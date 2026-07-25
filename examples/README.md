@@ -115,9 +115,7 @@ paginate: cursor(cursor, 100, "nextCursor")   # Cursor pagination
 Fetch only records modified since the last run:
 ```vague
 get "/customers" {
-  since: lastSync,
-  sinceParam: "modified_after",
-  sinceFormat: "iso"
+  since: lastSync { param: "modified_after", format: iso }
 }
 ```
 See: [incremental-sync](./incremental-sync/)
@@ -128,7 +126,7 @@ Wait for async events with filtering:
 wait {
   timeout: 300000,
   path: "/webhooks/payment",
-  expectedEvents: ["payment.success", "payment.failed"],
+  expectedEvents: 1,
   eventFilter: .payment_id == local_id
 }
 ```

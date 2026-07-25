@@ -747,22 +747,60 @@ export class ActionParser extends FetchParser {
    * Parse a field definition
    */
   protected parseFieldDefinition(): FieldDefinition {
-    const name = this.consumeIdentifier('Expected field name').value;
+    // Field names sit in an unambiguous name position (always followed by `:`),
+    // so any reserved keyword's text is a valid field name here (e.g. `source`,
+    // `action`, `status`).
+    const name = this.consumeName('Expected field name').value;
     this.consume(TokenType.COLON, "Expected ':'");
 
-    // Simplified field type parsing
-    const typeName = this.consume(TokenType.IDENTIFIER, 'Expected type').value;
+    const fieldType = this.parseFieldType();
 
     // Handle optional/nullable type marker (?)
-    this.match(TokenType.QUESTION);
+    const optional = this.match(TokenType.QUESTION);
 
     return {
       type: 'FieldDefinition',
       name,
-      fieldType: {
-        type: 'PrimitiveType',
-        name: typeName as 'string' | 'int' | 'decimal' | 'date' | 'boolean',
-      },
+      fieldType,
+      ...(optional ? { optional: true } : {}),
+    } as FieldDefinition;
+  }
+
+  /**
+   * Parse a schema field's type. Supports primitive type names, inline nested
+   * object types (`{ a: string, b: int }`), and array types (`[Type]`).
+   */
+  protected parseFieldType(): FieldDefinition['fieldType'] {
+    // Inline nested object type: consume the fields so the tokens are balanced.
+    // Nested shapes aren't deeply validated during schema matching, so we model
+    // them as a permissive `object` primitive.
+    if (this.match(TokenType.LBRACE)) {
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        this.parseFieldDefinition();
+        this.match(TokenType.COMMA);
+      }
+      this.consume(TokenType.RBRACE, "Expected '}'");
+      return { type: 'PrimitiveType', name: 'object' } as unknown as FieldDefinition['fieldType'];
+    }
+
+    // Array type: [Type]
+    if (this.match(TokenType.LBRACKET)) {
+      const element = this.parseFieldType();
+      this.consume(TokenType.RBRACKET, "Expected ']'");
+      return { type: 'CollectionType', element } as unknown as FieldDefinition['fieldType'];
+    }
+
+    // The type-name position is unambiguous (always followed by `?`, `,`, `}`, or
+    // `]`), so besides plain identifiers we also accept the primitive-type words
+    // that Vague's lexer reserves as keywords (`int`, `decimal`, `date`, `any`).
+    const typeName = this.consumeAny(
+      [TokenType.IDENTIFIER, TokenType.INT, TokenType.DECIMAL, TokenType.DATE, TokenType.ANY],
+      'Expected type'
+    ).value;
+
+    return {
+      type: 'PrimitiveType',
+      name: typeName as 'string' | 'int' | 'decimal' | 'date' | 'boolean',
     };
   }
 }

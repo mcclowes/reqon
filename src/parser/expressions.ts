@@ -401,11 +401,19 @@ export class ReqonExpressionParser extends ReqonParserBase {
     }
 
     do {
-      // Key can be an identifier or a string
+      // Key can be an identifier, a string, or any reserved keyword's text.
+      // The key sits in a name position (always followed by `:`), so words that
+      // the lexer reserves as keywords (`action`, `source`, `status`, ...) are
+      // valid keys too.
       let key: string;
       if (this.check(TokenType.STRING)) {
         key = this.advance().value;
-      } else if (this.checkIdentifier()) {
+      } else if (
+        !this.check(TokenType.RBRACE) &&
+        !this.check(TokenType.COMMA) &&
+        !this.check(TokenType.COLON) &&
+        !this.isAtEnd()
+      ) {
         key = this.advance().value;
       } else {
         throw this.error('Expected property key (identifier or string)');

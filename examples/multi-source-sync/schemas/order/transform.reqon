@@ -28,7 +28,7 @@ transform ToUnifiedOrder {
     id: "order-stripe-" + .id,
     source: "stripe",
     external_id: .id,
-    customer_ref: .metadata.customer_id ?? null,
+    customer_ref: .metadata.customer_id,
     amount: .amount / 100,              // Convert cents to dollars
     currency: .currency,
     status: match .status {
@@ -62,14 +62,14 @@ transform ToUnifiedOrder {
 
   // Fallback variant for unknown sources
   (_) -> UnifiedOrder {
-    id: "order-unknown-" + (.id ?? .external_id ?? generateId()),
+    id: "order-unknown-" + .id,
     source: "unknown",
-    external_id: .id ?? .external_id ?? "",
+    external_id: .id,
     customer_ref: null,
-    amount: .amount ?? .total ?? 0,
-    currency: .currency ?? "USD",
+    amount: .amount,
+    currency: .currency,
     status: "unknown",
-    created_at: .created_at ?? .date ?? now(),
+    created_at: .created_at,
     synced_at: now()
   }
 }

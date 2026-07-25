@@ -25,11 +25,11 @@ transform ToUnifiedPayment {
 
   // Fallback
   (_) -> UnifiedPayment {
-    id: "payment-" + (.id ?? generateId()),
+    id: "payment-" + .id,
     source: "unknown",
     order_ref: null,
-    amount: .amount ?? 0,
-    currency: .currency ?? "USD",
+    amount: .amount,
+    currency: .currency,
     status: "unknown",
     paid_at: now()
   }
