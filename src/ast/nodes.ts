@@ -256,6 +256,11 @@ export interface MatchArm {
    * fetch's `allow` list, so there is no schema name to invent and keep in sync.
    */
   status?: number;
+  /**
+   * When true the arm was written as `[Schema]` and matches only when the value
+   * is an array whose every element satisfies `schema`.
+   */
+  isArray?: boolean;
   /** Optional guard condition (when using 'where' clause) */
   guard?: Expression;
   /** Steps to execute if matched */
@@ -415,10 +420,17 @@ export interface TryExpression {
 }
 
 // validate response { assume .Total is decimal, ... }
+// validate order { assume payment_exists == true } or { store ... }
 export interface ValidateStep {
   type: 'ValidateStep';
   target: Expression;
   constraints: ValidationConstraint[];
+  /**
+   * Optional `or { ... }` fallback: steps to run when a constraint fails,
+   * instead of throwing a ValidationError. Lets a pipeline record a discrepancy
+   * and carry on rather than aborting the mission.
+   */
+  fallback?: ActionStep[];
 }
 
 export interface ValidationConstraint {

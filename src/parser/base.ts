@@ -62,6 +62,16 @@ export class ReqonParserBase {
   }
 
   /**
+   * Consume the current token if its type matches any of the accepted types,
+   * otherwise throw. Useful where several token types are valid in one position
+   * (e.g. a type name that may lex as an identifier or a reserved type keyword).
+   */
+  protected consumeAny(types: AnyTokenType[], message: string): Token {
+    if (this.checkAny(...types)) return this.advance();
+    throw this.error(message);
+  }
+
+  /**
    * Consume an identifier, allowing HTTP method tokens to be used as identifiers.
    * This is needed because 'get', 'post', etc. are valid variable/store names.
    */

@@ -293,4 +293,58 @@ describe('Match Step Parsing', () => {
       });
     });
   });
+
+  describe('array-of-schema pattern', () => {
+    it('parses [Schema] as an array pattern', () => {
+      const action = parseAction(`
+        action Test {
+          match response {
+            [GitHubIssue] -> { store response -> issues { key: .id } },
+            RateLimitError -> retry { maxAttempts: 5 },
+            _ -> skip
+          }
+        }
+      `);
+
+      const matchStep = action.steps[0] as MatchStep;
+      expect(matchStep.arms).toHaveLength(3);
+
+      expect(matchStep.arms[0].schema).toBe('GitHubIssue');
+      expect(matchStep.arms[0].isArray).toBe(true);
+      expect(matchStep.arms[0].steps?.[0].type).toBe('StoreStep');
+
+      // A bare schema name is not an array pattern.
+      expect(matchStep.arms[1].schema).toBe('RateLimitError');
+      expect(matchStep.arms[1].isArray).toBe(false);
+
+      expect(matchStep.arms[2].schema).toBe('_');
+      expect(matchStep.arms[2].isArray).toBe(false);
+    });
+
+    it('supports a guard on an array pattern', () => {
+      const action = parseAction(`
+        action Test {
+          match response {
+            [GitHubIssue] where length(response) > 0 -> continue
+          }
+        }
+      `);
+
+      const matchStep = action.steps[0] as MatchStep;
+      expect(matchStep.arms[0].isArray).toBe(true);
+      expect(matchStep.arms[0].guard).toBeDefined();
+    });
+
+    it('rejects an empty array pattern', () => {
+      expect(() =>
+        parseAction(`
+          action Test {
+            match response {
+              [] -> continue
+            }
+          }
+        `)
+      ).toThrow();
+    });
+  });
 });

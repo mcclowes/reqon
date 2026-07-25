@@ -137,9 +137,7 @@ paginate: cursor(cursor, 100, "nextCursor")   # Cursor pagination
 Fetch only records modified since the last run:
 ```vague
 get "/customers" {
-  since: lastSync,
-  sinceParam: "modified_after",
-  sinceFormat: "iso"
+  since: lastSync { param: "modified_after", format: iso }
 }
 ```
 See: [incremental-sync](./incremental-sync/)
@@ -150,7 +148,7 @@ Wait for async events with filtering:
 wait {
   timeout: 300000,
   path: "/webhooks/payment",
-  expectedEvents: ["payment.success", "payment.failed"],
+  expectedEvents: 1,
   eventFilter: .payment_id == local_id
 }
 ```
@@ -181,7 +179,9 @@ source API {
 See: [circuit-breaker](./circuit-breaker/)
 
 ### Let Bindings & Spread Operator
-Complex data transformations:
+Complex data transformations. A guarded `match` binds the matched value and
+picks the first arm whose `where` guard holds; the spread operator carries an
+existing record's fields into a new object literal:
 ```vague
 let avg = total / count
 let tier = match score { s where s > 800 => "gold", _ => "standard" }
@@ -192,6 +192,17 @@ store {
   tier: tier
 } -> enriched { key: .id }
 ```
+See: [data-enrichment](./data-enrichment/)
+
+### Expression Operators
+Everyday operators for working with fetched data:
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `??` | Nullish coalescing — fall back only on `null`/`undefined` (a real `0`/`""`/`false` is kept, unlike `or`) | `let ltv = customer.value ?? 0` |
+| `in` | Membership — array element, object key, or substring | `.status in ["open", "pending"]` |
+| `[ ]` | Subscript — dynamic or computed key access | `cache[id]`, `rows[0].name` |
+
 See: [data-enrichment](./data-enrichment/)
 
 ### Store Types

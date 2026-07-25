@@ -182,6 +182,66 @@ describe('ReqonLexer', () => {
 
       expect(() => lexer.tokenize()).toThrow("Unexpected character '@'");
     });
+
+    it('tokenizes the not-equals operator (!=)', () => {
+      const lexer = new ReqonLexer('.status != "active"');
+      const tokens = lexer.tokenize();
+
+      const notEquals = tokens.find((t: Token) => t.type === ReqonTokenType.NOT_EQUALS);
+      expect(notEquals).toBeDefined();
+      expect(notEquals?.value).toBe('!=');
+    });
+
+    it('tokenizes a bare bang (!)', () => {
+      const lexer = new ReqonLexer('!ready');
+      const tokens = lexer.tokenize();
+
+      expect(tokens[0].type).toBe(ReqonTokenType.BANG);
+      expect(tokens[0].value).toBe('!');
+      expect(tokens[1].type).toBe(TokenType.IDENTIFIER);
+    });
+
+    it('tracks column position of != correctly', () => {
+      const lexer = new ReqonLexer('a != b');
+      const tokens = lexer.tokenize();
+
+      const notEquals = tokens.find((t: Token) => t.type === ReqonTokenType.NOT_EQUALS);
+      expect(notEquals?.column).toBe(3);
+    });
+
+    it('tokenizes the nullish coalescing operator (??)', () => {
+      const lexer = new ReqonLexer('name ?? "Anon"');
+      const tokens = lexer.tokenize();
+
+      const nullish = tokens.find((t: Token) => t.type === ReqonTokenType.NULLISH);
+      expect(nullish).toBeDefined();
+      expect(nullish?.value).toBe('??');
+    });
+
+    it('still tokenizes a lone ? as QUESTION', () => {
+      const lexer = new ReqonLexer('a ? b : c');
+      const tokens = lexer.tokenize();
+
+      expect(tokens.find((t: Token) => t.type === TokenType.QUESTION)).toBeDefined();
+      expect(tokens.find((t: Token) => t.type === ReqonTokenType.NULLISH)).toBeUndefined();
+    });
+
+    it('tokenizes the spread operator (...)', () => {
+      const lexer = new ReqonLexer('{ ...original }');
+      const tokens = lexer.tokenize();
+
+      const spread = tokens.find((t: Token) => t.type === ReqonTokenType.SPREAD);
+      expect(spread).toBeDefined();
+      expect(spread?.value).toBe('...');
+    });
+
+    it('still tokenizes .. as DOTDOT (range) distinctly from ...', () => {
+      const lexer = new ReqonLexer('1..10');
+      const tokens = lexer.tokenize();
+
+      expect(tokens.find((t: Token) => t.type === TokenType.DOTDOT)).toBeDefined();
+      expect(tokens.find((t: Token) => t.type === ReqonTokenType.SPREAD)).toBeUndefined();
+    });
   });
 
   describe('comments', () => {

@@ -121,32 +121,17 @@ mission PostgRESTSync {
   // ============================================================
 
   action ProcessActiveUsers {
-    // Query users from PostgREST store
+    // Query users from PostgREST store.
+    // Store-lookup-by-key is not supported, so we process each active
+    // user directly rather than joining against the profiles store.
     for user in users where .role != "inactive" {
-      let profile = profiles[user.id]
-
-      // Validate user has required profile data
-      validate user {
-        assume profile != null
-        assume profile.last_login != null
-      } or {
-        store {
-          user_id: user.id,
-          error: "Missing profile or last_login",
-          timestamp: now()
-        } -> sync_errors { key: user.id }
-
-        skip
-      }
-
       // Log active user processing
       store {
         id: generateId(),
         user_id: user.id,
         action: "process_active",
         details: {
-          role: user.role,
-          last_login: profile.last_login
+          role: user.role
         },
         timestamp: now()
       } -> audit_log { key: .id }

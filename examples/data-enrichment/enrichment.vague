@@ -1,5 +1,5 @@
 // Data Enrichment Example
-// Demonstrates: let bindings, spread operator, complex transformations
+// Demonstrates: let bindings, ternary cascades, partial-update merges
 // Enriches customer data from multiple sources with computed fields
 
 mission CustomerDataEnrichment {
@@ -87,23 +87,25 @@ mission CustomerDataEnrichment {
           let total_orders = response.metrics.order_count
           let total_revenue = response.metrics.total_spent
           let avg_order_value = total_revenue / max(total_orders, 1)
-          let days_since_first = (now() - response.metrics.first_purchase) / days(1)
+          // 86400000 = milliseconds in one day (now() and first_purchase are epoch millis)
+          let days_since_first = (now() - response.metrics.first_purchase) / 86400000
           let purchase_frequency = total_orders / max(days_since_first / 30, 1)
 
           // Calculate customer lifetime value (simple model)
           let monthly_value = avg_order_value * purchase_frequency
-          let churn_rate = match response.metrics.days_since_last_purchase {
-            d where d > 180 => 0.8,
-            d where d > 90 => 0.5,
-            d where d > 30 => 0.2,
-            _ => 0.1
-          }
+          // Threshold cascade via nested ternaries (match arms are equality
+          // patterns, not boolean guards, so a ternary chain is used instead).
+          let days_since_last = response.metrics.days_since_last_purchase
+          let churn_rate = days_since_last > 180 ? 0.8
+            : days_since_last > 90 ? 0.5
+            : days_since_last > 30 ? 0.2
+            : 0.1
           let customer_lifespan = 1 / max(churn_rate, 0.01)
           let ltv = monthly_value * customer_lifespan
 
-          // Use spread to merge original data with enrichments
+          // Partial update: merge only the new fields into the existing
+          // customer record (preserves untouched fields without a spread).
           store {
-            ...customer,
             analytics: {
               total_orders: total_orders,
               total_revenue: total_revenue,
@@ -114,7 +116,7 @@ mission CustomerDataEnrichment {
               preferred_channel: response.metrics.acquisition_channel
             },
             lifetime_value: ltv
-          } -> raw_customers { key: customer.id, upsert: true }
+          } -> raw_customers { key: customer.id, partial: true }
         },
 
         _ -> continue
@@ -146,9 +148,8 @@ mission CustomerDataEnrichment {
 
       match response {
         _ where .location != null -> {
-          // Spread to preserve existing data while adding geo
+          // Partial update preserves existing data while adding geo
           store {
-            ...customer,
             geo_data: {
               latitude: response.location.lat,
               longitude: response.location.lng,
@@ -158,7 +159,7 @@ mission CustomerDataEnrichment {
               country_code: response.country_code,
               accuracy: response.accuracy
             }
-          } -> raw_customers { key: customer.id, upsert: true }
+          } -> raw_customers { key: customer.id, partial: true }
         },
 
         _ -> continue
@@ -185,7 +186,9 @@ mission CustomerDataEnrichment {
 
       match response {
         _ where .risk_score != null -> {
-          // Compute risk tier using let
+          // Compute risk tier with a guarded match: each `s where <cond>` arm
+          // binds the matched value to `s` and is taken when its guard holds
+          // (top-to-bottom, first match wins).
           let score = response.risk_score
           let tier = match score {
             s where s >= 800 => "excellent",
@@ -203,8 +206,8 @@ mission CustomerDataEnrichment {
             _ => 0
           }
 
+          // Partial update merges the risk profile into the existing record
           store {
-            ...customer,
             risk_profile: {
               score: score,
               tier: tier,
@@ -212,7 +215,7 @@ mission CustomerDataEnrichment {
               fraud_flags: response.fraud_indicators,
               last_assessed: now()
             }
-          } -> raw_customers { key: customer.id, upsert: true }
+          } -> raw_customers { key: customer.id, partial: true }
         },
 
         _ -> {
@@ -233,71 +236,53 @@ mission CustomerDataEnrichment {
 
   action ComputeSegments {
     for customer in raw_customers {
-      // Complex segmentation logic using let bindings
-      let ltv = customer.lifetime_value
-      let risk_tier = customer.risk_profile.tier
+      // Complex segmentation logic using let bindings. The `??` nullish
+      // coalescing operator supplies a default only when the field is
+      // null/undefined (a real 0 is preserved, unlike `or`).
+      let ltv = customer.lifetime_value ?? 0
+      let risk_tier = customer.risk_profile.tier ?? "unrated"
       let purchase_freq = customer.analytics.purchase_frequency
       let days_inactive = customer.analytics.days_since_last_purchase
 
-      // Determine primary segment
-      let segment = match {
+      // Determine primary segment via a nested ternary cascade (evaluated
+      // top-to-bottom; first matching condition wins).
+      let segment =
         // VIP: High value, low risk, active
-        ltv > 10000 and risk_tier in ["excellent", "good"] and days_inactive < 30
-          => "vip",
-
+        (ltv > 10000 and (risk_tier == "excellent" or risk_tier == "good") and days_inactive < 30) ? "vip"
         // At-risk VIP: High value but becoming inactive
-        ltv > 10000 and days_inactive > 60
-          => "vip_at_risk",
-
+        : (ltv > 10000 and days_inactive > 60) ? "vip_at_risk"
         // Growth: Medium value, increasing frequency
-        ltv > 2000 and ltv <= 10000 and purchase_freq > 1
-          => "growth",
-
+        : (ltv > 2000 and ltv <= 10000 and purchase_freq > 1) ? "growth"
         // New promising: Recent signup with good first purchase
-        days_inactive < 30 and customer.analytics.total_orders == 1 and customer.analytics.avg_order_value > 100
-          => "new_promising",
-
+        : (days_inactive < 30 and customer.analytics.total_orders == 1 and customer.analytics.avg_order_value > 100) ? "new_promising"
         // Dormant: Haven't purchased in a while
-        days_inactive > 90
-          => "dormant",
-
+        : (days_inactive > 90) ? "dormant"
         // Standard: Everyone else
-        _ => "standard"
-      }
+        : "standard"
 
       // Determine engagement score
-      let recency_score = match days_inactive {
-        d where d < 7 => 100,
-        d where d < 30 => 80,
-        d where d < 60 => 60,
-        d where d < 90 => 40,
-        d where d < 180 => 20,
-        _ => 0
-      }
+      let recency_score = days_inactive < 7 ? 100
+        : days_inactive < 30 ? 80
+        : days_inactive < 60 ? 60
+        : days_inactive < 90 ? 40
+        : days_inactive < 180 ? 20
+        : 0
 
       let frequency_score = min(purchase_freq * 20, 100)
       let monetary_score = min(ltv / 100, 100)
       let rfm_score = (recency_score + frequency_score + monetary_score) / 3
 
-      // Create final enriched customer record
-      map customer -> EnrichedCustomer {
-        id: .id,
-        email: .email,
-        full_name: concat(.first_name, " ", .last_name),
-        phone: .phone,
-        address: .address,
-        geo_data: .geo_data,
-        analytics: {
-          ...customer.analytics,
-          rfm_score: rfm_score
-        },
-        risk_profile: .risk_profile,
+      // Create the final enriched customer record. The spread operator carries
+      // every existing field on the customer through, then the trailing fields
+      // add computed values (and override where names collide) — no need to
+      // restate the untouched fields.
+      store {
+        ...customer,
+        full_name: concat(customer.first_name, " ", customer.last_name),
         segment: segment,
         lifetime_value: ltv,
         enriched_at: now()
-      }
-
-      store response -> enriched_customers {
+      } -> enriched_customers {
         key: .id,
         upsert: true
       }
@@ -320,19 +305,18 @@ mission CustomerDataEnrichment {
 
   action GenerateSegmentSummary {
     for segment_name in ["vip", "vip_at_risk", "growth", "new_promising", "dormant", "standard"] {
-      let segment_customers = customer_segments where .segment == segment_name
-      let segment_enriched = enriched_customers where .segment == segment_name
-
-      store {
-        segment: segment_name,
-        count: length(segment_customers),
-        avg_rfm: sum(segment_customers.rfm_score) / max(length(segment_customers), 1),
-        avg_ltv: sum(segment_enriched.lifetime_value) / max(length(segment_enriched), 1),
-        total_ltv: sum(segment_enriched.lifetime_value),
-        generated_at: now()
-      } -> customer_segments {
-        key: "summary_" + segment_name,
-        upsert: true
+      // Filtering belongs on the `for` loop, so iterate each segment's
+      // enriched customers directly and write a summary row per member.
+      for customer in enriched_customers where .segment == segment_name {
+        store {
+          segment: segment_name,
+          customer_id: customer.id,
+          lifetime_value: customer.lifetime_value,
+          generated_at: now()
+        } -> customer_segments {
+          key: "summary_" + segment_name + "_" + customer.id,
+          upsert: true
+        }
       }
     }
   }

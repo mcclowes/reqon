@@ -108,7 +108,7 @@ mission OrderReconciliation {
   action SyncShopifyOrders {
     // Get last sync timestamp for incremental sync
     get "/orders.json" {
-      source: "Shopify",
+      source: Shopify,
       body: {
         "status": "any",
         "updated_at_min": sync_state.get("shopify_orders_last_sync"),
@@ -118,7 +118,7 @@ mission OrderReconciliation {
       until: response.orders.length == 0,
       retry: {
         maxAttempts: 5,
-        backoff: "exponential",
+        backoff: exponential,
         initialDelay: 2000,
         maxDelay: 60000
       }
@@ -166,7 +166,7 @@ mission OrderReconciliation {
 
   action SyncStripePayments {
     get "/payment_intents" {
-      source: "Stripe",
+      source: Stripe,
       body: {
         "limit": 100,
         "created[gte]": sync_state.get("stripe_payments_last_sync"),
@@ -176,7 +176,7 @@ mission OrderReconciliation {
       until: response.has_more == false,
       retry: {
         maxAttempts: 3,
-        backoff: "exponential",
+        backoff: exponential,
         initialDelay: 1000
       }
     },
@@ -193,9 +193,9 @@ mission OrderReconciliation {
           "canceled" => "voided",
           _ => .status
         },
-        method: .payment_method_types[0],
-        captured_at: .charges.data[0].created,
-        refunded_amount: .charges.data[0].amount_refunded / 100
+        method: first(.payment_method_types),
+        captured_at: first(.charges.data).created,
+        refunded_amount: first(.charges.data).amount_refunded / 100
       },
 
       store response -> payments { key: .payment_id, upsert: true }
@@ -210,7 +210,7 @@ mission OrderReconciliation {
 
   action SyncShipStationShipments {
     get "/shipments" {
-      source: "ShipStation",
+      source: ShipStation,
       body: {
         "pageSize": 500,
         "createDateStart": sync_state.get("shipstation_last_sync"),
@@ -220,7 +220,7 @@ mission OrderReconciliation {
       until: response.shipments.length == 0,
       retry: {
         maxAttempts: 4,
-        backoff: "exponential",
+        backoff: exponential,
         initialDelay: 3000
       }
     },
@@ -253,8 +253,10 @@ mission OrderReconciliation {
   // ============================================================
 
   action ValidateReconciliation {
-    // Check for orders without payments
-    for order in orders where .payment_status == "pending" and .created_at < now() - days(3) {
+    // Check for orders without payments. `validate ... or { ... }` asserts the
+    // constraint and, on failure, runs the fallback block instead of aborting
+    // the mission — here recording a discrepancy and carrying on.
+    for order in orders where .payment_status == "pending" and .created_at < now() - 259200000 {
       let payment_exists = any of payments where .order_id == order.order_id,
 
       validate order {
@@ -276,28 +278,26 @@ mission OrderReconciliation {
 
     // Check for payment/order amount mismatches
     for order in orders {
-      let matching_payments = payments where .order_id == order.order_id,
-      let total_paid = sum(matching_payments.amount),
-
-      validate order {
-        assume total_paid >= order.total_amount - 0.01,
-        assume total_paid <= order.total_amount + 0.01
-      } or {
-        store {
-          id: "disc_" + order.order_id + "_amount_mismatch",
-          order_id: order.order_id,
-          type: "amount_mismatch",
-          severity: match abs(order.total_amount - total_paid) {
-            x where x > 100 => "critical",
-            x where x > 10 => "high",
-            _ => "medium"
-          },
-          description: "Order total does not match payment total",
-          shopify_value: order.total_amount,
-          stripe_value: total_paid,
-          shipstation_value: null,
-          detected_at: now()
-        } -> discrepancies { key: .id, upsert: true }
+      for payment in payments where .order_id == order.order_id {
+        match order {
+          _ where payment.amount < order.total_amount - 0.01 or payment.amount > order.total_amount + 0.01 -> {
+            store {
+              id: "disc_" + order.order_id + "_amount_mismatch",
+              order_id: order.order_id,
+              type: "amount_mismatch",
+              severity: match true {
+                abs(order.total_amount - payment.amount) > 100 => "critical",
+                abs(order.total_amount - payment.amount) > 10 => "high",
+                _ => "medium"
+              },
+              description: "Order total does not match payment total",
+              shopify_value: order.total_amount,
+              stripe_value: payment.amount,
+              shipstation_value: null,
+              detected_at: now()
+            } -> discrepancies { key: .id, upsert: true }
+          }
+        }
       }
     },
 
@@ -324,22 +324,22 @@ mission OrderReconciliation {
 
     // Check for refund discrepancies
     for payment in payments where .refunded_amount > 0 {
-      let order = first(orders where .order_id == payment.order_id),
-
-      validate payment {
-        assume order.payment_status == "refunded" or order.payment_status == "partial_refund"
-      } or {
-        store {
-          id: "disc_" + payment.order_id + "_refund_mismatch",
-          order_id: payment.order_id,
-          type: "refund_status_mismatch",
-          severity: "high",
-          description: "Stripe shows refund but Shopify payment status not updated",
-          shopify_value: order.payment_status,
-          stripe_value: payment.refunded_amount,
-          shipstation_value: null,
-          detected_at: now()
-        } -> discrepancies { key: .id, upsert: true }
+      for order in orders where .order_id == payment.order_id {
+        match order {
+          _ where order.payment_status != "refunded" and order.payment_status != "partial_refund" -> {
+            store {
+              id: "disc_" + payment.order_id + "_refund_mismatch",
+              order_id: payment.order_id,
+              type: "refund_status_mismatch",
+              severity: "high",
+              description: "Stripe shows refund but Shopify payment status not updated",
+              shopify_value: order.payment_status,
+              stripe_value: payment.refunded_amount,
+              shipstation_value: null,
+              detected_at: now()
+            } -> discrepancies { key: .id, upsert: true }
+          }
+        }
       }
     }
   }

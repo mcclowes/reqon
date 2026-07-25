@@ -5,12 +5,27 @@
 
 import ecommerce from "examples/mock-server-demo/openapi.yaml"
 
-schema Product from ecommerce.Product {}
-schema Order from ecommerce.Order {}
-schema InventoryItem from ecommerce.InventoryItem {}
+schema Product {
+  id: string,
+  name: string,
+  price: decimal,
+  category: string,
+  inStock: boolean,
+  stockQuantity: int
+}
 
-dataset ECommerce {
-  products: 20 of Product,
-  orders: 15 of Order,
-  inventory: 20 of InventoryItem
+schema Order {
+  id: string,
+  orderNumber: string,
+  status: string,
+  total: decimal,
+  createdAt: date,
+  itemCount: int
+}
+
+schema InventoryItem {
+  productId: string,
+  sku: string,
+  quantity: int,
+  warehouseLocation: string
 }

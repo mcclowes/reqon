@@ -731,4 +731,100 @@ describe('ReqonParser', () => {
       expect(() => parse(source)).not.toThrow();
     });
   });
+
+  describe('schema field definitions', () => {
+    function parseSchemaMission(fields: string) {
+      return parse(`
+        mission M {
+          store s: memory("s")
+          schema Rec {
+            ${fields}
+          }
+          action A {
+            get "/x"
+            match response {
+              Rec -> { store response -> s { key: .id } }
+              _ -> continue
+            }
+          }
+          run A
+        }
+      `);
+    }
+
+    it('accepts primitive type keywords (int, decimal, date, any) as field types', () => {
+      expect(() =>
+        parseSchemaMission('id: string, count: int, amount: decimal, when: date, extra: any')
+      ).not.toThrow();
+    });
+
+    it('accepts reserved keywords as field names', () => {
+      // `source` and `action` are reserved Reqon keywords but are valid field names.
+      expect(() =>
+        parseSchemaMission('source: string, action: string, status: string')
+      ).not.toThrow();
+    });
+
+    it('accepts inline nested object field types', () => {
+      expect(() =>
+        parseSchemaMission('id: string, contact: { name: string, email: string }')
+      ).not.toThrow();
+    });
+
+    it('accepts optional field markers (?)', () => {
+      expect(() => parseSchemaMission('id: string, note: string?, meta: any?')).not.toThrow();
+    });
+  });
+
+  describe('expressions and options', () => {
+    it('parses the != operator in a match guard', () => {
+      const source = `
+        mission M {
+          store s: memory("s")
+          action A {
+            get "/x"
+            match response {
+              _ where .status != "inactive" -> { store response -> s { key: .id } }
+              _ -> continue
+            }
+          }
+          run A
+        }
+      `;
+      expect(() => parse(source)).not.toThrow();
+    });
+
+    it('accepts reserved keywords as object-literal keys', () => {
+      const source = `
+        mission M {
+          store s: memory("s")
+          action A {
+            get "/x"
+            store { action: "sync", source: "api", status: "ok" } -> s { key: .action }
+          }
+          run A
+        }
+      `;
+      expect(() => parse(source)).not.toThrow();
+    });
+
+    it('accepts a quoted rate-limit strategy', () => {
+      const source = `
+        mission M {
+          source API {
+            auth: none,
+            base: "https://api.example.com",
+            rateLimit: { strategy: "pause", maxWait: 1000 }
+          }
+          store s: memory("s")
+          action A {
+            get "/x" { source: API }
+            store response -> s { key: .id }
+          }
+          run A
+        }
+      `;
+      expect(() => parse(source)).not.toThrow();
+    });
+  });
 });

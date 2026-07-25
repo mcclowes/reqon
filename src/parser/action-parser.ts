@@ -355,7 +355,22 @@ export class ActionParser extends FetchParser {
 
     this.consume(TokenType.RBRACE, "Expected '}'");
 
-    return { type: 'ValidateStep', target, constraints };
+    // Optional `or { ... }` fallback block: steps to run on validation failure
+    // instead of throwing.
+    let fallback: ActionStep[] | undefined;
+    if (this.match(TokenType.OR)) {
+      this.consume(TokenType.LBRACE, "Expected '{' after 'or'");
+      fallback = [];
+
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        fallback.push(this.parseActionStep());
+        this.match(TokenType.COMMA);
+      }
+
+      this.consume(TokenType.RBRACE, "Expected '}' to close 'or' block");
+    }
+
+    return { type: 'ValidateStep', target, constraints, fallback };
   }
 
   /**
@@ -445,14 +460,20 @@ export class ActionParser extends FetchParser {
    * Parse a match arm
    */
   protected parseMatchArm(): MatchArm {
-    // A bare number dispatches on the response status (`404 -> skip`);
-    // otherwise a schema name, or '_' for wildcard.
+    // A bare number dispatches on the response status (`404 -> skip`).
+    // `[Schema]` matches an array whose elements all satisfy Schema. A bare
+    // identifier (or '_') matches a single value.
     let status: number | undefined;
     let schema: string;
+    let isArray = false;
     if (this.check(TokenType.NUMBER)) {
       const token = this.advance();
       status = parseInt(token.value, 10);
       schema = token.value;
+    } else if (this.match(TokenType.LBRACKET)) {
+      schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name in array pattern').value;
+      this.consume(TokenType.RBRACKET, "Expected ']' to close array pattern");
+      isArray = true;
     } else {
       schema = this.consume(TokenType.IDENTIFIER, 'Expected status code, schema name or _').value;
     }
@@ -468,7 +489,7 @@ export class ActionParser extends FetchParser {
     // Check for flow directives
     const flow = this.tryParseFlowDirective();
     if (flow) {
-      return { schema, status, guard, flow };
+      return { schema, status, isArray, guard, flow };
     }
 
     // Check for step block
@@ -482,12 +503,12 @@ export class ActionParser extends FetchParser {
       }
 
       this.consume(TokenType.RBRACE, "Expected '}'");
-      return { schema, status, guard, steps };
+      return { schema, status, isArray, guard, steps };
     }
 
     // Single step
     const step = this.parseActionStep();
-    return { schema, status, guard, steps: [step] };
+    return { schema, status, isArray, guard, steps: [step] };
   }
 
   /**
@@ -802,22 +823,60 @@ export class ActionParser extends FetchParser {
    * Parse a field definition
    */
   protected parseFieldDefinition(): FieldDefinition {
-    const name = this.consumeIdentifier('Expected field name').value;
+    // Field names sit in an unambiguous name position (always followed by `:`),
+    // so any reserved keyword's text is a valid field name here (e.g. `source`,
+    // `action`, `status`).
+    const name = this.consumeName('Expected field name').value;
     this.consume(TokenType.COLON, "Expected ':'");
 
-    // Simplified field type parsing
-    const typeName = this.consume(TokenType.IDENTIFIER, 'Expected type').value;
+    const fieldType = this.parseFieldType();
 
     // Handle optional/nullable type marker (?)
-    this.match(TokenType.QUESTION);
+    const optional = this.match(TokenType.QUESTION);
 
     return {
       type: 'FieldDefinition',
       name,
-      fieldType: {
-        type: 'PrimitiveType',
-        name: typeName as 'string' | 'int' | 'decimal' | 'date' | 'boolean',
-      },
+      fieldType,
+      ...(optional ? { optional: true } : {}),
+    } as FieldDefinition;
+  }
+
+  /**
+   * Parse a schema field's type. Supports primitive type names, inline nested
+   * object types (`{ a: string, b: int }`), and array types (`[Type]`).
+   */
+  protected parseFieldType(): FieldDefinition['fieldType'] {
+    // Inline nested object type: consume the fields so the tokens are balanced.
+    // Nested shapes aren't deeply validated during schema matching, so we model
+    // them as a permissive `object` primitive.
+    if (this.match(TokenType.LBRACE)) {
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        this.parseFieldDefinition();
+        this.match(TokenType.COMMA);
+      }
+      this.consume(TokenType.RBRACE, "Expected '}'");
+      return { type: 'PrimitiveType', name: 'object' } as unknown as FieldDefinition['fieldType'];
+    }
+
+    // Array type: [Type]
+    if (this.match(TokenType.LBRACKET)) {
+      const element = this.parseFieldType();
+      this.consume(TokenType.RBRACKET, "Expected ']'");
+      return { type: 'CollectionType', element } as unknown as FieldDefinition['fieldType'];
+    }
+
+    // The type-name position is unambiguous (always followed by `?`, `,`, `}`, or
+    // `]`), so besides plain identifiers we also accept the primitive-type words
+    // that Vague's lexer reserves as keywords (`int`, `decimal`, `date`, `any`).
+    const typeName = this.consumeAny(
+      [TokenType.IDENTIFIER, TokenType.INT, TokenType.DECIMAL, TokenType.DATE, TokenType.ANY],
+      'Expected type'
+    ).value;
+
+    return {
+      type: 'PrimitiveType',
+      name: typeName as 'string' | 'int' | 'decimal' | 'date' | 'boolean',
     };
   }
 }

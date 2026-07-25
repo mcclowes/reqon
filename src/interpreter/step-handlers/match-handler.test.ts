@@ -190,6 +190,79 @@ describe('MatchHandler', () => {
     });
   });
 
+  describe('array-of-schema matching', () => {
+    function arrayMatchStep(): MatchStep {
+      return {
+        type: 'MatchStep',
+        target: { type: 'Identifier', name: 'response' } as Expression,
+        arms: [
+          {
+            schema: 'SuccessResponse',
+            isArray: true,
+            steps: [
+              {
+                type: 'LetStep',
+                name: 'matched',
+                value: { type: 'Literal', value: 'array', dataType: 'string' },
+              } as ActionStep,
+            ],
+          },
+          {
+            schema: 'ErrorResponse',
+            steps: [
+              {
+                type: 'LetStep',
+                name: 'matched',
+                value: { type: 'Literal', value: 'single', dataType: 'string' },
+              } as ActionStep,
+            ],
+          },
+        ],
+      };
+    }
+
+    it('matches an array whose every element satisfies the schema', async () => {
+      deps.ctx.response = [
+        { status: 'ok', data: 1 },
+        { status: 'ok', data: 2 },
+      ];
+
+      const handler = new MatchHandler(deps);
+      await handler.execute(arrayMatchStep());
+
+      expect(deps.log).toHaveBeenCalledWith('Matched schema: [SuccessResponse]');
+      expect(executedSteps).toHaveLength(1);
+    });
+
+    it('matches an empty array vacuously', async () => {
+      deps.ctx.response = [];
+
+      const handler = new MatchHandler(deps);
+      await handler.execute(arrayMatchStep());
+
+      expect(deps.log).toHaveBeenCalledWith('Matched schema: [SuccessResponse]');
+    });
+
+    it('does not match when an element violates the schema', async () => {
+      // Second element is missing the required `status` field.
+      deps.ctx.response = [{ status: 'ok' }, { error: 'boom', code: 500 }];
+
+      const handler = new MatchHandler(deps);
+      await expect(handler.execute(arrayMatchStep())).rejects.toThrow(NoMatchError);
+    });
+
+    it('does not match a single (non-array) object against an array pattern', async () => {
+      // A SuccessResponse-shaped object, but the only SuccessResponse arm is
+      // array-only. It cannot match the array arm, and it is not an
+      // ErrorResponse, so no arm matches.
+      deps.ctx.response = { status: 'ok', data: 1 };
+
+      const handler = new MatchHandler(deps);
+      await expect(handler.execute(arrayMatchStep())).rejects.toThrow(NoMatchError);
+      expect(deps.log).not.toHaveBeenCalledWith('Matched schema: [SuccessResponse]');
+    });
+  });
+
   describe('flow directives', () => {
     describe('skip directive', () => {
       it('throws SkipSignal when skip flow is triggered', async () => {

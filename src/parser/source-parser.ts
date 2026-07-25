@@ -115,10 +115,16 @@ export class SourceParser extends ReqonExpressionParser {
    * identifier. Accepting it here keeps the default strategy writable - the
    * same keyword-in-option-context handling `key`, `upsert` and friends get.
    */
+  /**
+   * Accepts the strategy as a quoted string ("pause"), a bare identifier
+   * (throttle, fail), or the `pause` keyword token — `pause` is reserved by the
+   * lexer, so unquoted it never arrives as a plain identifier.
+   */
   private parseRateLimitStrategy(): 'pause' | 'throttle' | 'fail' {
-    const token = this.check(ReqonTokenType.PAUSE)
-      ? this.advance()
-      : this.consume(TokenType.IDENTIFIER, 'Expected strategy');
+    const token = this.consumeAny(
+      [TokenType.STRING, TokenType.IDENTIFIER, ReqonTokenType.PAUSE],
+      'Expected strategy'
+    );
 
     if (token.value !== 'pause' && token.value !== 'throttle' && token.value !== 'fail') {
       throw this.error(`Unknown rate limit strategy: ${token.value}`);

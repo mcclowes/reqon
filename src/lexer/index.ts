@@ -15,8 +15,13 @@
 // Import plugin to auto-register Reqon keywords with Vague
 import '../plugin.js';
 
-// Re-export Vague's Lexer and TokenType as the primary lexer
-export { Lexer, Lexer as ReqonLexer, TokenType, type Token } from 'vague-lang';
+// Re-export Vague's TokenType and Token type
+export { TokenType, type Token } from 'vague-lang';
+
+// Reqon's lexer extends Vague's lexer with `!=` / `!` operator support.
+// Exported under both names so all consumers (parser, loader, benchmarks,
+// tests) get the enhanced lexer.
+export { ReqonLexer, ReqonLexer as Lexer } from './lexer.js';
 
 // Export Reqon-specific token types and keywords
 export { ReqonTokenType, REQON_KEYWORDS } from './tokens.js';

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ValidateStep } from '../../ast/nodes.js';
+import type { ValidateStep, ActionStep } from '../../ast/nodes.js';
 import type { Expression } from 'vague-lang';
 import { ValidateHandler } from './validate-handler.js';
 import { createContext, setVariable } from '../context.js';
@@ -179,6 +179,71 @@ describe('ValidateHandler', () => {
 
       const handler = new ValidateHandler(deps);
       await expect(handler.execute(step)).rejects.toThrow('First constraint failed');
+    });
+  });
+
+  describe('or { ... } fallback', () => {
+    function ageStep(fallback?: ActionStep[]): ValidateStep {
+      return {
+        type: 'ValidateStep',
+        target: { type: 'Identifier', name: 'response' } as Expression,
+        constraints: [
+          {
+            type: 'ValidationConstraint',
+            condition: {
+              type: 'BinaryExpression',
+              operator: '>=',
+              left: { type: 'Identifier', name: 'age' },
+              right: { type: 'Literal', value: 18, dataType: 'number' },
+            } as Expression,
+            severity: 'error',
+            message: 'Age must be at least 18',
+          },
+        ],
+        fallback,
+      };
+    }
+
+    const fallbackSteps: ActionStep[] = [
+      {
+        type: 'LetStep',
+        name: 'flagged',
+        value: { type: 'Literal', value: true, dataType: 'boolean' },
+      } as ActionStep,
+    ];
+
+    it('runs the fallback instead of throwing when a constraint fails', async () => {
+      deps.ctx.response = { age: 15 };
+      const executed: ActionStep[] = [];
+      const executeStep = vi.fn(async (s: ActionStep) => {
+        executed.push(s);
+      });
+
+      const handler = new ValidateHandler({ ...deps, executeStep, actionName: 'Check' });
+      await expect(handler.execute(ageStep(fallbackSteps))).resolves.not.toThrow();
+
+      expect(executeStep).toHaveBeenCalledTimes(1);
+      expect(executed[0].type).toBe('LetStep');
+    });
+
+    it('does not run the fallback when validation passes', async () => {
+      deps.ctx.response = { age: 21 };
+      const executeStep = vi.fn(async () => {});
+
+      const handler = new ValidateHandler({ ...deps, executeStep, actionName: 'Check' });
+      await handler.execute(ageStep(fallbackSteps));
+
+      expect(executeStep).not.toHaveBeenCalled();
+      expect(deps.log).toHaveBeenCalledWith('Validation passed');
+    });
+
+    it('still throws when a constraint fails and no fallback is provided', async () => {
+      deps.ctx.response = { age: 15 };
+      const executeStep = vi.fn(async () => {});
+
+      const handler = new ValidateHandler({ ...deps, executeStep, actionName: 'Check' });
+      await expect(handler.execute(ageStep())).rejects.toThrow('Age must be at least 18');
+      expect(executeStep).not.toHaveBeenCalled();
     });
   });
 
