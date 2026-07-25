@@ -52,7 +52,12 @@ export class MatchHandler {
     let matchedArm = null;
 
     for (const arm of step.arms) {
-      if (arm.isArray) {
+      if (arm.status !== undefined) {
+        // A status arm dispatches on the last response's status, not its body.
+        if (this.deps.ctx.responseStatus !== arm.status) {
+          continue;
+        }
+      } else if (arm.isArray) {
         // `[Schema]` arm: the value must be an array whose every element
         // satisfies the schema. An empty array matches vacuously.
         if (!Array.isArray(value)) {

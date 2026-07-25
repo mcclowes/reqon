@@ -16,7 +16,7 @@ import { HttpClient, BearerAuthProvider, OAuth2AuthProvider, type AuthProvider }
 import { loadOAS, type OASSource } from '../oas/index.js';
 import type { RateLimiter } from '../auth/types.js';
 import type { CircuitBreaker } from '../auth/circuit-breaker.js';
-import { ProxyPool } from './proxy.js';
+import { ProxyPool, type ProxyAgentFactory } from './proxy.js';
 import { evaluate } from './evaluator.js';
 
 export interface AuthConfig {
@@ -36,6 +36,13 @@ export interface SourceManagerConfig {
   log?: (message: string) => void;
   /** Mission file directory for resolving relative paths */
   missionDir?: string;
+  /**
+   * Supply the HTTP stack behind proxy pools. Proxied requests are dispatched
+   * through the fetch paired with the agent (see ProxyLane.fetchImpl), so these
+   * two travel together: override both, or neither.
+   */
+  proxyAgentFactory?: ProxyAgentFactory;
+  proxyFetchFactory?: () => Promise<typeof globalThis.fetch | undefined>;
 }
 
 export interface SourceManagerDeps {
@@ -148,7 +155,10 @@ export class SourceManager {
       return url;
     });
 
-    const pool = new ProxyPool(urls);
+    const pool = new ProxyPool(urls, {
+      agentFactory: this.config.proxyAgentFactory,
+      fetchFactory: this.config.proxyFetchFactory,
+    });
     this.proxyPools.set(source.name, pool);
     this.log(`Proxy pool for ${source.name}: ${pool.poolLabels.join(', ')}`);
     return pool;
@@ -254,6 +264,8 @@ export class SourceManager {
       failureWindow: source.config.circuitBreaker.failureWindow
         ? source.config.circuitBreaker.failureWindow * 1000
         : undefined,
+      failureRate: source.config.circuitBreaker.failureRate,
+      minimumRequests: source.config.circuitBreaker.minimumRequests,
     });
 
     this.log(

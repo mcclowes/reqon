@@ -2,6 +2,7 @@ import type { RetryConfig } from '../ast/nodes.js';
 import type { RateLimiter } from '../auth/types.js';
 import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
 import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
+import { laneKey } from '../auth/lane.js';
 import { sleep } from '../utils/async.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
@@ -70,6 +71,13 @@ export interface HttpRequest {
    * server can dedup a re-sent write.
    */
   idempotencyKey?: string;
+  /**
+   * Statuses to treat as a normal response rather than a failure. An allowed
+   * status short-circuits the retry, refresh and error paths below and is
+   * reported to the circuit breaker as a success - the server answered
+   * correctly, we simply asked about something that isn't there.
+   */
+  allow?: number[];
 }
 
 /** HTTP methods that are safe to retry automatically (idempotent per RFC 7231). */
@@ -127,28 +135,40 @@ export class HttpClient {
       // Resilience state is per egress IP. Sharing one key across a pool would
       // throttle every proxy to a single IP's budget and let one bad proxy trip
       // the breaker for all of them.
-      const laneKey =
-        this.config.sourceName && lane
-          ? `${this.config.sourceName}@${lane.label}`
-          : this.config.sourceName;
+      const requestLane = this.config.sourceName
+        ? laneKey(this.config.sourceName, lane?.label)
+        : undefined;
 
       try {
         // Check the circuit breaker before each attempt; state may have changed
         // during a retry backoff. Throws CircuitBreakerError if open, which the
         // catch below re-throws rather than retrying.
-        if (this.config.circuitBreaker && laneKey) {
-          this.config.circuitBreaker.ensureCanProceed(laneKey, req.path);
+        //
+        // Scoped to the lane, not the path. req.path is interpolated per
+        // iteration, so a fan-out over `/entry/{id}/` would file every request
+        // under its own key: the throttle would never see a previous request to
+        // pace against and the breaker would never accumulate to its threshold.
+        if (this.config.circuitBreaker && requestLane) {
+          this.config.circuitBreaker.ensureCanProceed(requestLane);
         }
 
         // Wait for rate limit capacity if we have a rate limiter
-        if (this.config.rateLimiter && laneKey) {
-          await this.config.rateLimiter.waitForCapacity(laneKey, req.path);
+        if (this.config.rateLimiter && requestLane) {
+          await this.config.rateLimiter.waitForCapacity(requestLane);
         }
 
         const attemptOptions = lane
           ? ({ ...fetchOptions, dispatcher: lane.dispatcher } as RequestInit)
           : fetchOptions;
-        const response = await this.fetchWithTimeout(url, attemptOptions, timeout, req.method);
+        // Dispatch through the fetch that owns this dispatcher; see
+        // ProxyLane.fetchImpl. Falls back to global fetch off the proxy path.
+        const response = await this.fetchWithTimeout(
+          url,
+          attemptOptions,
+          timeout,
+          req.method,
+          lane?.fetchImpl ?? fetch
+        );
 
         // Extract and record rate limit info from response headers
         const responseHeaders: Record<string, string> = {};
@@ -156,7 +176,7 @@ export class HttpClient {
           responseHeaders[key] = value;
         });
 
-        if (this.config.rateLimiter && laneKey) {
+        if (this.config.rateLimiter && requestLane) {
           const rateLimitInfo = parseRateLimitHeaders(responseHeaders);
 
           // Add retry-after from 429 responses
@@ -167,7 +187,20 @@ export class HttpClient {
             }
           }
 
-          this.config.rateLimiter.recordResponse(laneKey, rateLimitInfo, req.path);
+          this.config.rateLimiter.recordResponse(requestLane, rateLimitInfo);
+        }
+
+        // An allowed status is data. Decided before the retry and error paths
+        // so `allow: [404]` costs one request, not maxAttempts of them.
+        if (req.allow?.includes(response.status)) {
+          if (this.config.circuitBreaker && requestLane) {
+            this.config.circuitBreaker.recordSuccess(requestLane);
+          }
+          return {
+            status: response.status,
+            data: await this.parseResponseBody<T>(response, url, req.method),
+            headers: responseHeaders,
+          };
         }
 
         // Handle rate limiting: retry only while attempts remain. A 429 on the
@@ -184,8 +217,8 @@ export class HttpClient {
         // Handle server errors with retry
         if (response.status >= 500) {
           // Record failure in circuit breaker
-          if (this.config.circuitBreaker && laneKey) {
-            this.config.circuitBreaker.recordFailure(laneKey, req.path, response.status);
+          if (this.config.circuitBreaker && requestLane) {
+            this.config.circuitBreaker.recordFailure(requestLane, undefined, response.status);
           }
 
           if (retriable && attempt < maxAttempts) {
@@ -227,8 +260,8 @@ export class HttpClient {
         const data = await this.parseResponseBody<T>(response, url, req.method);
 
         // Record success in circuit breaker
-        if (this.config.circuitBreaker && laneKey && response.status < 500) {
-          this.config.circuitBreaker.recordSuccess(laneKey, req.path);
+        if (this.config.circuitBreaker && requestLane && response.status < 500) {
+          this.config.circuitBreaker.recordSuccess(requestLane);
         }
 
         return {
@@ -251,8 +284,8 @@ export class HttpClient {
         }
 
         // Record network errors in circuit breaker
-        if (this.config.circuitBreaker && laneKey) {
-          this.config.circuitBreaker.recordFailure(laneKey, req.path, undefined, true);
+        if (this.config.circuitBreaker && requestLane) {
+          this.config.circuitBreaker.recordFailure(requestLane, undefined, undefined, true);
         }
 
         // A network error on a non-idempotent write is ambiguous: the request
@@ -281,16 +314,17 @@ export class HttpClient {
     url: string,
     options: RequestInit,
     timeoutMs: number,
-    method: string
+    method: string,
+    fetchImpl: typeof globalThis.fetch = fetch
   ): Promise<Response> {
     if (!timeoutMs || timeoutMs <= 0) {
-      return fetch(url, options);
+      return fetchImpl(url, options);
     }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      return await fetchImpl(url, { ...options, signal: controller.signal });
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         throw new FetchError(`Request timed out after ${timeoutMs}ms`, {

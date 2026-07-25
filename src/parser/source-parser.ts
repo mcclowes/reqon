@@ -110,6 +110,28 @@ export class SourceParser extends ReqonExpressionParser {
     return pool;
   }
 
+  /**
+   * `pause` doubles as a step keyword, so it arrives as PAUSE rather than an
+   * identifier. Accepting it here keeps the default strategy writable - the
+   * same keyword-in-option-context handling `key`, `upsert` and friends get.
+   */
+  /**
+   * Accepts the strategy as a quoted string ("pause"), a bare identifier
+   * (throttle, fail), or the `pause` keyword token — `pause` is reserved by the
+   * lexer, so unquoted it never arrives as a plain identifier.
+   */
+  private parseRateLimitStrategy(): 'pause' | 'throttle' | 'fail' {
+    const token = this.consumeAny(
+      [TokenType.STRING, TokenType.IDENTIFIER, ReqonTokenType.PAUSE],
+      'Expected strategy'
+    );
+
+    if (token.value !== 'pause' && token.value !== 'throttle' && token.value !== 'fail') {
+      throw this.error(`Unknown rate limit strategy: ${token.value}`);
+    }
+    return token.value;
+  }
+
   protected parseRateLimitConfig(): RateLimitSourceConfig {
     this.consume(TokenType.LBRACE, "Expected '{'");
 
@@ -121,13 +143,7 @@ export class SourceParser extends ReqonExpressionParser {
 
       switch (key) {
         case 'strategy':
-          // Accept the strategy as a quoted string ("pause"), a bare identifier
-          // (throttle, fail), or the `pause` keyword token — `pause` is reserved
-          // by the lexer, so unquoted it never arrives as a plain identifier.
-          config.strategy = this.consumeAny(
-            [TokenType.STRING, TokenType.IDENTIFIER, ReqonTokenType.PAUSE],
-            'Expected strategy'
-          ).value as 'pause' | 'throttle' | 'fail';
+          config.strategy = this.parseRateLimitStrategy();
           break;
         case 'maxWait':
           config.maxWait = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
@@ -174,6 +190,18 @@ export class SourceParser extends ReqonExpressionParser {
           break;
         case 'successThreshold':
           config.successThreshold = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
+          break;
+        case 'failureRate':
+          config.failureRate = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
+          break;
+        case 'minimumRequests':
+          config.minimumRequests = parseInt(
             this.consume(TokenType.NUMBER, 'Expected number').value,
             10
           );

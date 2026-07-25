@@ -63,6 +63,8 @@ export interface FetchHandlerDeps {
 export interface FetchResult {
   data: unknown;
   checkpointKey?: string;
+  /** Response status, so `match` arms can dispatch on an allowed status. */
+  status?: number;
 }
 
 /**
@@ -143,6 +145,7 @@ export class FetchHandler {
             headers: Object.keys(sinceHeaders).length > 0 ? sinceHeaders : undefined,
             body,
             idempotencyKey: this.idempotencyKeyFor(resolved.method, resolved.path, body),
+            allow: step.allow,
           },
           step.retry
         );
@@ -172,7 +175,7 @@ export class FetchHandler {
       throw error;
     }
 
-    return { data, checkpointKey };
+    return { data, checkpointKey, status: statusCode };
   }
 
   private isRetryableError(error: unknown): boolean {
@@ -407,7 +410,10 @@ export class FetchHandler {
 
       this.deps.log(`Fetching page ${ctx.page + 1}...`);
 
-      const response = await client.request({ method, path: basePath, query, headers }, step.retry);
+      const response = await client.request(
+        { method, path: basePath, query, headers, allow: step.allow },
+        step.retry
+      );
       await this.validateOASResponse(sourceName, operationId, response.data);
 
       // Temporarily set response for until condition evaluation

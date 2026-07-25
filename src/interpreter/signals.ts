@@ -1,4 +1,25 @@
 /**
+ * Marks an error a loop chose to tolerate, so the run does not report it as a
+ * mission failure. Set on the error instance itself because executeStep records
+ * the error before the loop gets a chance to catch it.
+ */
+export const TOLERATED = Symbol('reqon.tolerated');
+
+export function markTolerated(error: unknown): void {
+  if (typeof error === 'object' && error !== null) {
+    (error as Record<symbol, unknown>)[TOLERATED] = true;
+  }
+}
+
+export function isTolerated(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as Record<symbol, unknown>)[TOLERATED] === true
+  );
+}
+
+/**
  * Execution control flow signals
  *
  * These are used for non-exceptional control flow during pipeline execution.
