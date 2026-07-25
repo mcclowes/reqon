@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
+import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { MissionExecutor } from './executor.js';
 import { ReqonLexer } from '../lexer/index.js';
@@ -17,11 +18,23 @@ import { ReqonParser } from '../parser/parser.js';
  *
  * The origin enforces a per-egress budget and answers 429 when it is exceeded,
  * so the assertion is the property that matters: the server never had to say no.
+ *
+ * The proxies speak both dialects, because which one undici picks for an http
+ * target is a library default that has moved between majors (undici 7 tunnels
+ * by default, 8 forwards): absolute-form forwarding, where the proxy tags the
+ * request, and CONNECT, where it cannot because the tunnel is opaque bytes.
  */
 
 const ID_COUNT = 24;
 const BUDGET = 6; // requests per egress per window
 const WINDOW_MS = 1000;
+
+/**
+ * Source port seen by the origin -> the proxy that opened it. A CONNECT tunnel
+ * carries no header the proxy can tag, so the socket is the only thing tying a
+ * request back to the egress that carried it.
+ */
+const laneByPort = new Map<number, string>();
 
 interface Origin {
   server: http.Server;
@@ -43,7 +56,9 @@ function startOrigin(): Promise<Origin> {
       return res.end(JSON.stringify(ids));
     }
 
-    const egress = String(req.headers['x-egress'] ?? 'direct');
+    const egress = String(
+      laneByPort.get(req.socket.remotePort ?? -1) ?? req.headers['x-egress'] ?? 'direct'
+    );
     const now = Date.now();
     const lane = hits.get(egress) ?? [];
     while (lane.length > 0 && lane[0] <= now - WINDOW_MS) lane.shift();
@@ -97,6 +112,21 @@ function startProxy(label: string): Promise<{ server: http.Server; port: number 
       res.end();
     });
     req.pipe(upstream);
+  });
+
+  // CONNECT: nothing can be tagged inside an opaque tunnel, so claim the source
+  // port instead and let the origin attribute the request by socket.
+  server.on('connect', (req, clientSocket, head) => {
+    const [host, port] = (req.url ?? '').split(':');
+    const upstream = net.connect(Number(port), host, () => {
+      if (upstream.localPort !== undefined) laneByPort.set(upstream.localPort, label);
+      clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      if (head?.length) upstream.write(head);
+      upstream.pipe(clientSocket);
+      clientSocket.pipe(upstream);
+    });
+    upstream.on('error', () => clientSocket.destroy());
+    clientSocket.on('error', () => upstream.destroy());
   });
 
   return new Promise((resolve) => {

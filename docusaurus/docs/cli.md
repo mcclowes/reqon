@@ -288,7 +288,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - run: npm install
       - run: npx reqon ./missions/sync.vague --auth ./credentials.json
         env:
@@ -298,7 +298,7 @@ jobs:
 ### Docker
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install

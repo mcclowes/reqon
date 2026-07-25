@@ -18,6 +18,10 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`concurrency N` on `for` loops** — bounded fan-out for bulk fetches, replacing strictly sequential iteration. Defaults to sequential, so existing missions are unchanged. Concurrent iterations get their own step-index namespace, keeping step ids deterministic for durable resume; the debugger forces sequential iteration.
 - **`fpl-sharded` example** — sharded bulk fetch across IPs, and a note on when the one-request version is all you need.
 
+### Changed
+
+- **Requires Node 22 or newer.** Node 20 reached end of life in April 2026, and `undici` — the optional peer dependency behind proxy support — needs 22.19 or newer, so proxy pools could never be exercised on 20. CI now covers Node 22 and 24.
+
 ---
 
 ## 0.4.0
