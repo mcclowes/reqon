@@ -32,6 +32,7 @@ import type {
   ValidationConstraint,
   StoreOptions,
   RetryConfig,
+  LoopErrorPolicy,
 } from '../ast/nodes.js';
 import { FetchParser } from './fetch-parser.js';
 
@@ -129,6 +130,7 @@ export class ActionParser extends FetchParser {
     }
 
     const concurrency = this.parseConcurrencyClause();
+    const onError = this.parseOnErrorClause();
 
     this.consume(TokenType.LBRACE, "Expected '{'");
     const steps: ActionStep[] = [];
@@ -140,7 +142,31 @@ export class ActionParser extends FetchParser {
 
     this.consume(TokenType.RBRACE, "Expected '}'");
 
-    return { type: 'ForStep', variable, collection, condition, steps, concurrency };
+    return { type: 'ForStep', variable, collection, condition, steps, concurrency, onError };
+  }
+
+  /**
+   * Optional `onError continue | abort | queue <store>` in a for loop header.
+   *
+   * A soft keyword, like `concurrency`, so `onError` stays usable as an
+   * identifier elsewhere. Absent means continue - see ForStep.onError.
+   */
+  private parseOnErrorClause(): LoopErrorPolicy | undefined {
+    if (!this.check(TokenType.IDENTIFIER) || this.peek().value !== 'onError') {
+      return undefined;
+    }
+    this.advance();
+
+    if (this.match(ReqonTokenType.ABORT)) return { action: 'abort' };
+    if (this.match(ReqonTokenType.CONTINUE)) return { action: 'continue' };
+    if (this.match(ReqonTokenType.QUEUE)) {
+      const store = this.consumeIdentifier('Expected a store name after onError queue').value;
+      return { action: 'continue', queue: store };
+    }
+
+    throw this.error(
+      `Expected 'continue', 'abort' or 'queue <store>' after onError, got: ${this.peek().value}`
+    );
   }
 
   /**
@@ -419,8 +445,17 @@ export class ActionParser extends FetchParser {
    * Parse a match arm
    */
   protected parseMatchArm(): MatchArm {
-    // Schema name or '_' for wildcard
-    const schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name or _').value;
+    // A bare number dispatches on the response status (`404 -> skip`);
+    // otherwise a schema name, or '_' for wildcard.
+    let status: number | undefined;
+    let schema: string;
+    if (this.check(TokenType.NUMBER)) {
+      const token = this.advance();
+      status = parseInt(token.value, 10);
+      schema = token.value;
+    } else {
+      schema = this.consume(TokenType.IDENTIFIER, 'Expected status code, schema name or _').value;
+    }
 
     // Optional guard condition: _ where <condition>
     let guard: Expression | undefined;
@@ -433,7 +468,7 @@ export class ActionParser extends FetchParser {
     // Check for flow directives
     const flow = this.tryParseFlowDirective();
     if (flow) {
-      return { schema, guard, flow };
+      return { schema, status, guard, flow };
     }
 
     // Check for step block
@@ -447,12 +482,12 @@ export class ActionParser extends FetchParser {
       }
 
       this.consume(TokenType.RBRACE, "Expected '}'");
-      return { schema, guard, steps };
+      return { schema, status, guard, steps };
     }
 
     // Single step
     const step = this.parseActionStep();
-    return { schema, guard, steps: [step] };
+    return { schema, status, guard, steps: [step] };
   }
 
   /**

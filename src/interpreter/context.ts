@@ -56,6 +56,12 @@ export interface ExecutionContext {
 
   // Current response from last fetch
   response?: unknown;
+  /**
+   * Status of the last fetch. Kept beside `response` rather than folded into
+   * it so `response` stays the body everywhere, while `match` arms can still
+   * dispatch on the status an `allow` list let through.
+   */
+  responseStatus?: number;
 
   // Parent context (for nested scopes)
   parent?: ExecutionContext;

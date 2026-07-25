@@ -110,6 +110,22 @@ export class SourceParser extends ReqonExpressionParser {
     return pool;
   }
 
+  /**
+   * `pause` doubles as a step keyword, so it arrives as PAUSE rather than an
+   * identifier. Accepting it here keeps the default strategy writable - the
+   * same keyword-in-option-context handling `key`, `upsert` and friends get.
+   */
+  private parseRateLimitStrategy(): 'pause' | 'throttle' | 'fail' {
+    const token = this.check(ReqonTokenType.PAUSE)
+      ? this.advance()
+      : this.consume(TokenType.IDENTIFIER, 'Expected strategy');
+
+    if (token.value !== 'pause' && token.value !== 'throttle' && token.value !== 'fail') {
+      throw this.error(`Unknown rate limit strategy: ${token.value}`);
+    }
+    return token.value;
+  }
+
   protected parseRateLimitConfig(): RateLimitSourceConfig {
     this.consume(TokenType.LBRACE, "Expected '{'");
 
@@ -121,8 +137,7 @@ export class SourceParser extends ReqonExpressionParser {
 
       switch (key) {
         case 'strategy':
-          config.strategy = this.consume(TokenType.IDENTIFIER, 'Expected strategy').value as
-            'pause' | 'throttle' | 'fail';
+          config.strategy = this.parseRateLimitStrategy();
           break;
         case 'maxWait':
           config.maxWait = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
@@ -169,6 +184,18 @@ export class SourceParser extends ReqonExpressionParser {
           break;
         case 'successThreshold':
           config.successThreshold = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
+          break;
+        case 'failureRate':
+          config.failureRate = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
+          break;
+        case 'minimumRequests':
+          config.minimumRequests = parseInt(
             this.consume(TokenType.NUMBER, 'Expected number').value,
             10
           );

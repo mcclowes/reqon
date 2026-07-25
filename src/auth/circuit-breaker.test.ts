@@ -281,6 +281,18 @@ describe('CircuitBreaker', () => {
 
       expect(breaker.canProceed('TestAPI', '/invoices')).toBe(false);
     });
+
+    it('uses source-level config for proxy lane keys', () => {
+      breaker.configure('TestAPI', { failureThreshold: 2 });
+
+      breaker.recordFailure('TestAPI@proxy-a:3128', undefined, 500);
+      breaker.recordFailure('TestAPI@proxy-a:3128', undefined, 500);
+
+      // Without the lane fallback this runs on the default threshold of 5
+      // and the circuit stays closed.
+      expect(breaker.canProceed('TestAPI@proxy-a:3128')).toBe(false);
+      expect(breaker.canProceed('TestAPI@proxy-b:3128')).toBe(true);
+    });
   });
 
   describe('reset', () => {
@@ -458,5 +470,52 @@ describe('CircuitBreaker', () => {
       customBreaker.recordFailure('TestAPI', undefined, 500);
       expect(customBreaker.getStatus('TestAPI').state).toBe('open');
     });
+  });
+});
+
+describe('failure rate threshold', () => {
+  let breaker: CircuitBreaker;
+
+  beforeEach(() => {
+    breaker = new CircuitBreaker();
+  });
+
+  /**
+   * An absolute count cannot be tuned for a bulk run: at a few thousand
+   * requests a second, five failures is a rounding error, not an outage.
+   */
+  it('stays closed when failures are a small fraction of traffic', () => {
+    breaker.configure('Bulk', { failureRate: 50, minimumRequests: 100 });
+
+    for (let i = 0; i < 500; i++) breaker.recordSuccess('Bulk');
+    for (let i = 0; i < 20; i++) breaker.recordFailure('Bulk', undefined, 500);
+
+    expect(breaker.canProceed('Bulk')).toBe(true);
+  });
+
+  it('opens once failures pass the configured share of traffic', () => {
+    breaker.configure('Bulk', { failureRate: 50, minimumRequests: 100 });
+
+    for (let i = 0; i < 60; i++) breaker.recordSuccess('Bulk');
+    for (let i = 0; i < 61; i++) breaker.recordFailure('Bulk', undefined, 500);
+
+    expect(breaker.canProceed('Bulk')).toBe(false);
+  });
+
+  it('ignores the rate until the sample is big enough to mean anything', () => {
+    breaker.configure('Bulk', { failureRate: 50, minimumRequests: 100 });
+
+    // 100% failure, but only 3 requests - not evidence of an outage.
+    for (let i = 0; i < 3; i++) breaker.recordFailure('Bulk', undefined, 500);
+
+    expect(breaker.canProceed('Bulk')).toBe(true);
+  });
+
+  it('still honours an absolute threshold when no rate is configured', () => {
+    breaker.configure('Legacy', { failureThreshold: 3 });
+
+    for (let i = 0; i < 3; i++) breaker.recordFailure('Legacy', undefined, 500);
+
+    expect(breaker.canProceed('Legacy')).toBe(false);
   });
 });

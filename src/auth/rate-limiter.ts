@@ -7,6 +7,7 @@ import type {
   RateLimitEvent,
 } from './types.js';
 import { sleep } from '../utils/async.js';
+import { laneSource } from './lane.js';
 import { RATE_LIMIT_DEFAULTS } from '../config/index.js';
 
 interface RateLimitState {
@@ -58,6 +59,22 @@ export class RateLimitError extends Error {
  */
 export class AdaptiveRateLimiter implements RateLimiter {
   private state: Map<string, RateLimitState> = new Map();
+  /**
+   * Next free send slot per egress lane, as an epoch ms timestamp.
+   *
+   * Deliberately keyed by lane alone, not by endpoint: a sharded fan-out calls
+   * a different interpolated path every iteration, and per-path buckets mean
+   * every request looks like the first one and the throttle never engages.
+   */
+  private pacing: Map<string, number> = new Map();
+  /**
+   * Active Retry-After backoff per egress lane.
+   *
+   * A 429 is the server objecting to this client, not to the one URL that
+   * happened to trip it. Held per lane so a fan-out over thousands of distinct
+   * paths actually stops, while a pool's other proxies keep working.
+   */
+  private laneBackoff: Map<string, Date> = new Map();
   private configs: Map<string, RateLimitConfig> = new Map();
   private callbacks: RateLimitCallbacks = {};
   private lastCleanup: number = Date.now();
@@ -130,8 +147,15 @@ export class AdaptiveRateLimiter implements RateLimiter {
     return endpoint ? `${source}:${endpoint}` : source;
   }
 
+  /**
+   * Resolve config for a source, falling back to the bare source name when
+   * given a proxy lane key. http.ts addresses the limiter per egress IP
+   * (`api@proxy-a`) so each IP gets its own budget, but the mission configures
+   * limits under the source name alone — without this fallback every pooled
+   * request silently runs on defaults instead of the configured limits.
+   */
   private getConfig(source: string): Required<RateLimitConfig> {
-    const sourceConfig = this.configs.get(source) ?? {};
+    const sourceConfig = this.configs.get(source) ?? this.configs.get(laneSource(source)) ?? {};
     return { ...DEFAULT_CONFIG, ...this.defaultConfig, ...sourceConfig };
   }
 
@@ -146,10 +170,18 @@ export class AdaptiveRateLimiter implements RateLimiter {
   async canProceed(source: string, endpoint?: string): Promise<boolean> {
     const key = this.getKey(source, endpoint);
     const state = this.state.get(key);
+    const now = new Date();
+
+    // A 429 anywhere on this lane holds every endpoint on it
+    const laneBackoff = this.laneBackoff.get(source);
+    if (laneBackoff && laneBackoff > now) {
+      return false;
+    }
+    if (laneBackoff) {
+      this.laneBackoff.delete(source);
+    }
 
     if (!state) return true;
-
-    const now = new Date();
 
     // Check retry-after (from 429)
     if (state.retryAfter && state.retryAfter > now) {
@@ -171,15 +203,52 @@ export class AdaptiveRateLimiter implements RateLimiter {
     return true;
   }
 
+  /**
+   * Claim the next send slot on a lane, returning how long to wait for it.
+   *
+   * Reservation rather than measurement. Measuring "time since the last
+   * request" cannot pace concurrent callers: N iterations in flight all read
+   * the same timestamp, compute the same delay, and fire as a batch at N times
+   * the configured rate. Claiming a slot works because the read-and-advance
+   * below is synchronous, so concurrent callers are handed strictly increasing
+   * slots and space themselves out.
+   */
+  private reserveSlot(source: string, endpoint?: string): number {
+    const config = this.getConfig(source);
+    if (config.strategy !== 'throttle') return 0;
+
+    // Honour whichever is more conservative: the configured floor, or the
+    // spacing implied by the quota headers this endpoint last reported.
+    const intervalMs = Math.max(
+      60000 / config.fallbackRpm,
+      this.headerIntervalMs(source, endpoint) ?? 0
+    );
+
+    const now = Date.now();
+    const slot = Math.max(now, this.pacing.get(source) ?? 0);
+    this.pacing.set(source, slot + intervalMs);
+    return slot - now;
+  }
+
+  /** Spacing implied by remaining quota over the time left in the window. */
+  private headerIntervalMs(source: string, endpoint?: string): number | undefined {
+    const state = this.state.get(this.getKey(source, endpoint));
+    if (!state?.resetAt || state.remaining === undefined || state.remaining <= 0) {
+      return undefined;
+    }
+    const msUntilReset = state.resetAt.getTime() - Date.now();
+    return msUntilReset > 0 ? msUntilReset / state.remaining : undefined;
+  }
+
   async waitForCapacity(source: string, endpoint?: string): Promise<void> {
     const config = this.getConfig(source);
     const key = this.getKey(source, endpoint);
 
     // Check if we can proceed immediately
     if (await this.canProceed(source, endpoint)) {
-      // In throttle mode, add delay between requests
+      // In throttle mode, hold the caller until its reserved slot comes up
       if (config.strategy === 'throttle') {
-        const delay = this.getThrottleDelay(source, endpoint);
+        const delay = this.reserveSlot(source, endpoint);
         if (delay > 0) {
           await sleep(delay);
         }
@@ -193,7 +262,10 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     // Calculate wait time
     let waitUntil: Date;
-    if (state?.retryAfter) {
+    const laneBackoff = this.laneBackoff.get(source);
+    if (laneBackoff && laneBackoff.getTime() > now) {
+      waitUntil = laneBackoff;
+    } else if (state?.retryAfter) {
       waitUntil = state.retryAfter;
     } else if (state?.resetAt) {
       waitUntil = state.resetAt;
@@ -259,45 +331,20 @@ export class AdaptiveRateLimiter implements RateLimiter {
     this.callbacks.onResumed?.({ source, endpoint, waitedSeconds });
   }
 
+  /**
+   * How long a request issued right now would be held for, in ms.
+   *
+   * Read-only: it reports the pacing waitForCapacity would apply without
+   * claiming the slot, so callers can inspect the throttle without perturbing
+   * it. Actual pacing comes from the lane reservation in waitForCapacity.
+   */
   getThrottleDelay(source: string, endpoint?: string): number {
-    const key = this.getKey(source, endpoint);
-    const state = this.state.get(key);
     const config = this.getConfig(source);
-
     if (config.strategy !== 'throttle') return 0;
-    if (!state) return 0;
 
     const now = Date.now();
-
-    // If we have remaining count and reset time, calculate optimal spacing
-    if (
-      state.remaining !== undefined &&
-      state.remaining > 0 &&
-      state.resetAt &&
-      state.resetAt.getTime() > now
-    ) {
-      const msUntilReset = state.resetAt.getTime() - now;
-      // Space requests evenly across remaining time
-      const optimalInterval = msUntilReset / state.remaining;
-
-      // Check time since last request
-      if (state.lastRequestAt) {
-        const msSinceLastRequest = now - state.lastRequestAt.getTime();
-        const delay = Math.max(0, optimalInterval - msSinceLastRequest);
-        return Math.round(delay);
-      }
-
-      return Math.round(optimalInterval);
-    }
-
-    // Fallback: use configured RPM
-    const intervalMs = 60000 / config.fallbackRpm;
-    if (state.lastRequestAt) {
-      const msSinceLastRequest = now - state.lastRequestAt.getTime();
-      return Math.max(0, Math.round(intervalMs - msSinceLastRequest));
-    }
-
-    return 0;
+    const untilNextSlot = Math.max(0, (this.pacing.get(source) ?? 0) - now);
+    return Math.round(Math.max(untilNextSlot, this.headerIntervalMs(source, endpoint) ?? 0));
   }
 
   recordResponse(source: string, info: RateLimitInfo, endpoint?: string): void {
@@ -319,7 +366,12 @@ export class AdaptiveRateLimiter implements RateLimiter {
     }
 
     if (info.retryAfter !== undefined) {
-      state.retryAfter = new Date(now.getTime() + info.retryAfter * 1000);
+      const until = new Date(now.getTime() + info.retryAfter * 1000);
+      state.retryAfter = until;
+      this.laneBackoff.set(source, until);
+      // Push the lane's send slot past the backoff so callers already queued on
+      // the throttle don't stampede the moment it lifts.
+      this.pacing.set(source, Math.max(this.pacing.get(source) ?? 0, until.getTime()));
     }
 
     state.lastRequestAt = now;

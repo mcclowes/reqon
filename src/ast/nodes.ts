@@ -62,6 +62,15 @@ export interface CircuitBreakerSourceConfig {
   successThreshold?: number;
   /** Time window in seconds for counting failures (default: 60) */
   failureWindow?: number;
+  /**
+   * Open when this percentage of requests in the window failed, instead of on
+   * an absolute count. Necessary for bulk runs: a fixed `failureThreshold`
+   * that suits a handful of requests sits permanently open at thousands per
+   * second, where a few failures are ordinary background noise.
+   */
+  failureRate?: number;
+  /** Requests needed in the window before failureRate applies (default: 20) */
+  minimumRequests?: number;
 }
 
 export interface RateLimitSourceConfig {
@@ -241,6 +250,12 @@ export interface MatchStep {
 export interface MatchArm {
   /** Schema name to match against, or '_' for wildcard */
   schema: string;
+  /**
+   * HTTP status to match against the last response's status, written as the
+   * bare number (`404 -> skip`). Deliberately the same vocabulary as the
+   * fetch's `allow` list, so there is no schema name to invent and keep in sync.
+   */
+  status?: number;
   /** Optional guard condition (when using 'where' clause) */
   guard?: Expression;
   /** Steps to execute if matched */
@@ -265,6 +280,12 @@ export interface FetchStep {
   paginate?: PaginationConfig;
   until?: Expression; // Condition to stop pagination
   retry?: RetryConfig;
+  /**
+   * Response statuses to treat as data rather than failure. An allowed status
+   * returns normally - it is not retried and does not trip the circuit breaker
+   * - so a `match` arm can dispatch on the same number that allowed it.
+   */
+  allow?: number[];
   // Incremental sync
   since?: SinceConfig;
   /**
@@ -328,6 +349,20 @@ export interface ForStep {
    * writing the same key are last-writer-wins.
    */
   concurrency?: number;
+  /**
+   * What a failing iteration does to the rest of the loop. Defaults to
+   * `continue`: a bulk fan-out is mostly items that can fail on their own
+   * terms (an id that no longer exists, a socket reset, one 500 that outlived
+   * its retries), and stopping the run for any of them makes large jobs
+   * impossible to finish. `abort` restores strict fail-fast.
+   */
+  onError?: LoopErrorPolicy;
+}
+
+export interface LoopErrorPolicy {
+  action: 'continue' | 'abort';
+  /** Store to record each failed item in, for a later sweep. */
+  queue?: string;
 }
 
 // map invoice -> StandardInvoice { id: .InvoiceID, ... }

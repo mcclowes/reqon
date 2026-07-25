@@ -11,6 +11,7 @@
  */
 
 import { CIRCUIT_BREAKER_DEFAULTS } from '../config/index.js';
+import { laneSource } from './lane.js';
 
 export type CircuitState = 'closed' | 'open' | 'half_open';
 
@@ -27,6 +28,23 @@ export interface CircuitBreakerConfig {
   failureStatusCodes?: number[];
   /** Whether to count network errors as failures (default: true) */
   countNetworkErrors?: boolean;
+  /**
+   * Open the circuit when this percentage of requests in the window failed,
+   * instead of on an absolute count.
+   *
+   * An absolute `failureThreshold` cannot be tuned for a bulk run: at a few
+   * thousand requests a second, five failures is a rounding error rather than
+   * an outage, so a count-based circuit sits permanently open. Set this (with
+   * `minimumRequests`) for high-volume sources and the breaker tracks health
+   * rather than raw incidents.
+   */
+  failureRate?: number;
+  /**
+   * Requests required in the window before `failureRate` is consulted, so a
+   * cold start of three failures is not mistaken for a 100% failure rate.
+   * (default: 20)
+   */
+  minimumRequests?: number;
 }
 
 export interface CircuitBreakerStatus {
@@ -63,6 +81,8 @@ interface CircuitEntry {
   failures: number;
   successes: number;
   failureTimestamps: number[];
+  /** Only tracked when a failureRate is configured - the denominator. */
+  successTimestamps: number[];
   lastFailureTime?: number;
   openedAt?: number;
   /** True while a single half-open probe request is in flight. */
@@ -79,6 +99,8 @@ const DEFAULT_CONFIG: Required<CircuitBreakerConfig> = {
   failureWindow: CIRCUIT_BREAKER_DEFAULTS.FAILURE_WINDOW_MS,
   failureStatusCodes: [...CIRCUIT_BREAKER_DEFAULTS.FAILURE_STATUS_CODES],
   countNetworkErrors: CIRCUIT_BREAKER_DEFAULTS.COUNT_NETWORK_ERRORS,
+  failureRate: 0, // 0 = disabled, fall back to the absolute threshold
+  minimumRequests: 20,
 };
 
 /**
@@ -197,8 +219,13 @@ export class CircuitBreaker {
    */
   recordSuccess(source: string, endpoint?: string): void {
     // Read-only lookup: a success on an untracked (implicitly closed) endpoint
-    // has nothing to record, so don't allocate an entry for it.
-    const entry = this.getEntry(source, endpoint);
+    // has nothing to record, so don't allocate an entry for it. Rate mode is
+    // the exception - successes are the denominator, so they must be counted
+    // from the first one. Keys are lane-scoped, so this stays bounded.
+    let entry = this.getEntry(source, endpoint);
+    if (!entry && this.resolveConfig(source).failureRate > 0) {
+      entry = this.getOrCreateEntry(source, endpoint);
+    }
     if (!entry) {
       return;
     }
@@ -217,7 +244,16 @@ export class CircuitBreaker {
     } else if (entry.state === 'closed') {
       // Clear old failures from window
       this.pruneOldFailures(entry);
+      if (entry.config.failureRate > 0) {
+        entry.successTimestamps.push(Date.now());
+      }
     }
+  }
+
+  /** Config a key would resolve to, without allocating an entry for it. */
+  private resolveConfig(source: string): Required<CircuitBreakerConfig> {
+    const sourceEntry = this.circuits.get(source) ?? this.circuits.get(laneSource(source));
+    return sourceEntry?.config ?? this.defaultConfig;
   }
 
   /**
@@ -261,14 +297,9 @@ export class CircuitBreaker {
       entry.lastFailureTime = now;
 
       // Check if we should open the circuit
-      if (entry.failures >= config.failureThreshold) {
-        this.transitionTo(
-          entry,
-          'open',
-          source,
-          endpoint,
-          `${entry.failures} failures in ${config.failureWindow}ms window`
-        );
+      const reason = this.openReason(entry, config);
+      if (reason) {
+        this.transitionTo(entry, 'open', source, endpoint, reason);
       }
     }
   }
@@ -377,12 +408,39 @@ export class CircuitBreaker {
     return endpoint ? `${source}:${endpoint}` : source;
   }
 
+  /**
+   * Why the circuit should open, or undefined to stay closed.
+   *
+   * Rate mode needs a minimum sample: three failures out of three requests is
+   * 100%, but it is not evidence of an outage, and opening there would make a
+   * cold start self-defeating.
+   */
+  private openReason(
+    entry: CircuitEntry,
+    config: Required<CircuitBreakerConfig>
+  ): string | undefined {
+    if (config.failureRate > 0) {
+      const total = entry.failures + entry.successTimestamps.length;
+      if (total < config.minimumRequests) return undefined;
+
+      const rate = (entry.failures / total) * 100;
+      return rate >= config.failureRate
+        ? `${rate.toFixed(1)}% of ${total} requests failed in ${config.failureWindow}ms window`
+        : undefined;
+    }
+
+    return entry.failures >= config.failureThreshold
+      ? `${entry.failures} failures in ${config.failureWindow}ms window`
+      : undefined;
+  }
+
   private createEntry(config: Required<CircuitBreakerConfig>): CircuitEntry {
     return {
       state: 'closed',
       failures: 0,
       successes: 0,
       failureTimestamps: [],
+      successTimestamps: [],
       probeInFlight: false,
       lastActivity: Date.now(),
       config,
@@ -399,8 +457,10 @@ export class CircuitBreaker {
     let entry = this.circuits.get(key);
 
     if (!entry) {
-      // Check for source-level config
-      const sourceEntry = this.circuits.get(source);
+      // Check for source-level config. The lane fallback matters because
+      // http.ts addresses the breaker per egress IP (`api@host:port`) while the
+      // mission configures thresholds under the source name alone.
+      const sourceEntry = this.circuits.get(source) ?? this.circuits.get(laneSource(source));
       const config = sourceEntry?.config ?? this.defaultConfig;
       entry = this.createEntry(config);
       this.circuits.set(key, entry);
@@ -414,6 +474,9 @@ export class CircuitBreaker {
     const windowStart = now - entry.config.failureWindow;
     entry.failureTimestamps = entry.failureTimestamps.filter((ts) => ts >= windowStart);
     entry.failures = entry.failureTimestamps.length;
+    if (entry.config.failureRate > 0) {
+      entry.successTimestamps = entry.successTimestamps.filter((ts) => ts >= windowStart);
+    }
   }
 
   private transitionTo(

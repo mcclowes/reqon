@@ -101,6 +101,7 @@ export class FetchParser extends ScheduleParser {
     let retry: RetryConfig | undefined;
     let since: SinceConfig | undefined;
     let backfill: boolean | undefined;
+    let allow: number[] | undefined;
 
     if (this.match(TokenType.LBRACE)) {
       while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
@@ -126,6 +127,9 @@ export class FetchParser extends ScheduleParser {
           case 'since':
             since = this.parseSinceConfig();
             break;
+          case 'allow':
+            allow = this.parseStatusList();
+            break;
           case 'backfill':
             backfill = this.match(TokenType.TRUE);
             if (!backfill) {
@@ -141,7 +145,7 @@ export class FetchParser extends ScheduleParser {
       this.consume(TokenType.RBRACE, "Expected '}'");
     }
 
-    return { source, body, headers, paginate, until, retry, since, backfill };
+    return { source, body, headers, paginate, until, retry, since, backfill, allow };
   }
 
   /**
@@ -276,6 +280,29 @@ export class FetchParser extends ScheduleParser {
     this.consume(TokenType.RPAREN, "Expected ')'");
 
     return { type, param, pageSize, cursorPath };
+  }
+
+  /** `allow: [404, 410]` - a bare `allow: 404` is read as a one-entry list. */
+  protected parseStatusList(): number[] {
+    const readStatus = (): number => {
+      const token = this.consume(TokenType.NUMBER, 'Expected an HTTP status code');
+      const status = parseInt(token.value, 10);
+      if (!Number.isInteger(status) || status < 100 || status > 599) {
+        throw this.error(`Not an HTTP status code: ${token.value}`);
+      }
+      return status;
+    };
+
+    if (!this.match(TokenType.LBRACKET)) return [readStatus()];
+
+    const statuses: number[] = [];
+    while (!this.check(TokenType.RBRACKET) && !this.isAtEnd()) {
+      statuses.push(readStatus());
+      this.match(TokenType.COMMA);
+    }
+    this.consume(TokenType.RBRACKET, "Expected ']'");
+    if (statuses.length === 0) throw this.error('allow needs at least one status code');
+    return statuses;
   }
 
   protected parseRetryConfig(): RetryConfig {

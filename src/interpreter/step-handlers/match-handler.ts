@@ -52,8 +52,12 @@ export class MatchHandler {
     let matchedArm = null;
 
     for (const arm of step.arms) {
-      // Check if schema matches
-      if (arm.schema !== '_') {
+      if (arm.status !== undefined) {
+        // A status arm dispatches on the last response's status, not its body.
+        if (this.deps.ctx.responseStatus !== arm.status) {
+          continue;
+        }
+      } else if (arm.schema !== '_') {
         // Check if this schema matches the value
         const schemaMatches = findMatchingSchema(value, this.deps.ctx.schemas, [arm.schema]);
         if (!schemaMatches) {

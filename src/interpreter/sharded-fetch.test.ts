@@ -80,7 +80,12 @@ describe('sharded bulk fetch', () => {
 
   async function runMission() {
     const program = new ReqonParser(new ReqonLexer(MISSION).tokenize()).parse();
-    return new MissionExecutor({}).execute(program);
+    // These tests observe the dispatcher through a stubbed global fetch, so the
+    // pool must not reach for undici's own fetch (see ProxyLane.fetchImpl).
+    return new MissionExecutor({
+      proxyAgentFactory: async (url) => ({ proxy: url }),
+      proxyFetchFactory: async () => undefined,
+    }).execute(program);
   }
 
   it('fetches every id, overlapping up to the declared concurrency', async () => {

@@ -134,7 +134,40 @@ describe('Reqon Integration', () => {
       stores: { items: itemsStore },
     });
 
-    // Validation should fail
+    // Loops continue past a bad item by default, so the run succeeds with the
+    // failure reported rather than aborting on the first invalid record.
+    expect(result.success).toBe(true);
+    expect(result.toleratedFailures).toHaveLength(1);
+    expect(result.toleratedFailures?.[0].error).toMatch(/value/);
+  });
+
+  it('fails the mission on a validation failure under onError abort', async () => {
+    const source = `
+      mission ValidationTest {
+        source API {
+          auth: bearer,
+          base: "https://api.example.com"
+        }
+
+        store items: memory("items")
+
+        action Validate {
+          for item in items onError abort {
+            validate item {
+              assume .value > 0
+            }
+          }
+        }
+
+        run Validate
+      }
+    `;
+
+    const itemsStore = new MemoryStore('items');
+    await itemsStore.set('1', { id: '1', value: -5 });
+
+    const result = await execute(source, { stores: { items: itemsStore } });
+
     expect(result.success).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);
   });

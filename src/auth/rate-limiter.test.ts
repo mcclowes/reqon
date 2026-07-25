@@ -60,6 +60,90 @@ describe('AdaptiveRateLimiter', () => {
     });
   });
 
+  describe('proxy lane keys', () => {
+    it('applies the source config to a lane key', async () => {
+      limiter.configure('api', { strategy: 'fail' });
+      const resetAt = new Date(Date.now() + 60000);
+      limiter.recordResponse('api@proxy-a', { remaining: 0, limit: 100, resetAt });
+
+      await expect(limiter.waitForCapacity('api@proxy-a')).rejects.toThrow(RateLimitError);
+    });
+  });
+
+  describe('throttle pacing', () => {
+    it('paces requests across different endpoints on the same lane', async () => {
+      // 60rpm = one request per second. A sharded fan-out hits a different
+      // interpolated path every time, so pacing has to be lane-wide to bite.
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+
+      await limiter.waitForCapacity('api', '/entry/1/history/');
+
+      let resolved = false;
+      const second = limiter.waitForCapacity('api', '/entry/2/history/').then(() => {
+        resolved = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(500);
+      expect(resolved).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(600);
+      await second;
+      expect(resolved).toBe(true);
+    });
+
+    it('spaces concurrent callers instead of releasing them as a batch', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+
+      const start = Date.now();
+      const releasedAt: number[] = [];
+      const inFlight = Array.from({ length: 4 }, (_, i) =>
+        limiter.waitForCapacity('api', `/entry/${i}/history/`).then(() => {
+          releasedAt.push(Date.now() - start);
+        })
+      );
+
+      await vi.advanceTimersByTimeAsync(5000);
+      await Promise.all(inFlight);
+
+      expect(releasedAt).toEqual([0, 1000, 2000, 3000]);
+    });
+
+    it('gives each proxy lane its own budget', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+
+      const start = Date.now();
+      const releasedAt: number[] = [];
+      const inFlight = ['proxy-a', 'proxy-b', 'proxy-c'].map((label) =>
+        limiter.waitForCapacity(`api@${label}`, '/entry/1/history/').then(() => {
+          releasedAt.push(Date.now() - start);
+        })
+      );
+
+      await vi.advanceTimersByTimeAsync(2000);
+      await Promise.all(inFlight);
+
+      // Separate lanes, separate budgets - all three go straight out.
+      expect(releasedAt).toEqual([0, 0, 0]);
+    });
+  });
+
+  describe('429 backoff', () => {
+    it('backs off the whole lane after a 429 on one endpoint', async () => {
+      // A 429 is the server objecting to this client, not to this URL. Keeping
+      // the backoff per-path lets a fan-out walk straight through it.
+      limiter.recordResponse('api', { retryAfter: 30 }, '/entry/1/history/');
+
+      expect(await limiter.canProceed('api', '/entry/2/history/')).toBe(false);
+    });
+
+    it('keeps lane backoff separate per proxy', async () => {
+      limiter.recordResponse('api@proxy-a', { retryAfter: 30 }, '/entry/1/history/');
+
+      expect(await limiter.canProceed('api@proxy-a', '/entry/2/history/')).toBe(false);
+      expect(await limiter.canProceed('api@proxy-b', '/entry/2/history/')).toBe(true);
+    });
+  });
+
   describe('recordResponse', () => {
     it('records remaining quota', () => {
       limiter.recordResponse('api', { remaining: 75, limit: 100 });

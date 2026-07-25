@@ -323,6 +323,7 @@ export type EventType =
   | 'loop.iteration'
   | 'loop.complete'
   | 'loop.heartbeat'
+  | 'loop.item.failed'
   // Match operations
   | 'match.attempt'
   | 'match.result'

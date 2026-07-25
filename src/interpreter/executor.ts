@@ -39,7 +39,7 @@ import { createContext, childContext, setVariable } from './context.js';
 import { createHash } from 'node:crypto';
 import { evaluate } from './evaluator.js';
 import type { StoreAdapter } from '../stores/types.js';
-import { SourceManager, type AuthConfig } from './source-manager.js';
+import { SourceManager, type AuthConfig, type SourceManagerConfig } from './source-manager.js';
 import { StoreManager } from './store-manager.js';
 import { AdaptiveRateLimiter } from '../auth/rate-limiter.js';
 import { CircuitBreaker, type CircuitBreakerCallbacks } from '../auth/circuit-breaker.js';
@@ -79,7 +79,7 @@ import type {
   DebugCommand,
 } from '../debug/index.js';
 import type { ControlServer } from '../control/index.js';
-import { PauseSignal } from './signals.js';
+import { PauseSignal, isTolerated } from './signals.js';
 import {
   type TraceStore,
   type TraceRecorder,
@@ -122,6 +122,8 @@ export interface ExecutionResult {
   traceId?: string;
   /** Pause ID if execution was paused */
   pauseId?: string;
+  /** Items skipped by a loop's onError policy rather than failing the run. */
+  toleratedFailures?: { action: string; index: number; error: string }[];
 }
 
 export interface ExecutionError {
@@ -191,6 +193,9 @@ export interface ExecutorConfig {
   verbose?: boolean;
   // Mission file directory (for resolving relative paths like OAS specs)
   missionDir?: string;
+  // Override the HTTP stack behind proxy pools (agent + its paired fetch)
+  proxyAgentFactory?: SourceManagerConfig['proxyAgentFactory'];
+  proxyFetchFactory?: SourceManagerConfig['proxyFetchFactory'];
   // Rate limit callbacks (optional)
   rateLimitCallbacks?: RateLimitCallbacks;
   // Circuit breaker callbacks (optional)
@@ -248,6 +253,12 @@ export class MissionExecutor {
   private config: ExecutorConfig;
   private ctx: ExecutionContext;
   private errors: ExecutionError[] = [];
+  /**
+   * Items a loop skipped past rather than failing the run on. Surfaced in the
+   * result because continuing is the default: a mission where every request
+   * 401s would otherwise report success having stored nothing.
+   */
+  private toleratedFailures: { action: string; index: number; error: string }[] = [];
   private actionsRun: string[] = [];
   /** Monotonic key generator for queued values lacking an id. */
   private queueCounter = 0;
@@ -287,7 +298,12 @@ export class MissionExecutor {
 
     // Initialize managers (logger set after verbose callbacks configured)
     this.sourceManager = new SourceManager(
-      { auth: config.auth, missionDir: config.missionDir },
+      {
+        auth: config.auth,
+        missionDir: config.missionDir,
+        proxyAgentFactory: config.proxyAgentFactory,
+        proxyFetchFactory: config.proxyFetchFactory,
+      },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
     this.storeManager = new StoreManager({
@@ -384,7 +400,13 @@ export class MissionExecutor {
 
     // Update managers with log function now that logger is configured
     this.sourceManager = new SourceManager(
-      { auth: config.auth, missionDir: config.missionDir, log: (msg) => this.log(msg) },
+      {
+        auth: config.auth,
+        missionDir: config.missionDir,
+        proxyAgentFactory: config.proxyAgentFactory,
+        proxyFetchFactory: config.proxyFetchFactory,
+        log: (msg) => this.log(msg),
+      },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
     this.storeManager = new StoreManager({
@@ -544,6 +566,9 @@ export class MissionExecutor {
 
     const duration = Date.now() - startTime;
     const isPaused = this.executionState?.status === 'paused';
+    // Errors a loop tolerated are reported as skipped items, not mission
+    // failures - otherwise the default `continue` policy could never succeed.
+    this.errors = this.errors.filter((e) => !isTolerated(e.details));
     const success = this.errors.length === 0 && !isPaused;
 
     // Emit onExecutionComplete callback - count stages in a single pass
@@ -607,6 +632,7 @@ export class MissionExecutor {
       state: this.executionState,
       traceId: this.traceRecorder ? this.executionState?.id : undefined,
       pauseId: this.currentPauseId,
+      toleratedFailures: this.toleratedFailures,
     };
   }
 
@@ -1366,6 +1392,7 @@ export class MissionExecutor {
     const fetchStartedAt = new Date();
     const result = await fetchHandler.execute(step);
     ctx.response = result.data;
+    ctx.responseStatus = result.status;
 
     // Defer the sync checkpoint until the fetched data is durably stored.
     if (result.checkpointKey && this.syncStore) {
@@ -1443,6 +1470,9 @@ export class MissionExecutor {
         : undefined,
       checkPause: this.config.controlServer ? () => this.checkPause() : undefined,
       handleQueue: (signal) => this.handleQueue(signal),
+      onItemFailed: (info) => {
+        this.toleratedFailures.push(info);
+      },
     });
     await handler.execute(step);
   }

@@ -56,6 +56,33 @@ export async function loadAuthFile(rawPath: string): Promise<Record<string, unkn
 }
 
 /**
+ * Report items a loop skipped past.
+ *
+ * Loops continue by default, so a run can finish "successfully" having dropped
+ * a lot on the floor. Summarised here, with a sample, so that never passes
+ * unnoticed - the counts are the signal that a shard needs re-sweeping.
+ */
+function printToleratedFailures(
+  failures: { action: string; index: number; error: string }[] | undefined
+): void {
+  if (!failures?.length) return;
+
+  console.log(`  ⚠ Skipped ${failures.length} failed ${failures.length === 1 ? 'item' : 'items'}`);
+
+  const byError = new Map<string, number>();
+  for (const f of failures) {
+    byError.set(f.error, (byError.get(f.error) ?? 0) + 1);
+  }
+  const ranked = [...byError.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+  for (const [message, count] of ranked) {
+    console.log(`      ${count}x ${message.slice(0, 100)}`);
+  }
+  if (byError.size > ranked.length) {
+    console.log(`      ...and ${byError.size - ranked.length} other distinct errors`);
+  }
+}
+
+/**
  * Print an error in a clean, user-facing form (no stack trace). ReqonErrors
  * get their rich source-context formatting; everything else gets a one-line
  * message.
@@ -268,6 +295,7 @@ Control Server:
       console.log(`\n✓ Mission completed successfully`);
       console.log(`  Duration: ${result.duration}ms`);
       console.log(`  Actions run: ${result.actionsRun.join(' → ')}`);
+      printToleratedFailures(result.toleratedFailures);
 
       // Print store stats and optionally export
       const storeData: Record<string, unknown[]> = {};
