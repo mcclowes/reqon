@@ -110,7 +110,7 @@ Initial release.
   - OAuth2 with token refresh
   - Bearer token
   - Basic auth
-  - API key (header or query)
+  - API key (header)
 - **Resilience**
   - Rate limiting with pause strategy
   - Circuit breaker for cascading failure prevention

@@ -4,11 +4,11 @@ sidebar_position: 9
 
 # Variables and let bindings
 
-Reqon supports variable bindings using `let` statements and object composition with the spread operator.
+Reqon supports named variable bindings with `let` statements.
 
 ## Let bindings
 
-Create named variables to store intermediate values:
+Create named variables to hold intermediate values:
 
 ```vague
 action ProcessOrder {
@@ -17,7 +17,7 @@ action ProcessOrder {
   // Bind response fields to variables
   let orderId = response.id
   let customer = response.customer
-  let total = response.items | sum(.price)
+  let total = response.total
 
   // Use variables in subsequent steps
   post "/receipts" {
@@ -32,14 +32,16 @@ action ProcessOrder {
 
 ### Expression bindings
 
-Variables can hold any expression result:
+A binding can hold any expression result:
 
 ```vague
 let count = length(items)
-let filtered = items | filter(.active == true)
-let transformed = items | map({ id: .id, name: .name })
 let calculated = price * quantity * (1 - discount)
+let label = .status == "active" ? "On" : "Off"
+let name = .firstName + " " + .lastName
 ```
+
+There's no pipe operator (`|`) and no `map`/`filter`/`reduce` functions. The `|` symbol is a Vague superposition, not a pipe-forward, so don't use it to chain transformations. Build values from operators and the built-in functions (`length`, `sum`, `count`, `first`, `last`, `round`, `floor`, `ceil`, `now`, `env`).
 
 ### Scope
 
@@ -51,57 +53,40 @@ action FetchData {
   let users = response
 
   for user in users {
-    let userId = user.id  // Scoped to this iteration
+    let userId = user.id  // Available within this iteration
 
-    get concat("/users/", userId, "/orders")
+    get "/users/{userId}/orders"
     store response -> orders { key: .id }
   }
 }
 ```
 
-## Spread operator
+## Building objects
 
-Use the spread operator (`...`) to compose objects:
-
-### Merging objects
+Object literals build new values field by field. There's no spread operator (`...`), so list the fields you want:
 
 ```vague
 map response -> EnrichedOrder {
-  ...response,              // Include all original fields
-  processedAt: now(),       // Add new field
-  status: "processed"       // Add/override field
+  id: response.id,
+  total: response.total,
+  processedAt: now(),
+  status: "processed"
 }
 ```
 
-### Combining data
+The same applies to a `store` step's inline object:
 
 ```vague
 action EnrichCustomer {
   get "/customers/123"
   let customer = response
 
-  get concat("/customers/", customer.id, "/profile")
-  let profile = response
-
-  // Merge customer with profile data
   store {
-    ...customer,
-    ...profile,
+    id: customer.id,
+    name: customer.name,
+    email: customer.email,
     enrichedAt: now()
   } -> enrichedCustomers { key: .id }
-}
-```
-
-### Selective spreading
-
-Spread specific nested objects:
-
-```vague
-map order -> FlatOrder {
-  id: .id,
-  ...order.metadata,        // Spread metadata fields
-  ...order.shipping,        // Spread shipping fields
-  total: .total
 }
 ```
 
@@ -116,19 +101,12 @@ action SyncWithPagination {
     until: response.meta.nextCursor == null
   }
 
-  // Store pagination metadata
+  // Capture metadata and data
   let meta = response.meta
   let items = response.data
 
   for item in items {
-    store item -> items { key: .id }
-  }
-
-  // Log sync stats
-  let syncStats = {
-    total: meta.total,
-    fetched: length(items),
-    syncedAt: now()
+    store item -> processed { key: .id }
   }
 }
 ```
@@ -137,85 +115,52 @@ action SyncWithPagination {
 
 ```vague
 action CreateOrder {
-  let baseOrder = {
+  let order = {
     currency: "USD",
     createdAt: now(),
     status: "pending"
   }
 
-  for item in cart.items {
-    let orderItem = {
-      ...baseOrder,
-      ...item,
-      orderId: generateId()
-    }
-
-    post "/orders" {
-      body: orderItem
-    }
+  post "/orders" {
+    body: order
   }
 }
 ```
 
-### Conditional field addition
+### Conditional values
+
+Use the ternary operator to pick a value:
 
 ```vague
 action ProcessRecord {
-  let base = {
+  let email = record.email != null ? record.email : "unknown"
+  let tier = record.spend > 1000 ? "gold" : "standard"
+
+  store {
     id: record.id,
-    name: record.name
-  }
-
-  // Add optional fields conditionally
-  let withEmail = if record.email != null
-    then { ...base, email: record.email }
-    else base
-
-  let final = if record.phone != null
-    then { ...withEmail, phone: record.phone }
-    else withEmail
-
-  store final -> records { key: .id }
-}
-```
-
-### Transforming collections
-
-```vague
-action TransformItems {
-  get "/items"
-
-  let enriched = response.items | map({
-    ...item,
-    slug: slugify(.name),
-    tags: .categories | map(.name)
-  })
-
-  for item in enriched {
-    store item -> items { key: .id }
-  }
+    name: record.name,
+    email: email,
+    tier: tier
+  } -> records { key: .id }
 }
 ```
 
 ## Variable naming
 
-Use descriptive names that indicate the variable's purpose:
+Use descriptive names that say what the variable holds:
 
 ```vague
 // Good
-let activeUsers = users | filter(.status == "active")
-let totalRevenue = orders | sum(.amount)
 let customerEmail = response.customer.email
+let totalItems = length(response.items)
 
 // Avoid
-let x = users | filter(.status == "active")
-let val = orders | sum(.amount)
 let e = response.customer.email
+let n = length(response.items)
 ```
 
 ## Notes
 
-- Variables are immutable once bound
-- Variables are evaluated lazily when used
-- The `response` variable is automatically set after each fetch
-- Spread operator creates a shallow copy of object fields
+- Variables are scoped to their action and loop iteration.
+- The `response` variable is set automatically after each fetch.
+- There's no spread operator and no higher-order array functions; shape data with explicit object literals and the built-in functions.

@@ -4,33 +4,64 @@ sidebar_position: 2
 
 # Retry strategies
 
-Reqon provides configurable retry strategies for handling transient failures. Choose the right strategy based on your API's behavior.
+Reqon retries transient HTTP failures automatically. You configure the behaviour with a `retry:` block on a fetch step.
 
 ## Retry configuration
 
+Attach `retry:` to a `get`, `post`, or other fetch step:
+
 ```vague
-retry: {
-  maxAttempts: 5,
-  backoff: exponential,
-  initialDelay: 1000,
-  maxDelay: 60000
+get "/data" {
+  retry: {
+    maxAttempts: 5,
+    backoff: exponential,
+    initialDelay: 1000,
+    maxDelay: 60000
+  }
 }
 ```
+
+### Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `maxAttempts` | Total attempts, including the first | 3 |
+| `backoff` | Strategy: `exponential`, `linear`, `constant` | `exponential` |
+| `initialDelay` | First retry delay (ms) | 1000 |
+| `maxDelay` | Cap on the delay between attempts (ms) | 30000 |
+| `timeout` | Per-attempt request timeout (ms) | 30000 |
+
+There's no `delay` option; the delay comes from the backoff strategy and `initialDelay`.
+
+## What gets retried
+
+Reqon retries automatically on:
+
+- `429 Too Many Requests` — honouring the server's `Retry-After` header when present
+- `5x` server errors
+
+Retries apply to idempotent requests (`get`, `put`, `delete`), or any request carrying an idempotency key. `post` and `patch` aren't retried by default, since re-sending a write the server already committed could duplicate data.
+
+Other responses behave differently:
+
+- `401 Unauthorized` triggers a one-time token refresh when the source has a refresh token, then retries once.
+- Other `4xx` responses (`400`, `403`, `404`, `422`) throw immediately and fail the action — retrying won't help.
+
+When attempts are exhausted, the request throws and the action fails (or surfaces to a paused or failed execution you can resume).
 
 ## Backoff strategies
 
 ### Exponential backoff
 
-Best for most APIs. Delays double after each attempt:
+Best for most APIs. The delay doubles after each attempt:
 
 ```vague
-match response {
-  { code: 429 } -> retry {
+get "/data" {
+  retry: {
     maxAttempts: 5,
     backoff: exponential,
     initialDelay: 1000
-  },
-  _ -> continue
+  }
 }
 ```
 
@@ -45,16 +76,15 @@ Attempt 5: wait 8000ms (8s)
 
 ### Linear backoff
 
-Delays increase by a fixed amount:
+The delay increases by a fixed amount:
 
 ```vague
-match response {
-  { code: 503 } -> retry {
+get "/data" {
+  retry: {
     maxAttempts: 5,
     backoff: linear,
     initialDelay: 2000
-  },
-  _ -> continue
+  }
 }
 ```
 
@@ -69,16 +99,15 @@ Attempt 5: wait 8000ms (8s)
 
 ### Constant backoff
 
-Same delay every time:
+The same delay every time:
 
 ```vague
-match response {
-  { code: 504 } -> retry {
+get "/data" {
+  retry: {
     maxAttempts: 5,
     backoff: constant,
     initialDelay: 5000
-  },
-  _ -> continue
+  }
 }
 ```
 
@@ -93,18 +122,20 @@ Attempt 5: wait 5000ms (5s)
 
 ## Maximum delay
 
-Prevent extremely long waits:
+`maxDelay` prevents extremely long waits:
 
 ```vague
-retry: {
-  maxAttempts: 10,
-  backoff: exponential,
-  initialDelay: 1000,
-  maxDelay: 30000  // Cap at 30 seconds
+get "/data" {
+  retry: {
+    maxAttempts: 10,
+    backoff: exponential,
+    initialDelay: 1000,
+    maxDelay: 30000  // Cap at 30 seconds
+  }
 }
 ```
 
-Without cap (exponential):
+Without a cap, exponential backoff grows quickly:
 ```
 Attempt 8: wait 128000ms (2+ min)
 Attempt 9: wait 256000ms (4+ min)
@@ -116,152 +147,60 @@ Attempt 8: wait 30000ms (30s)
 Attempt 9: wait 30000ms (30s)
 ```
 
-## Fixed delay
+## Per-attempt timeout
 
-Override backoff calculation:
-
-```vague
-match response {
-  { code: 429, retryAfter: seconds } -> retry {
-    maxAttempts: 5,
-    delay: seconds * 1000  // Use API-provided delay
-  },
-  _ -> continue
-}
-```
-
-## Retry based on error type
-
-### Transient errors (should retry)
+`timeout` aborts a single attempt that hangs, so a slow request doesn't block the whole retry budget:
 
 ```vague
-match response {
-  { code: 408 } -> retry,  // Request Timeout
-  { code: 429 } -> retry,  // Too Many Requests
-  { code: 500 } -> retry,  // Internal Server Error
-  { code: 502 } -> retry,  // Bad Gateway
-  { code: 503 } -> retry,  // Service Unavailable
-  { code: 504 } -> retry,  // Gateway Timeout
-  _ -> continue
-}
-```
-
-### Permanent errors (don't retry)
-
-```vague
-match response {
-  { code: 400 } -> abort "Bad request",      // Won't improve
-  { code: 401 } -> abort "Unauthorized",     // Need new creds
-  { code: 403 } -> abort "Forbidden",        // Permission issue
-  { code: 404 } -> skip,                     // Resource gone
-  { code: 422 } -> abort "Invalid data",     // Validation error
-  _ -> continue
-}
-```
-
-### Conditional retry
-
-```vague
-match response {
-  // Retry rate limits with longer wait
-  { code: 429 } -> retry {
-    maxAttempts: 10,
-    backoff: exponential,
-    initialDelay: 60000  // Start at 1 minute
-  },
-
-  // Retry server errors with shorter wait
-  { code: 500 } -> retry {
+get "/data" {
+  retry: {
     maxAttempts: 3,
-    backoff: exponential,
-    initialDelay: 1000
-  },
-
-  // Retry timeouts with medium wait
-  { code: 504 } -> retry {
-    maxAttempts: 5,
-    backoff: linear,
-    initialDelay: 5000
-  },
-
-  _ -> continue
+    timeout: 10000  // Give up on an attempt after 10s, then retry
+  }
 }
 ```
 
-## Retry-After header
+## Retrying on response contents
 
-Respect API's `Retry-After` header:
-
-```vague
-match response {
-  { code: 429, headers: h } where h["Retry-After"] != null -> retry {
-    delay: toNumber(h["Retry-After"]) * 1000
-  },
-  { code: 429 } -> retry {
-    maxAttempts: 5,
-    backoff: exponential,
-    initialDelay: 60000
-  },
-  _ -> continue
-}
-```
-
-## Retry with token refresh
+The fetch `retry:` block handles HTTP-level failures. To re-run work based on a successful response body — for example, an API that returns `{ pending: true }` while a job finishes — use the `retry` flow directive in a `match` arm. That replays the whole action:
 
 ```vague
-action FetchProtectedData {
-  get "/protected"
+action FetchResult {
+  get "/jobs/123"
 
   match response {
-    { code: 401 } -> jump RefreshToken then retry,
-    { code: 429 } -> retry { maxAttempts: 5 },
-    { code: 500 } -> retry { maxAttempts: 3 },
-    _ -> continue
-  }
-}
-
-action RefreshToken {
-  post "/auth/refresh" {
-    body: { refreshToken: env("REFRESH_TOKEN") }
+    _ where response.pending -> retry { maxAttempts: 5, backoff: exponential, initialDelay: 1000 },
+    _ -> store response -> results { key: .id }
   }
 }
 ```
 
-## Retry at source level
-
-Configure default retry for all requests:
-
-```vague
-source API {
-  auth: bearer,
-  base: "https://api.example.com",
-  retry: {
-    maxAttempts: 3,
-    backoff: exponential,
-    initialDelay: 1000
-  }
-}
-```
-
-Override per request:
-
-```vague
-get "/critical-endpoint" {
-  retry: {
-    maxAttempts: 10  // More attempts for critical requests
-  }
-}
-```
+See [Flow control directives](./flow-control) for the directive form.
 
 ## Choosing the right strategy
 
-| Scenario | Recommended Strategy |
+| Scenario | Recommended strategy |
 |----------|---------------------|
 | General API errors | Exponential, 3-5 attempts |
-| Rate limiting | Exponential, long initial delay |
+| Rate limiting | Exponential, longer initial delay |
 | Timeouts | Linear, medium delays |
 | Flaky network | Constant, short delays |
-| Critical operations | Exponential with high maxAttempts |
+| Critical operations | Exponential with higher `maxAttempts` |
+
+## Scheduled missions
+
+Retrying a whole mission run is separate from request-level retries. A schedule's retry block uses different keys — `maxRetries` and `delaySeconds`:
+
+```vague
+schedule: every 1 hours {
+  retry: {
+    maxRetries: 3,
+    delaySeconds: 60
+  }
+}
+```
+
+See [Scheduling overview](../scheduling/overview) for details.
 
 ## Best practices
 
@@ -272,14 +211,14 @@ retry: {
   maxAttempts: 5,
   backoff: exponential,
   initialDelay: 1000,  // Start small
-  maxDelay: 60000      // Cap at reasonable max
+  maxDelay: 60000      // Cap at a reasonable max
 }
 ```
 
 ### Be respectful to APIs
 
 ```vague
-// Good: respect rate limits
+// Good: back off generously
 retry: {
   maxAttempts: 5,
   backoff: exponential,
@@ -294,75 +233,26 @@ retry: {
 }
 ```
 
-### Log retry attempts
-
-```vague
-match response {
-  { code: 503 } -> {
-    store {
-      event: "retry",
-      code: 503,
-      timestamp: now()
-    } -> retryLog
-    retry { maxAttempts: 3 }
-  },
-  _ -> continue
-}
-```
-
-### Have a fallback
-
-```vague
-match response {
-  { error: _ } -> {
-    // After max retries, queue for later
-    queue failed { item: { request: currentRequest } }
-    skip
-  },
-  _ -> continue
-}
-```
-
 ## Troubleshooting
 
 ### Retries not happening
 
-Ensure match directive triggers retry:
+Retries apply to `429` and `5xx` on idempotent requests. A `post` or `patch` isn't retried unless it carries an idempotency key, and `4xx` responses other than `401` throw immediately:
 
 ```vague
-// This triggers retry
-match response {
-  { error: _ } -> retry,
-  _ -> continue
-}
-
-// This does NOT retry
+// Retried automatically on 429 / 5xx
 get "/data" {
-  retry: { maxAttempts: 3 }  // Only triggers on HTTP errors
+  retry: { maxAttempts: 3 }
 }
 ```
 
 ### Too many retries
 
-Lower maxAttempts or add maxDelay:
+Lower `maxAttempts` or cap the wait with `maxDelay`:
 
 ```vague
 retry: {
   maxAttempts: 3,
   maxDelay: 30000
-}
-```
-
-### Retrying wrong errors
-
-Be specific about which errors to retry:
-
-```vague
-match response {
-  // Only retry specific codes
-  { code: 429 } -> retry,
-  { code: 503 } -> retry,
-  // Don't retry 400, 401, 404, etc.
-  _ -> continue
 }
 ```

@@ -21,10 +21,10 @@ The MCP server provides:
 ### Command line
 
 ```bash
-npx reqon-mcp-server
+npx reqon-mcp
 
 # With options
-npx reqon-mcp-server --verbose --cwd /path/to/project
+npx reqon-mcp --verbose --cwd /path/to/project
 ```
 
 ### Claude desktop configuration
@@ -36,7 +36,7 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
   "mcpServers": {
     "reqon": {
       "command": "npx",
-      "args": ["reqon-mcp-server"],
+      "args": ["reqon-mcp"],
       "cwd": "/path/to/your/project"
     }
   }
@@ -256,7 +256,7 @@ Claude: I'll parse this mission to validate...
 Set the working directory for file operations:
 
 ```bash
-reqon-mcp-server --cwd /path/to/missions
+reqon-mcp --cwd /path/to/missions
 ```
 
 ### Verbose mode
@@ -264,7 +264,7 @@ reqon-mcp-server --cwd /path/to/missions
 Enable detailed logging:
 
 ```bash
-reqon-mcp-server --verbose
+reqon-mcp --verbose
 ```
 
 ## Security considerations

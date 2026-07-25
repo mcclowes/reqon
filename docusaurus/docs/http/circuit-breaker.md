@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Circuit breaker
 
-The circuit breaker pattern prevents cascading failures when an API is experiencing problems. Reqon includes a built-in circuit breaker for robust error handling.
+The circuit breaker pattern prevents cascading failures when an API is having problems. Reqon includes a built-in circuit breaker that trips when failures pile up and fails fast until the API recovers.
 
 ## How it works
 
@@ -163,8 +163,7 @@ source API {
   auth: bearer,
   base: "https://api.example.com",
   rateLimit: {
-    requestsPerMinute: 60,
-    strategy: "pause"
+    strategy: pause
   },
   circuitBreaker: {
     failureThreshold: 5,
@@ -202,8 +201,8 @@ mission MultiSourceSync {
 
   action FetchBoth {
     // Each source's circuit is independent
-    get ReliableAPI "/data"
-    get FlakyAPI "/data"
+    get "/data" { source: ReliableAPI }
+    get "/data" { source: FlakyAPI }
   }
 }
 ```
@@ -278,12 +277,12 @@ mission FallbackSync {
   source Secondary { circuitBreaker: { failureThreshold: 5 } }
 
   action FetchWithFallback {
-    get Primary "/data"
+    get "/data" { source: Primary }
 
     match response {
       { error: "circuit_open" } -> {
         // Primary is down, try secondary
-        get Secondary "/data"
+        get "/data" { source: Secondary }
         store response -> data { key: .id }
       },
       { data: _ } -> store response.data -> data { key: .id },

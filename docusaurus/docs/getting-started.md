@@ -10,19 +10,21 @@ This guide helps you install Reqon and run your first data pipeline.
 
 ## Prerequisites
 
-- Node.js 18 or later
+- Node.js 20 or later
 - npm or yarn
 
 ## Installation
 
+Reqon is published as `reqon-dsl`. Installing it adds the `reqon` CLI binary.
+
 ```bash
-npm install reqon
+npm install reqon-dsl
 ```
 
 Or if you prefer yarn:
 
 ```bash
-yarn add reqon
+yarn add reqon-dsl
 ```
 
 ## Your first mission
@@ -73,7 +75,7 @@ npx reqon hello.vague --verbose
 ### Using the API
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 const result = await execute(`
   mission HelloWorld {
@@ -89,7 +91,8 @@ const result = await execute(`
   }
 `);
 
-console.log(`Fetched ${result.stores.get('posts')?.list().length} posts`);
+const posts = await result.stores.get('posts')?.list();
+console.log(`Fetched ${posts?.length ?? 0} posts`);
 ```
 
 ## Understanding the output
@@ -111,17 +114,18 @@ Every Reqon mission follows this structure:
 ```vague
 mission MissionName {
   // 1. Define data sources (APIs)
-  source SourceName { auth: type, base: "url" }
+  source SourceName { auth: bearer, base: "https://api.example.com" }
 
-  // 2. Define storage targets
-  store storeName: adapter("name")
+  // 2. Define storage targets (memory, file, postgrest, sql, nosql)
+  store storeName: memory("name")
 
   // 3. Define schemas (optional, for validation)
-  schema SchemaName { field: type }
+  schema SchemaName { field: string }
 
   // 4. Define actions (processing steps)
   action ActionName {
     // Steps: fetch, map, validate, store, for, match
+    get "/data"
   }
 
   // 5. Define the pipeline
@@ -142,7 +146,7 @@ action TransformPosts {
       id: .id,
       title: .title,
       excerpt: substring(.body, 0, 100),
-      author: concat("User ", toString(.userId))
+      author: concat("User ", .userId)
     }
     store post -> posts { key: .id }
   }
@@ -175,7 +179,7 @@ Most APIs require pagination. Reqon makes this easy:
 ```vague
 action FetchAllPosts {
   get "/posts" {
-    paginate: offset(page, 20),
+    paginate: offset(offset, 20),
     until: length(response) == 0
   }
 
@@ -185,15 +189,16 @@ action FetchAllPosts {
 
 ## Error handling
 
-Use `match` for pattern-based error handling:
+Use `match` to branch on the response's schema. Match arms are keyed by schema name (or `_` for the fallback), so declare a schema for the shape you want to catch:
 
 ```vague
+schema ApiError { error: string }
+
 action RobustFetch {
   get "/posts"
 
   match response {
-    { error: _ } -> abort "API returned error",
-    { data: _ } -> continue,
+    ApiError -> abort "API returned an error",
     _ -> store response -> posts { key: .id }
   }
 }

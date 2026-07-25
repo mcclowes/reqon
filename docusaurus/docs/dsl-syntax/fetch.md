@@ -27,16 +27,14 @@ delete "/users/123"
 
 ## Request options
 
+A fetch option block accepts only these keys: `source`, `body`, `paginate`, `until`, `retry`, `since`, and `backfill`. Anything else is a parse error.
+
 ### Query parameters
 
+There's no `params:` option. Put query parameters directly in the path string:
+
 ```vague
-get "/users" {
-  params: {
-    limit: 100,
-    offset: 0,
-    status: "active"
-  }
-}
+get "/users?limit=100&offset=0&status=active"
 ```
 
 ### Request body
@@ -51,13 +49,17 @@ post "/users" {
 }
 ```
 
-### Custom headers
+### Headers
+
+You can't set per-request headers on a fetch step. Headers are declared once on the source, in its `headers` block, and apply to every request through that source:
 
 ```vague
-get "/users" {
+source API {
+  auth: bearer,
+  base: "https://api.example.com",
   headers: {
-    "X-Custom-Header": "value",
-    "Accept": "application/json"
+    "Accept": "application/json",
+    "X-Custom-Header": "value"
   }
 }
 ```
@@ -150,10 +152,11 @@ get "/users" {
 ```
 
 Options:
-- `maxAttempts` - Maximum retry attempts
-- `backoff` - Strategy: `exponential`, `linear`, or `constant`
-- `initialDelay` - First retry delay in milliseconds
-- `maxDelay` - Maximum delay between retries
+- `maxAttempts` - Maximum retry attempts (default 3)
+- `backoff` - Strategy: `exponential`, `linear`, or `constant` (default `exponential`)
+- `initialDelay` - First retry delay in milliseconds (default 1000)
+- `maxDelay` - Maximum delay between retries in milliseconds
+- `timeout` - Per-request timeout in milliseconds
 
 See [Retry Strategies](../http/retry) for details.
 
@@ -196,7 +199,7 @@ action InspectResponse {
   store response.users -> users { key: .id }
 
   // Check response metadata
-  validate {
+  validate response {
     assume response.total > 0
   }
 }
@@ -204,7 +207,7 @@ action InspectResponse {
 
 ## Named source requests
 
-When you have multiple sources, specify which to use:
+When you have multiple sources, use the `source` option to pick one. The first source defined is the default:
 
 ```vague
 mission MultiSource {
@@ -216,39 +219,41 @@ mission MultiSource {
     get "/users"
 
     // Explicit source
-    get Secondary "/backup-users"
+    get "/backup-users" { source: Secondary }
   }
 }
 ```
 
 ## Dynamic paths
 
-Use expressions in paths:
+Interpolate values into a path with `{...}`. The names resolve against the current loop variable and action variables:
 
 ```vague
 action FetchUserOrders {
   for user in users {
-    get concat("/users/", user.id, "/orders")
+    get "/users/{user.id}/orders"
     store response -> orders { key: .id }
   }
 }
 ```
 
-## OpenAPI Operation Calls
+You can also build the path with the `+` operator, which concatenates strings:
 
-When using OAS sources, use `call` syntax:
+```vague
+get "/users/" + user.id + "/orders"
+```
+
+## OpenAPI operation calls
+
+When using OAS sources, use `call` syntax. The path and its parameters come from the spec and from interpolated context, so a `call` takes only the standard fetch options (no `params`):
 
 ```vague
 source Petstore from "./petstore.yaml" { auth: bearer }
 
 action FetchPets {
-  call Petstore.listPets {
-    params: { limit: 100 }
-  }
+  call Petstore.listPets
 
-  call Petstore.getPetById {
-    params: { petId: "123" }
-  }
+  call Petstore.getPetById
 }
 ```
 
@@ -266,9 +271,7 @@ mission DataSync {
   store users: file("users")
 
   action FetchAllUsers {
-    get "/users" {
-      params: { include: "profile" },
-      headers: { "Accept-Version": "2.0" },
+    get "/users?include=profile" {
       paginate: offset(offset, 100),
       until: length(response.users) == 0,
       retry: {

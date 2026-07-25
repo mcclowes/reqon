@@ -4,38 +4,42 @@ sidebar_position: 3
 
 # OpenTelemetry integration
 
-Reqon supports OpenTelemetry for distributed tracing, allowing you to export spans to observability platforms like Jaeger, Zipkin, Grafana Tempo, and cloud providers.
+Reqon can convert its observability events into OpenTelemetry spans and export them over OTLP to backends like Jaeger, Grafana Tempo, and cloud providers.
+
+This is a lightweight implementation that builds and posts OTLP-shaped spans directly. It doesn't depend on the official OpenTelemetry SDK.
 
 ## Overview
 
-The OpenTelemetry integration:
+The integration:
 
-- Converts Reqon events to OTel spans
-- Supports hierarchical trace contexts
-- Exports via OTLP (OpenTelemetry Protocol)
-- Provides span builders for custom instrumentation
+- Turns Reqon events into OTel spans (mission, stage, step, and fetch spans).
+- Builds a span hierarchy from the event stream.
+- Exports spans over OTLP via HTTP.
 
 ## Quick start
 
-```typescript
-import { execute, OTLPExporter, createOTelListener } from 'reqon';
+`createOTelListener` takes an OTLP config and returns an `adapter`, a `handler` to subscribe to the event emitter, and a `flush` to send the spans:
 
-// Create OTLP exporter
-const exporter = new OTLPExporter({
+```typescript
+import { execute, createEmitter, createOTelListener } from 'reqon';
+
+const otel = createOTelListener({
   endpoint: 'http://localhost:4318/v1/traces',
   serviceName: 'reqon-sync'
 });
 
-// Create event listener that exports to OTel
-const otelListener = createOTelListener(exporter);
+const emitter = createEmitter('my-run', 'SyncCustomers');
+emitter.onAll(otel.handler);
 
-// Execute with tracing
-const result = await execute(source, {
-  eventEmitter: otelListener
-});
+await execute(source, { eventEmitter: emitter });
+
+// Send the collected spans
+await otel.flush();
 ```
 
 ## OTLP exporter
+
+If you want to manage spans yourself, use `OTLPExporter` directly.
 
 ### Configuration
 
@@ -45,12 +49,21 @@ import { OTLPExporter } from 'reqon';
 const exporter = new OTLPExporter({
   endpoint: 'http://localhost:4318/v1/traces',
   serviceName: 'data-pipeline',
-  serviceVersion: '1.0.0',
   headers: {
     'Authorization': 'Bearer token'
-  },
-  timeout: 5000  // ms
+  }
 });
+```
+
+The config accepts `endpoint`, `serviceName`, and `headers`.
+
+### Methods
+
+```typescript
+exporter.addSpans(spans);        // queue spans for export
+await exporter.flush();          // POST queued spans to the endpoint
+exporter.startAutoFlush(5000);   // flush every 5s
+exporter.stopAutoFlush();
 ```
 
 ### Cloud provider endpoints
@@ -71,141 +84,97 @@ const honeycombExporter = new OTLPExporter({
     'x-honeycomb-team': 'your-api-key'
   }
 });
+```
 
-// Datadog
-const datadogExporter = new OTLPExporter({
-  endpoint: 'https://trace.agent.datadoghq.com/v1/traces',
-  headers: {
-    'DD-API-KEY': 'your-api-key'
-  }
+## Event adapter
+
+`createOTelListener` wraps an `OTelEventAdapter`. You can also drive the adapter yourself. It exposes a single `processEvent` method that builds and closes spans as events arrive:
+
+```typescript
+import { createEmitter, OTelEventAdapter, OTLPExporter } from 'reqon';
+
+const adapter = new OTelEventAdapter();
+const exporter = new OTLPExporter({
+  endpoint: 'http://localhost:4318/v1/traces'
 });
+
+const emitter = createEmitter('my-run', 'SyncCustomers');
+emitter.onAll((event) => adapter.processEvent(event));
+
+// ... run the mission ...
+
+exporter.addSpans(adapter.getSpans());
+await exporter.flush();
 ```
 
 ## Span builder
 
-Create custom spans with the SpanBuilder:
+For custom instrumentation, `SpanBuilder` tracks spans by ID:
 
 ```typescript
-import { SpanBuilder, generateTraceId, generateSpanId } from 'reqon';
+import { SpanBuilder } from 'reqon';
 
-const traceId = generateTraceId();
+const builder = new SpanBuilder();
 
-const missionSpan = new SpanBuilder('mission.sync')
-  .setTraceId(traceId)
-  .setSpanId(generateSpanId())
-  .setAttribute('mission.name', 'SyncCustomers')
-  .setAttribute('mission.version', '1.0')
-  .setStartTime(Date.now())
-  .build();
+const spanId = builder.startSpan('mission.sync', {
+  kind: 'INTERNAL',
+  attributes: {
+    'reqon.mission': 'SyncCustomers'
+  }
+});
 
-// Later...
-missionSpan.endTimeUnixNano = Date.now() * 1_000_000;
-missionSpan.status = { code: 1 }; // OK
-```
+// ... do work ...
 
-### Span attributes
+builder.endSpan(spanId, { status: 'OK' });
 
-```typescript
-const span = new SpanBuilder('fetch.customers')
-  .setAttribute('http.method', 'GET')
-  .setAttribute('http.url', '/api/customers')
-  .setAttribute('http.status_code', 200)
-  .setAttribute('http.response_content_length', 1024)
-  .build();
+const spans = builder.getSpans();
 ```
 
 ### Span events
 
 ```typescript
-const span = new SpanBuilder('process.batch')
-  .addEvent('batch.start', { batchSize: 100 })
-  .addEvent('batch.progress', { processed: 50 })
-  .addEvent('batch.complete', { processed: 100 })
-  .build();
+const spanId = builder.startSpan('process.batch');
+builder.addEvent(spanId, 'batch.progress', { processed: 50 });
+builder.endSpan(spanId, { status: 'OK' });
 ```
 
-## OTel event adapter
+Span status codes are `'UNSET'`, `'OK'`, or `'ERROR'`.
 
-The OTelEventAdapter converts Reqon events to OTel spans:
+## Trace hierarchy
 
-```typescript
-import { OTelEventAdapter, OTLPExporter, createEmitter } from 'reqon';
-
-const exporter = new OTLPExporter({
-  endpoint: 'http://localhost:4318/v1/traces'
-});
-
-const adapter = new OTelEventAdapter(exporter, {
-  serviceName: 'reqon-pipeline'
-});
-
-const emitter = createEmitter();
-
-// Subscribe to all events
-emitter.on('mission.start', (e) => adapter.onMissionStart(e));
-emitter.on('mission.complete', (e) => adapter.onMissionComplete(e));
-emitter.on('fetch.start', (e) => adapter.onFetchStart(e));
-emitter.on('fetch.complete', (e) => adapter.onFetchComplete(e));
-// ... etc
-```
-
-## OTel log output
-
-Send structured logs as OTel spans:
-
-```typescript
-import { createStructuredLogger, OTelLogOutput, OTLPExporter } from 'reqon';
-
-const exporter = new OTLPExporter({
-  endpoint: 'http://localhost:4318/v1/traces'
-});
-
-const logger = createStructuredLogger({
-  console: true
-});
-
-logger.addOutput(new OTelLogOutput(exporter));
-```
-
-## Trace context
-
-### Trace hierarchy
+The adapter nests spans to mirror the pipeline:
 
 ```
-Mission (root span)
-├── Action: FetchCustomers
-│   ├── Step: fetch GET /customers
-│   ├── Step: validate
-│   └── Step: store -> customers
-├── Action: EnrichCustomers
-│   ├── Step: for customer in customers
-│   │   ├── fetch GET /customers/{id}/details
-│   │   └── store -> enriched
-│   └── Step: validate
-└── Action: Export
-    └── Step: store -> file
+mission:SyncCustomers (root)
+├── stage:FetchCustomers
+│   ├── step:fetch
+│   └── step:store
+└── stage:Export
+    └── step:store
 ```
 
-### Propagation
+## Span attributes
 
-```typescript
-import { generateTraceId, generateSpanId } from 'reqon';
+The adapter sets these attributes:
 
-// Generate trace context
-const traceId = generateTraceId();  // 32-char hex
-const spanId = generateSpanId();    // 16-char hex
-
-// Include in outgoing requests
-const headers = {
-  'traceparent': `00-${traceId}-${spanId}-01`
-};
-```
+| Attribute | Description |
+|-----------|-------------|
+| `service.name` | Service identifier (from the exporter config) |
+| `reqon.execution_id` | Execution ID |
+| `reqon.mission` | Mission name |
+| `reqon.stage.name` | Stage name |
+| `reqon.stage.index` | Stage index |
+| `reqon.step.type` | Step type (`fetch`, `store`, `map`, …) |
+| `reqon.step.index` | Step index within the action |
+| `reqon.action` | Action name |
+| `reqon.source` | Source name (on fetch spans) |
+| `http.method` | HTTP method |
+| `http.url` | Request path |
+| `http.status_code` | Response status code |
 
 ## Viewing traces
 
 ### Jaeger
-
-Run Jaeger locally:
 
 ```bash
 docker run -d --name jaeger \
@@ -214,21 +183,19 @@ docker run -d --name jaeger \
   jaegertracing/all-in-one:latest
 ```
 
-Configure exporter:
-
 ```typescript
-const exporter = new OTLPExporter({
+const otel = createOTelListener({
   endpoint: 'http://localhost:4318/v1/traces',
   serviceName: 'reqon'
 });
 ```
 
-View at: http://localhost:16686
+View traces at http://localhost:16686.
 
 ### Grafana Tempo
 
 ```typescript
-const exporter = new OTLPExporter({
+const otel = createOTelListener({
   endpoint: 'http://tempo:4318/v1/traces',
   serviceName: 'reqon'
 });
@@ -237,115 +204,39 @@ const exporter = new OTLPExporter({
 ## Complete example
 
 ```typescript
-import {
-  execute,
-  createEmitter,
-  OTLPExporter,
-  OTelEventAdapter,
-  createStructuredLogger,
-  OTelLogOutput
-} from 'reqon';
+import { execute, createEmitter, createOTelListener } from 'reqon';
 
-// Setup exporter
-const exporter = new OTLPExporter({
+const otel = createOTelListener({
   endpoint: process.env.OTEL_ENDPOINT || 'http://localhost:4318/v1/traces',
-  serviceName: 'data-sync-pipeline',
-  serviceVersion: '2.0.0'
+  serviceName: 'data-sync-pipeline'
 });
 
-// Setup event adapter
-const otelAdapter = new OTelEventAdapter(exporter, {
-  serviceName: 'data-sync-pipeline',
-  includeContext: true
-});
+const emitter = createEmitter('sync-run', 'SyncCustomers');
+emitter.onAll(otel.handler);
 
-// Setup emitter with OTel subscriptions
-const emitter = createEmitter();
-emitter.on('mission.start', (e) => otelAdapter.onMissionStart(e));
-emitter.on('mission.complete', (e) => otelAdapter.onMissionComplete(e));
-emitter.on('mission.failed', (e) => otelAdapter.onMissionFailed(e));
-emitter.on('fetch.start', (e) => otelAdapter.onFetchStart(e));
-emitter.on('fetch.complete', (e) => otelAdapter.onFetchComplete(e));
-emitter.on('fetch.error', (e) => otelAdapter.onFetchError(e));
-emitter.on('data.store', (e) => otelAdapter.onDataStore(e));
-
-// Setup logger with OTel output
-const logger = createStructuredLogger({
-  level: 'info',
-  console: true
-});
-logger.addOutput(new OTelLogOutput(exporter));
-
-// Execute
 const result = await execute(missionSource, {
   eventEmitter: emitter,
   verbose: true
 });
 
-// Flush remaining spans
-await exporter.flush();
+// Flush the collected spans
+await otel.flush();
 ```
-
-## Semantic conventions
-
-Reqon follows OpenTelemetry semantic conventions:
-
-| Attribute | Description |
-|-----------|-------------|
-| `service.name` | Service identifier |
-| `service.version` | Service version |
-| `http.method` | HTTP method (GET, POST, etc.) |
-| `http.url` | Request URL |
-| `http.status_code` | Response status code |
-| `http.response_content_length` | Response body size |
-| `reqon.mission.name` | Mission name |
-| `reqon.action.name` | Action name |
-| `reqon.store.name` | Store name |
-| `reqon.store.count` | Items stored |
 
 ## Best practices
 
+### Always flush
+
+Spans are queued in memory and only sent on `flush` (or by `startAutoFlush`). Call `flush` before the process exits, or you'll lose spans.
+
 ### Sampling
 
-For high-volume pipelines, implement sampling:
+For high-volume pipelines, decide per run whether to attach the OTel listener:
 
 ```typescript
-const shouldSample = () => Math.random() < 0.1; // 10% sampling
-
-if (shouldSample()) {
-  const exporter = new OTLPExporter({ ... });
-  // Use exporter
+const shouldSample = Math.random() < 0.1; // 10%
+if (shouldSample) {
+  emitter.onAll(otel.handler);
 }
 ```
-
-### Error recording
-
-```typescript
-emitter.on('fetch.error', (event) => {
-  const span = new SpanBuilder('fetch.error')
-    .setAttribute('error', true)
-    .setAttribute('error.message', event.error)
-    .setAttribute('http.url', event.url)
-    .addEvent('exception', {
-      'exception.message': event.error
-    })
-    .build();
-
-  span.status = { code: 2, message: event.error }; // ERROR
-  exporter.export([span]);
-});
-```
-
-### Resource attributes
-
-```typescript
-const exporter = new OTLPExporter({
-  endpoint: 'http://localhost:4318/v1/traces',
-  serviceName: 'reqon',
-  resourceAttributes: {
-    'deployment.environment': 'production',
-    'host.name': os.hostname(),
-    'process.pid': process.pid
-  }
-});
-```
+</content>

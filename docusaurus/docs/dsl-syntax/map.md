@@ -64,16 +64,16 @@ map order -> Output {
 
 ## Expressions
 
-For detailed expression syntax, see the [Vague documentation](https://github.com/mcclowes/vague).
+A field's value is a normal expression. For detailed expression syntax, see the [Expressions](./expressions) page and the [Vague documentation](https://github.com/mcclowes/vague).
 
 ### String operations
 
+The `+` operator concatenates strings. There are no string functions like `lowercase`, `substring`, or `split`:
+
 ```vague
 map user -> Output {
-  fullName: concat(.firstName, " ", .lastName),
-  email: lowercase(.email),
-  initials: concat(substring(.firstName, 0, 1), substring(.lastName, 0, 1)),
-  domain: split(.email, "@")[1]
+  fullName: .firstName + " " + .lastName,
+  greeting: "Hello, " + .name
 }
 ```
 
@@ -90,16 +90,20 @@ map order -> Output {
 
 ### Conditional expressions
 
+Use the ternary operator `condition ? a : b`. There's no `if/then/else` expression form:
+
 ```vague
 map user -> Output {
-  status: if .active then "Active" else "Inactive",
-  tier: if .totalSpent > 10000 then "Gold"
-        else if .totalSpent > 5000 then "Silver"
-        else "Bronze"
+  status: .active ? "Active" : "Inactive",
+  tier: .totalSpent > 10000 ? "Gold"
+        : .totalSpent > 5000 ? "Silver"
+        : "Bronze"
 }
 ```
 
 ### Pattern matching in maps
+
+A match expression compares a value against literal patterns with `=>` and returns the matching arm's value:
 
 ```vague
 map order -> Output {
@@ -132,20 +136,6 @@ map user -> Output {
 }
 ```
 
-### Mapping arrays
-
-```vague
-map order -> Output {
-  id: .id,
-  items: .lineItems.map(item => {
-    productId: item.product_id,
-    name: item.product_name,
-    quantity: item.qty,
-    price: item.unit_price
-  })
-}
-```
-
 ## Combining data
 
 ### From multiple sources
@@ -153,7 +143,7 @@ map order -> Output {
 ```vague
 action EnrichOrders {
   for order in orders {
-    get concat("/customers/", order.customerId)
+    get "/customers/{order.customerId}"
 
     map order -> EnrichedOrder {
       id: order.id,
@@ -170,30 +160,11 @@ action EnrichOrders {
 }
 ```
 
-### Merging objects
-
-```vague
-map source -> Output {
-  ...baseData,
-  ...additionalData,
-  overriddenField: "new value"
-}
-```
-
-## Date transformations
-
-```vague
-map event -> Output {
-  timestamp: parseDate(.created_at),
-  formattedDate: formatDate(.created_at, "YYYY-MM-DD"),
-  year: year(.created_at),
-  dayOfWeek: dayOfWeek(.created_at)
-}
-```
-
 ## Null handling
 
 ### Default values
+
+The `or` operator returns its left side when truthy, otherwise the right side, which makes it a handy default:
 
 ```vague
 map user -> Output {
@@ -207,32 +178,23 @@ map user -> Output {
 
 ```vague
 map user -> Output {
-  hasEmail: .email != null,
-  displayEmail: if .email != null then .email else "Not provided"
-}
-```
-
-## Type coercion
-
-```vague
-map data -> Output {
-  id: toString(.id),
-  count: toNumber(.count),
-  isActive: toBoolean(.active),
-  tags: toArray(.tags)
+  hasEmail: not (.email == null),
+  displayEmail: not (.email == null) ? .email : "Not provided"
 }
 ```
 
 ## Computed fields
 
+`length` and `sum` are built in. `sum` takes an array of numbers:
+
 ```vague
 map invoice -> Output {
   id: .id,
   lineItems: .items,
-  subtotal: sum(.items.map(.amount)),
+  subtotal: sum(.amounts),
   taxRate: 0.1,
-  tax: sum(.items.map(.amount)) * 0.1,
-  total: sum(.items.map(.amount)) * 1.1,
+  tax: sum(.amounts) * 0.1,
+  total: sum(.amounts) * 1.1,
   itemCount: length(.items)
 }
 ```
@@ -240,14 +202,14 @@ map invoice -> Output {
 ## Renaming fields
 
 ```vague
-// Transform API response to standard format
+// Transform an API response to a standard format
 map xeroInvoice -> StandardInvoice {
   id: .InvoiceID,
   number: .InvoiceNumber,
   customerId: .Contact.ContactID,
   customerName: .Contact.Name,
   amount: .Total,
-  status: lowercase(.Status),
+  status: .Status,
   createdAt: .DateString
 }
 ```
@@ -266,17 +228,15 @@ map order -> FlatOrder {
 }
 ```
 
-## Grouping and aggregation
+## Aggregation
+
+`length` and `sum` work over arrays. There's no `map`, `filter`, or `avg` function, so aggregate over arrays you already have rather than deriving them inline:
 
 ```vague
-map orders -> Summary {
-  totalOrders: length(orders),
-  totalRevenue: sum(orders.map(.total)),
-  averageOrder: sum(orders.map(.total)) / length(orders),
-  byStatus: {
-    pending: length(filter(orders, .status == "pending")),
-    completed: length(filter(orders, .status == "completed"))
-  }
+map order -> Summary {
+  itemCount: length(.items),
+  totalRevenue: sum(.amounts),
+  averageItem: sum(.amounts) / length(.items)
 }
 ```
 
@@ -309,14 +269,8 @@ mission TransformXeroData {
           email: .Contact.EmailAddress or null
         },
 
-        // Line items
-        items: .LineItems.map(item => {
-          description: item.Description,
-          quantity: item.Quantity,
-          unitPrice: item.UnitAmount,
-          total: item.LineAmount,
-          taxAmount: item.TaxAmount or 0
-        }),
+        // Line items (kept as-is from the source)
+        items: .LineItems,
 
         // Totals
         subtotal: .SubTotal,
@@ -324,15 +278,15 @@ mission TransformXeroData {
         total: .Total,
 
         // Status
-        status: lowercase(.Status),
+        status: .Status,
         isPaid: .Status == "PAID",
 
         // Dates
-        date: parseDate(.DateString),
-        dueDate: parseDate(.DueDateString),
+        date: .DateString,
+        dueDate: .DueDateString,
 
         // Metadata
-        createdAt: parseDate(.UpdatedDateUTC),
+        createdAt: .UpdatedDateUTC,
         source: "xero"
       }
 

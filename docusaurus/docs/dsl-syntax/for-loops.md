@@ -31,7 +31,7 @@ action ProcessUsers {
 ```vague
 action ProcessStoredData {
   for customer in customers {
-    get concat("/customers/", customer.id, "/orders")
+    get "/customers/{customer.id}/orders"
     store response -> orders { key: .id }
   }
 }
@@ -69,7 +69,7 @@ action ProcessPremiumActiveUsers {
 for item in items where .status == "pending" { }
 
 // Inequality
-for item in items where .status != "cancelled" { }
+for item in items where not (.status == "cancelled") { }
 
 // Numeric comparisons
 for item in items where .price > 100 { }
@@ -77,11 +77,11 @@ for item in items where .quantity >= 10 { }
 for item in items where .discount < 0.5 { }
 for item in items where .stock <= 0 { }
 
-// String contains
-for item in items where .email contains "@example.com" { }
-
 // Type checking
 for item in items where .tags is array { }
+
+// Null check
+for item in items where not (.email == null) { }
 ```
 
 ### Complex conditions
@@ -104,7 +104,7 @@ action ProcessOrderItems {
         quantity: item.quantity,
         price: item.unitPrice
       }
-      store item -> orderItems { key: concat(order.id, "-", item.productId) }
+      store item -> orderItems { key: order.id + "-" + item.productId }
     }
   }
 }
@@ -152,8 +152,8 @@ for user in users {
 
   // In expressions
   map user -> Output {
-    fullName: concat(.firstName, " ", .lastName),
-    domain: split(.email, "@")[1]
+    fullName: .firstName + " " + .lastName,
+    email: .email
   }
 }
 ```
@@ -189,8 +189,8 @@ action ProcessPagesSequentially {
   // Then the for loop processes them
   for order in response.orders {
     match order {
-      { status: "urgent" } -> {
-        get concat("/orders/", order.id, "/expedite")
+      _ where order.status == "urgent" -> {
+        get "/orders/{order.id}/expedite"
       },
       _ -> continue
     }
@@ -201,13 +201,13 @@ action ProcessPagesSequentially {
 
 ## Breaking out of loops
 
-Use `skip` in match to skip to the next iteration:
+Use `skip` in a match arm to move on to the next iteration:
 
 ```vague
 for user in users {
   match user {
-    { status: "inactive" } -> skip,
-    { status: "banned" } -> skip,
+    _ where user.status == "inactive" -> skip,
+    _ where user.status == "banned" -> skip,
     _ -> continue
   }
 
@@ -218,15 +218,15 @@ for user in users {
 
 ## Error handling in loops
 
-Handle errors per-item:
+Handle errors per item with a schema or a guarded wildcard:
 
 ```vague
 for user in users {
-  get concat("/users/", user.id, "/details")
+  get "/users/{user.id}/details"
 
   match response {
-    { error: _ } -> {
-      // Log error and continue
+    _ where response.error != null -> {
+      // Log the error and continue
       store { userId: user.id, error: response.error } -> errors { key: user.id }
       skip
     },
@@ -246,16 +246,16 @@ Instead of individual requests:
 ```vague
 // Less efficient: one request per user
 for user in users {
-  get concat("/users/", user.id)
+  get "/users/{user.id}"
 }
 ```
 
-Consider batching if the API supports it:
+Consider batching if the API supports it. Pass an array you already have in context as the body:
 
 ```vague
-// More efficient: batch request
+// More efficient: one batch request
 post "/users/batch" {
-  body: { ids: users.map(.id) }
+  body: { ids: userIds }
 }
 ```
 
@@ -292,11 +292,11 @@ mission OrderProcessing {
       }
 
       // Fetch customer details
-      get concat("/customers/", order.customerId)
+      get "/customers/{order.customerId}"
 
       match response {
-        { error: _ } -> {
-          store { orderId: order.id, error: "Customer not found" } -> errors
+        _ where response.error != null -> {
+          store { orderId: order.id, error: "Customer not found" } -> errors { key: order.id }
           skip
         },
         _ -> continue

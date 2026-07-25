@@ -93,10 +93,10 @@ This resumes:
 
 ### Default persistence
 
-Pause state is stored in `.vague-data/pauses/`:
+Pause state is stored in `.reqon-data/pauses/`:
 
 ```
-.vague-data/pauses/
+.reqon-data/pauses/
 ├── pause-abc123.json
 └── pause-def456.json
 ```
@@ -168,13 +168,11 @@ mission DocumentApproval {
   }
 
   action ProcessApproved {
-    match response.status {
-      "approved" => {
+    match response {
+      _ where response.status == "approved" -> {
         post "/documents/publish" { body: { id: doc.id } }
-      }
-      _ => {
-        abort "Document not approved"
-      }
+      },
+      _ -> abort "Document not approved"
     }
   }
 
@@ -324,21 +322,15 @@ app.post('/approved', async (req, res) => {
 });
 ```
 
-## CLI integration
+## Resuming a paused run
+
+A pause that hasn't been triggered yet leaves the execution in the `paused` state. Resume it by execution ID:
 
 ```bash
-# List active pauses
-reqon pauses list
-
-# Resume a pause manually
-reqon pauses resume pause-abc123
-
-# Cancel a pause
-reqon pauses cancel pause-abc123
-
-# Check pause status
-reqon pauses status
+reqon mission.vague --resume exec_abc123
 ```
+
+There's no `reqon pauses` subcommand. To inspect or resume individual pauses, use the `PauseManager` API shown above, or let the timeout or webhook trigger fire on its own.
 
 ## Best practices
 
@@ -373,10 +365,10 @@ pause {
   resumeOn: timeout | webhook "/approved"
 }
 
-// If timeout: response is empty, check with match
+// If it timed out, response is empty; check with a guarded match
 match response {
-  { approved: true } => { /* webhook received */ }
-  _ => { abort "Approval timeout" }
+  _ where response.approved == true -> { /* webhook received */ },
+  _ -> abort "Approval timeout"
 }
 ```
 

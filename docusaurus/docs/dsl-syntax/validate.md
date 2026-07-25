@@ -6,6 +6,8 @@ sidebar_position: 4
 
 Validate steps check data constraints before processing or storing. They help ensure data quality and catch issues early.
 
+A `validate` step needs a target expression. Each `assume` takes a single condition. If any condition is false, the step throws a `ValidationError` and the mission aborts; there are no warning-level assumptions and no custom message syntax.
+
 ## Basic syntax
 
 ```vague
@@ -25,7 +27,7 @@ action ValidateUsers {
     validate user {
       assume .id is string,
       assume length(.name) > 0,
-      assume .email contains "@"
+      assume .email is string
     }
 
     store user -> users { key: .id }
@@ -60,13 +62,14 @@ validate data {
 
 ### String constraints
 
+There are no string-matching operators or functions like `contains`, `startsWith`, or `endsWith`. You can check presence, type, and length:
+
 ```vague
 validate user {
+  assume .name is string,
   assume length(.name) > 0,
   assume length(.name) < 100,
-  assume .email contains "@",
-  assume .phone startsWith "+",
-  assume .country endsWith "A"
+  assume .email != null
 }
 ```
 
@@ -123,37 +126,32 @@ validate order {
 }
 ```
 
-## Validation responses
+## Validation behavior
 
-### Warnings vs errors
-
-By default, failed validations are warnings and don't stop execution:
+A failed `assume` throws and aborts the mission. There is no warning level, so validation is always strict:
 
 ```vague
 validate user {
-  assume length(.name) > 0  // Warning if fails
+  assume length(.name) > 0  // Aborts the mission if this is false
 }
-// Execution continues even if validation fails
+// This line is only reached when every assumption holds
 ```
 
-### Strict validation
-
-Combine with match for strict validation:
+If you'd rather route invalid records instead of aborting, skip `validate` and use a `match` step with a guard:
 
 ```vague
-action StrictValidation {
+schema User {
+  id: string,
+  email: string
+}
+
+action RouteUsers {
   get "/users"
 
   for user in response.users {
-    validate user {
-      assume .id is string,
-      assume .email contains "@"
-    }
-
     match user {
-      { id: null } -> skip,
-      { email: null } -> skip,
-      _ -> store user -> users { key: .id }
+      User -> store user -> users { key: .id },
+      _ -> skip
     }
   }
 }
@@ -165,7 +163,7 @@ action StrictValidation {
 validate order {
   assume .id is string,
   assume .customer.id is string,
-  assume .customer.email contains "@",
+  assume .customer.email is string,
   assume length(.items) > 0,
   assume .items[0].quantity > 0
 }
@@ -196,35 +194,33 @@ action ValidateAllItems {
 }
 ```
 
-## Custom validation messages
+## Routing invalid records
 
-Use match for custom error handling:
+When you don't want a failure to abort the mission, route records with `match` and a guarded wildcard instead of `validate`:
 
 ```vague
-action ValidateWithMessages {
+action RouteInvalid {
   get "/users"
 
   for user in response.users {
     match user {
-      { email: null } -> {
-        store { userId: user.id, error: "Missing email" } -> validationErrors
+      _ where user.email == null -> {
+        store { userId: user.id, error: "Missing email" } -> validationErrors { key: user.id }
         skip
       },
-      { age: a } where a < 18 -> {
-        store { userId: user.id, error: "User under 18" } -> validationErrors
+      _ where user.age < 18 -> {
+        store { userId: user.id, error: "User under 18" } -> validationErrors { key: user.id }
         skip
       },
-      _ -> continue
+      _ -> store user -> validUsers { key: .id }
     }
-
-    store user -> validUsers { key: .id }
   }
 }
 ```
 
 ## Validation before store
 
-Always validate before storing:
+Validate before storing, so bad records abort early:
 
 ```vague
 action SafeStore {
@@ -236,12 +232,7 @@ action SafeStore {
       assume .value is number
     }
 
-    // Only store if valid
-    match item {
-      { id: null } -> skip,
-      { value: null } -> skip,
-      _ -> store item -> data { key: .id }
-    }
+    store item -> data { key: .id }
   }
 }
 ```
@@ -269,26 +260,22 @@ action ValidateAgainstSchema {
 }
 ```
 
-## Built-in validation functions
+## Built-in functions in constraints
+
+The expression language has a small set of built-in functions. The ones useful in constraints are `length`, `sum`, `count`, `first`, `last`, `round`, `floor`, `ceil`, and `now`:
 
 ```vague
 validate data {
-  // String functions
+  // Length and count
   assume length(.name) > 0,
-  assume .email contains "@",
-  assume lowercase(.status) == "active",
-
-  // Numeric functions
-  assume abs(.balance) < 10000,
-  assume round(.price, 2) == .price,
-
-  // Array functions
   assume length(.items) > 0,
-  assume includes(.roles, "user"),
 
-  // Date functions
-  assume .createdAt <= now(),
-  assume .expiresAt > now()
+  // Numeric
+  assume round(.price) == .price,
+  assume sum(.amounts) > 0,
+
+  // Timestamps (compared as strings or dates)
+  assume .createdAt != null
 }
 ```
 
@@ -325,13 +312,12 @@ mission DataValidation {
       validate order {
         assume length(.items) > 0,
         assume .total > 0,
-        assume .total == sum(.items.map(.price * .quantity)),
         assume .status == "pending" or .status == "confirmed"
       }
 
-      // Route based on validation
+      // Route based on schema match
       match order {
-        ValidOrder where .total > 0 and length(.items) > 0 -> {
+        ValidOrder where order.total > 0 and length(order.items) > 0 -> {
           store order -> validOrders { key: .id }
         },
         _ -> {
@@ -373,25 +359,27 @@ action Process {
 ```vague
 // Good: specific constraints
 validate user {
-  assume .email contains "@",
+  assume .email is string,
   assume length(.email) > 5,
-  assume .email endsWith ".com" or .email endsWith ".org"
+  assume .age >= 18
 }
 
 // Avoid: too loose
 validate user {
-  assume .email is string
+  assume .email != null
 }
 ```
 
-### Log validation failures
+### Route failures instead of aborting
+
+When you want to record bad records rather than stop, route them with a guarded `match`:
 
 ```vague
-action ValidateWithLogging {
+action RouteWithLogging {
   for item in items {
     match item {
-      { id: null } -> {
-        store { itemId: "unknown", field: "id", error: "Missing" } -> errors
+      _ where item.id == null -> {
+        store { itemId: "unknown", field: "id", error: "Missing" } -> errors { key: "unknown" }
         skip
       },
       _ -> continue

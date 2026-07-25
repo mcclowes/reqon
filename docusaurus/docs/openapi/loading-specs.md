@@ -28,10 +28,14 @@ source API from "./openapi.json" {
 
 ```vague
 // Relative to mission file
-source API from "./specs/api.yaml"
+source API from "./specs/api.yaml" {
+  auth: bearer
+}
 
 // Absolute path
-source API from "/home/user/specs/api.yaml"
+source API from "/home/user/specs/api.yaml" {
+  auth: bearer
+}
 ```
 
 ## Remote URLs
@@ -44,46 +48,13 @@ source Petstore from "https://petstore3.swagger.io/api/v3/openapi.json" {
 }
 ```
 
-### Authenticated specs
+### Private specs
 
-```vague
-source PrivateAPI from "https://api.company.com/openapi.json" {
-  auth: bearer,
-  specAuth: {
-    type: "bearer",
-    token: env("SPEC_TOKEN")
-  }
-}
-```
+A spec served behind auth must be reachable by the loader at parse time. There's no separate spec-credential option (`specAuth` isn't supported); fetch or vendor the spec locally if it needs credentials to download.
 
 ## Spec caching
 
-Reqon caches resolved specs:
-
-```vague
-// First run: downloads and caches
-source API from "https://api.example.com/openapi.json"
-
-// Subsequent runs: uses cache
-```
-
-### Cache location
-
-```
-.vague-data/
-└── oas-cache/
-    └── api.example.com-openapi.json
-```
-
-### Force refresh
-
-```bash
-# Clear cache
-rm -rf .vague-data/oas-cache/
-
-# Or use --no-cache flag
-reqon mission.vague --no-oas-cache
-```
+Reqon caches parsed specs in memory for the duration of a run, keyed by spec path, so the same spec isn't parsed twice. The cache is per process and isn't written to disk, so there's no cache directory to clear and no cache flag — each fresh run reparses the spec.
 
 ## Spec structure
 
@@ -196,30 +167,21 @@ servers:
 ```vague
 source API from "./spec.yaml" {
   auth: bearer,
-  base: "https://custom.example.com"  # Overrides spec
+  base: "https://custom.example.com"  // Overrides spec
 }
 ```
 
-### Environment-based
-
-```vague
-source API from "./spec.yaml" {
-  auth: bearer,
-  base: env("API_BASE_URL")
-}
-```
+The `base` value is a string literal.
 
 ## Reference resolution
 
-Reqon resolves `$ref` references:
+Reqon resolves internal `$ref` references within the spec:
 
 ```yaml
-# References within same file
 $ref: '#/components/schemas/Product'
-
-# External file references
-$ref: './schemas/product.yaml'
 ```
+
+External `$ref` pointers (to other files or remote URLs) are not resolved by default. Resolving untrusted external references is an SSRF and resource-exhaustion risk, so the loader only follows internal `#/...` references unless external resolution is explicitly enabled. Bundle external references into a single spec before loading.
 
 ## Validation
 

@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # File store
 
-The file store persists data as JSON files in the `.vague-data` directory.
+The file store persists data as JSON files in the `.reqon-data` directory.
 
 ## Configuration
 
@@ -15,29 +15,23 @@ store orders: file("orders")
 
 Creates:
 ```
-.vague-data/
+.reqon-data/
 ├── customers.json
 └── orders.json
 ```
 
 ## File structure
 
-Each store is a single JSON file containing an array of records:
+Each store is a single JSON file containing an object keyed by record key:
 
-```json
-[
-  {"id": "1", "name": "Alice", "email": "alice@example.com"},
-  {"id": "2", "name": "Bob", "email": "bob@example.com"}
-]
-```
-
-When using keys:
 ```json
 {
-  "1": {"id": "1", "name": "Alice"},
-  "2": {"id": "2", "name": "Bob"}
+  "1": {"id": "1", "name": "Alice", "email": "alice@example.com"},
+  "2": {"id": "2", "name": "Bob", "email": "bob@example.com"}
 }
 ```
+
+The key is the value you pass in `key:`, falling back to `record.id` when you don't.
 
 ## Use cases
 
@@ -84,21 +78,17 @@ mission ExportData {
 }
 ```
 
-## Custom directory
+## Data directory
 
-```vague
-// Default: .vague-data/
-store data: file("data")
+File stores write to `.reqon-data/` by default. To change the directory, pass `dataDir` when running programmatically:
 
-// Custom path (via config)
-store data: file("data", { dir: "./custom-dir" })
+```typescript
+import { fromFile } from 'reqon';
+
+await fromFile('mission.reqon', { dataDir: './my-data' });
 ```
 
-Or via CLI:
-
-```bash
-REQON_STATE_DIR=./my-data reqon mission.vague
-```
+The store name maps to a file inside that directory, so `file("customers")` becomes `<dataDir>/customers.json`.
 
 ## Operations
 
@@ -111,7 +101,7 @@ store response -> data { key: .id }
 // Upsert (insert or update)
 store response -> data { key: .id, upsert: true }
 
-// Partial update
+// Partial update (deep merge into the existing record, same as upsert)
 store response -> data { key: .id, partial: true }
 ```
 
@@ -125,25 +115,14 @@ for item in data { }
 for item in data where .status == "active" { }
 ```
 
-### Delete
+## Atomic writes
 
-```vague
-// Delete by key
-delete data[item.id]
+File stores write atomically to prevent corruption:
 
-// Clear all
-clear data
-```
+1. Write to a temporary file
+2. Rename it over the target file (atomic)
 
-## File locking
-
-File stores use atomic writes to prevent corruption:
-
-1. Write to temporary file
-2. Rename to target file (atomic)
-3. Delete old file
-
-This ensures data integrity even during crashes.
+This keeps the file consistent even if the process is interrupted mid-write.
 
 ## Best practices
 
@@ -158,23 +137,18 @@ store invoiceArchive: file("invoice-archive-2024")
 store d: file("d")
 ```
 
-### Add to .gitignore
+### Ignore the data directory in git
+
+The store creates a `.gitignore` inside `.reqon-data/` that ignores its own `*.json` files, so checked-out data won't be committed by accident. You can also ignore the whole directory:
 
 ```gitignore
-# Reqon data directory
-.vague-data/
+# Reqon local data
+.reqon-data/
 ```
 
 ### Use for development only
 
-```vague
-mission ConfigurableSync {
-  store data: match env("NODE_ENV") {
-    "production" => sql("items"),
-    _ => file("items-dev")
-  }
-}
-```
+The file store is for local development. For production storage, use the PostgREST store.
 
 ### Regular backups
 
@@ -182,27 +156,13 @@ For important development data:
 
 ```bash
 # Backup before major changes
-cp -r .vague-data .vague-data.backup
+cp -r .reqon-data .reqon-data.backup
 ```
 
 ## Size considerations
 
-File stores work well for:
-- Up to ~100MB per file
-- Up to ~100,000 records
-
-For larger datasets, consider SQL stores.
-
-### Performance tips
-
-```vague
-// For large datasets, batch operations
-for batch in chunks(items, 1000) {
-  for item in batch {
-    store item -> data { key: .id }
-  }
-}
-```
+The whole store is held in memory and rewritten on change, so it works best for
+modest datasets. For larger volumes, use the PostgREST store.
 
 ## Debugging
 
@@ -210,27 +170,29 @@ for batch in chunks(items, 1000) {
 
 ```bash
 # View raw data
-cat .vague-data/customers.json | jq
+cat .reqon-data/customers.json | jq
 
 # Count records
-cat .vague-data/customers.json | jq 'length'
+cat .reqon-data/customers.json | jq 'length'
 ```
 
 ### Reset data
 
 ```bash
-# Clear specific store
-rm .vague-data/customers.json
+# Clear a specific store
+rm .reqon-data/customers.json
 
 # Clear all data
-rm -rf .vague-data/
+rm -rf .reqon-data/
 ```
 
 ## Comparison
 
-| Aspect | File Store | Memory Store |
+| Aspect | File store | Memory store |
 |--------|-----------|--------------|
 | Persistence | Yes | No |
 | Speed | Fast | Fastest |
 | Scalability | Medium | Limited |
-| Use Case | Development | Testing |
+| Use case | Development | Testing |
+</content>
+</invoke>

@@ -152,8 +152,8 @@ action HandleResponse {
 
   match response {
     SuccessResponse -> store response.data -> data { key: .id },
-    RateLimitResponse -> retry { delay: response.retryAfter * 1000 },
-    ErrorResponse -> abort response.error,
+    RateLimitResponse -> retry { maxAttempts: 5 },
+    ErrorResponse -> abort "API error",
     _ -> abort "Unknown response format"
   }
 }
@@ -295,7 +295,7 @@ action Fetch {
 
   match response {
     AuthError where .code == 401 -> jump RefreshToken then retry,
-    APIError -> abort response.error.message,
+    APIError -> abort "API error",
     _ -> continue
   }
 }
@@ -333,8 +333,12 @@ Define schemas in the same mission where they're used:
 ```vague
 mission XeroSync {
   // Schema definitions at the top
-  schema XeroInvoice { /* ... */ }
-  schema XeroContact { /* ... */ }
+  schema XeroInvoice {
+    // ...
+  }
+  schema XeroContact {
+    // ...
+  }
 
   // Then sources, stores, actions...
 }

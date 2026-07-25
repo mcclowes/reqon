@@ -4,25 +4,25 @@ sidebar_position: 1
 
 # Multi-file missions
 
-For complex missions, organize your code across multiple files in a folder structure.
+For larger missions, you can split your actions across several files in a single folder.
 
 ## Folder structure
 
+The folder is flat. A root file named `mission.vague` defines the mission, and every other `.vague` file in the same folder contributes action definitions:
+
 ```
-missions/
-└── customer-sync/
-    ├── mission.vague      # Main mission definition
-    ├── actions/
-    │   ├── fetch.vague    # Fetch actions
-    │   ├── transform.vague
-    │   └── export.vague
-    └── schemas/
-        └── customer.vague
+customer-sync/
+├── mission.vague      # Root: sources, stores, schemas, pipeline
+├── fetch.vague        # action FetchCustomers
+├── transform.vague    # action TransformCustomers
+└── export.vague       # action ExportCustomers
 ```
 
-## Main mission file
+There are no `actions/` or `schemas/` subdirectories. The loader reads the folder's top level only, so action files must sit alongside `mission.vague`.
 
-The `mission.vague` file defines the mission structure:
+## Root file
+
+The root must be named `mission.vague` (or `mission.reqon`). It holds the sources, stores, schemas, and pipeline. Schemas live here too — they aren't loaded from other files.
 
 ```vague
 // mission.vague
@@ -32,12 +32,21 @@ mission CustomerSync {
     base: "https://api.example.com"
   }
 
+  source ExportAPI {
+    auth: bearer,
+    base: "https://export.example.com"
+  }
+
   store rawCustomers: memory("raw")
   store customers: file("customers")
-  store errors: file("errors")
 
-  // Actions are loaded from actions/*.vague
-  // Schemas are loaded from schemas/*.vague
+  schema StandardCustomer {
+    id: string,
+    name: string,
+    email: string
+  }
+
+  // Actions are merged from the other .vague files in this folder
 
   run FetchCustomers then TransformCustomers then ExportCustomers
 }
@@ -45,11 +54,14 @@ mission CustomerSync {
 
 ## Action files
 
-### actions/fetch.vague
+Each action file contains one or more `action` definitions and nothing else. A file that defines a `mission` is rejected.
+
+### fetch.vague
 
 ```vague
 action FetchCustomers {
   get "/customers" {
+    source: API,
     paginate: offset(offset, 100),
     until: length(response.data) == 0,
     since: lastSync
@@ -59,21 +71,20 @@ action FetchCustomers {
 }
 ```
 
-### actions/transform.vague
+### transform.vague
 
 ```vague
 action TransformCustomers {
   for customer in rawCustomers {
     validate customer {
-      assume .id is string,
+      assume .id is string
       assume .email is string
     }
 
     map customer -> StandardCustomer {
       id: .id,
       name: concat(.firstName, " ", .lastName),
-      email: lowercase(.email),
-      createdAt: parseDate(.created_at)
+      email: lowercase(.email)
     }
 
     store customer -> customers { key: .id, upsert: true }
@@ -81,170 +92,105 @@ action TransformCustomers {
 }
 ```
 
-### actions/export.vague
+### export.vague
 
 ```vague
 action ExportCustomers {
   for customer in customers where .updatedAt > lastExport {
-    post ExportAPI "/customers" {
+    post "/customers" {
+      source: ExportAPI,
       body: customer
     }
 
-    match response {
-      { error: e } -> queue errors { item: { id: customer.id, error: e } },
-      _ -> continue
-    }
+    store response -> exported { key: .id }
   }
-}
-```
-
-## Schema files
-
-### schemas/customer.vague
-
-```vague
-schema RawCustomer {
-  id: string,
-  firstName: string,
-  lastName: string,
-  email: string,
-  created_at: string
-}
-
-schema StandardCustomer {
-  id: string,
-  name: string,
-  email: string,
-  createdAt: date
-}
-
-schema ExportError {
-  id: string,
-  error: string,
-  timestamp: date
 }
 ```
 
 ## Running multi-file missions
 
-### Run the folder
+Point the CLI at the folder:
 
 ```bash
-reqon ./missions/customer-sync/
+reqon ./customer-sync/
 ```
 
-### Run with options
+With options:
 
 ```bash
-reqon ./missions/customer-sync/ --auth ./credentials.json --verbose
+reqon ./customer-sync/ --auth ./credentials.json --verbose
 ```
 
-## File loading order
+## How loading works
 
-1. `mission.vague` (required)
-2. `schemas/*.vague` (loaded first)
-3. `actions/*.vague` (loaded after schemas)
+1. The loader finds `mission.vague` (the root file) and parses the mission.
+2. It reads every other `.vague` file in the same folder and extracts their `action` definitions.
+3. Those actions are merged into the mission. Action names must be unique across all files.
+4. Reqon validates that every action referenced in the pipeline exists.
+
+Only action definitions are merged from the extra files. Sources, stores, and schemas must be declared in the root file.
 
 ## Benefits
 
-### Organization
-
-| Single File | Multi-File |
+| Single file | Multi-file |
 |-------------|------------|
-| All code in one file | Logical separation |
-| Hard to navigate | Easy to find code |
-| Merge conflicts | Independent editing |
-
-### Maintainability
-
-- Each file has single responsibility
-- Easier code reviews
-- Better version control
-
-### Reusability
-
-```
-missions/
-├── shared/
-│   └── schemas/
-│       └── common.vague
-├── customer-sync/
-│   └── mission.vague (imports shared)
-└── order-sync/
-    └── mission.vague (imports shared)
-```
+| All code in one file | One action per file |
+| Harder to navigate | Easy to find an action |
+| Larger merge conflicts | Independent editing |
 
 ## Best practices
-
-### Naming conventions
-
-```
-actions/
-├── fetch-customers.vague     # Verb-noun
-├── transform-customers.vague
-└── export-customers.vague
-```
 
 ### One action per file
 
 ```vague
-// actions/fetch-customers.vague
+// fetch-customers.vague
 action FetchCustomers {
   // Single responsibility
 }
 ```
 
-### Group related schemas
+### Name files after their action
 
-```vague
-// schemas/customer.vague
-schema RawCustomer { ... }
-schema StandardCustomer { ... }
-schema CustomerError { ... }
+```
+fetch-customers.vague     # action FetchCustomers
+transform-customers.vague # action TransformCustomers
+export-customers.vague    # action ExportCustomers
 ```
 
 ### Document with comments
 
 ```vague
-// actions/fetch-customers.vague
+// fetch-customers.vague
 
-// FetchCustomers retrieves customer data from the API
-// Uses pagination and incremental sync for efficiency
+// FetchCustomers retrieves customer data from the API.
+// Uses pagination and incremental sync.
 action FetchCustomers {
-  // Fetch with pagination
   get "/customers" {
+    source: API,
     paginate: offset(offset, 100),
     until: length(response.data) == 0,
     since: lastSync
   }
 
-  // Store raw data for processing
   store response.data -> rawCustomers { key: .id }
 }
 ```
 
 ## Troubleshooting
 
-### "Mission not found"
+### "Mission folder must contain a root file"
 
-Ensure `mission.vague` exists in the folder:
-
-```bash
-ls ./missions/customer-sync/mission.vague
-```
-
-### "Action not found"
-
-Check action file is in `actions/` folder:
+The folder needs a file named exactly `mission.vague` (or `mission.reqon`):
 
 ```bash
-ls ./missions/customer-sync/actions/
+ls ./customer-sync/mission.vague
 ```
 
-### "Schema not found"
+### "Action file should not contain a mission definition"
 
-Check schema file is in `schemas/` folder:
+Only the root file defines the `mission`. Action files can contain `action` definitions only.
 
-```bash
-ls ./missions/customer-sync/schemas/
-```
+### "Duplicate action definition"
+
+An action with the same name is defined in two files. Action names must be unique across the whole folder.
+</content>

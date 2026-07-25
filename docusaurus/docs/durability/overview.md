@@ -114,14 +114,14 @@ This mission:
 
 ### State persistence
 
-Durability state is stored in `.vague-data/`:
+Durability state is stored under `.reqon-data/`:
 
 ```
-.vague-data/
-├── execution/          # Execution records
+.reqon-data/
+├── executions/         # Execution records
 ├── traces/             # Trace snapshots
 ├── pauses/             # Pause state
-└── sync-checkpoints.json
+└── sync/               # Incremental-sync checkpoints (one per mission)
 ```
 
 ### Programmatic access

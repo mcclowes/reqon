@@ -4,9 +4,11 @@ sidebar_position: 3
 
 # Dead letter queues
 
-Dead letter queues (DLQ) store failed items for later processing. They prevent data loss when errors occur and allow for manual or automated retry.
+A dead letter queue (DLQ) is just a store you send failed values to for later review. It prevents data loss when something goes wrong and gives you a record you can inspect or reprocess.
 
 ## Basic usage
+
+The `queue` flow directive stashes the matched value into a named store. Here, an action queues responses the API flagged as errors and stores the rest:
 
 ```vague
 mission DataSync {
@@ -16,19 +18,9 @@ mission DataSync {
   action FetchData {
     get "/items"
 
-    for item in response.items {
-      get concat("/items/", item.id, "/details")
-
-      match response {
-        { error: e } -> queue dlq {
-          item: {
-            itemId: item.id,
-            error: e,
-            timestamp: now()
-          }
-        },
-        _ -> store response -> data { key: item.id }
-      }
+    match response {
+      ApiError -> queue dlq,
+      _ -> store response -> data { key: .id }
     }
   }
 
@@ -39,120 +31,68 @@ mission DataSync {
 ## Queue directive syntax
 
 ```vague
-queue storeName {
-  item: objectToStore,
-  key: optionalKey
-}
+queue storeName
 ```
 
-### With key
+`queue` takes a store name and stashes the current matched value — there's no payload or options block. The value is keyed by its own `id` field, or by an auto-generated `queued-N` key when it has none. `queue` with no store name discards the value, so always name a target.
+
+## Shaping what gets queued
+
+Because `queue` stashes the matched value as-is, build the record you want first with `let`, then match over it. Include an `id` so the entry gets a stable key:
 
 ```vague
-queue dlq {
-  item: { error: "failed" },
-  key: concat("error-", item.id)
-}
-```
+action FetchData {
+  get "/items"
 
-### Without key (auto-generated)
+  for item in response.items {
+    get concat("/items/", item.id, "/details")
 
-```vague
-queue dlq {
-  item: { error: "failed" }
-}
-```
+    let entry = {
+      id: item.id,
+      error: response,
+      timestamp: now()
+    }
 
-## What to include
-
-### Minimum information
-
-```vague
-queue dlq {
-  item: {
-    id: item.id,
-    error: response.error,
-    timestamp: now()
-  }
-}
-```
-
-### Full context
-
-```vague
-queue dlq {
-  item: {
-    // Identifiers
-    id: item.id,
-    batchId: batchId,
-
-    // Original data
-    originalItem: item,
-
-    // Error details
-    error: response.error,
-    errorCode: response.code,
-    errorDetails: response.details,
-
-    // Context
-    action: "FetchDetails",
-    source: "ExternalAPI",
-
-    // Timing
-    timestamp: now(),
-    attemptCount: 1,
-
-    // For retry
-    retryable: response.code >= 500
-  }
-}
-```
-
-## DLQ patterns
-
-### Simple error queue
-
-```vague
-mission Simple {
-  store dlq: file("errors")
-
-  action Process {
-    for item in items {
-      get concat("/api/", item.id)
-
-      match response {
-        { error: _ } -> queue dlq { item: { id: item.id, response: response } },
-        _ -> continue
-      }
+    match entry {
+      _ -> queue dlq
     }
   }
 }
 ```
 
-### Categorized queues
+To queue only on failure, branch before building the entry:
+
+```vague
+match response {
+  ApiError -> {
+    let entry = { id: item.id, error: response, timestamp: now() }
+    match entry {
+      _ -> queue dlq
+    }
+  },
+  _ -> store response -> data { key: item.id }
+}
+```
+
+## Categorized queues
+
+Send different cases to different stores:
 
 ```vague
 mission Categorized {
   store retryable: file("retryable-errors")
   store permanent: file("permanent-errors")
-  store validation: file("validation-errors")
 
   action Process {
     for item in items {
       get concat("/api/", item.id)
 
       match response {
-        // Retryable errors
-        { code: 429 } -> queue retryable { item: { id: item.id, reason: "rate_limit" } },
-        { code: 500 } -> queue retryable { item: { id: item.id, reason: "server_error" } },
-        { code: 503 } -> queue retryable { item: { id: item.id, reason: "unavailable" } },
+        // Transient problems the API reports in the body
+        Retryable -> queue retryable,
 
-        // Permanent errors
-        { code: 401 } -> queue permanent { item: { id: item.id, reason: "auth" } },
-        { code: 403 } -> queue permanent { item: { id: item.id, reason: "forbidden" } },
-        { code: 404 } -> queue permanent { item: { id: item.id, reason: "not_found" } },
-
-        // Validation errors
-        { code: 400 } -> queue validation { item: { id: item.id, details: response } },
+        // Permanent problems
+        Rejected -> queue permanent,
 
         // Success
         _ -> continue
@@ -162,85 +102,33 @@ mission Categorized {
 }
 ```
 
-### DLQ with retry counter
+`Retryable` and `Rejected` are schemas you define to match the shapes the API returns. See [Schemas](../core-concepts/schemas) for how schema matching works.
 
-```vague
-for item in items {
-  get concat("/api/", item.id)
-
-  match response {
-    { error: _ } where item.retryCount >= 3 -> {
-      // Max retries exceeded
-      queue permanentFailures {
-        item: { ...item, finalError: response.error }
-      }
-      skip
-    },
-    { error: _ } -> {
-      // Queue for retry
-      queue retryQueue {
-        item: {
-          ...item,
-          retryCount: (item.retryCount or 0) + 1,
-          lastError: response.error
-        }
-      }
-      skip
-    },
-    _ -> continue
-  }
-}
-```
-
-## Processing DLQ
+## Processing a DLQ
 
 ### Manual review
 
-Export and review:
+Export the stores to JSON and review them:
 
 ```bash
-reqon mission.vague --output ./exports/
-# Review exports/dead-letter-queue.json
+reqon mission.reqon --output ./exports.json
+# exports.json contains one entry per store, keyed by store name
 ```
 
-### Automated retry
+`--output` writes a single combined JSON file keyed by store name, so the dead-letter queue's contents appear under its store name.
 
-Create a retry mission:
+### Reprocessing in a separate mission
+
+Run a follow-up mission that reads the queued entries and re-fetches them. Store results with `upsert` so reprocessing is idempotent:
 
 ```vague
 mission RetryFailed {
-  store dlq: file("dead-letter-queue")
   store data: file("data")
-  store permanentFailed: file("permanent-failures")
 
   action RetryItems {
-    for item in dlq where .retryable == true {
-      get concat("/api/", item.originalItem.id)
-
-      match response {
-        { error: _ } where item.attemptCount >= 5 -> {
-          // Give up after 5 attempts
-          store {
-            ...item,
-            finalError: response.error
-          } -> permanentFailed { key: item.id }
-          delete dlq[item.id]
-        },
-        { error: _ } -> {
-          // Update retry count
-          store {
-            ...item,
-            attemptCount: item.attemptCount + 1,
-            lastAttempt: now(),
-            lastError: response.error
-          } -> dlq { key: item.id }
-        },
-        _ -> {
-          // Success! Remove from DLQ
-          store response -> data { key: item.originalItem.id }
-          delete dlq[item.id]
-        }
-      }
+    for entry in failedEntries {
+      get concat("/api/", entry.id)
+      store response -> data { key: entry.id, upsert: true }
     }
   }
 
@@ -248,18 +136,18 @@ mission RetryFailed {
 }
 ```
 
-### Scheduled retry
+### Scheduled reprocessing
 
 ```vague
 mission ScheduledRetry {
-  schedule: every 1 hour
+  schedule: every 1 hours
 
-  store dlq: file("dead-letter-queue")
+  store data: file("data")
 
   action RetryEligible {
-    for item in dlq where .lastAttempt < addHours(now(), -1) {
-      // Retry items not attempted in the last hour
-      // ... retry logic
+    for entry in failedEntries {
+      get concat("/api/", entry.id)
+      store response -> data { key: entry.id, upsert: true }
     }
   }
 
@@ -267,105 +155,43 @@ mission ScheduledRetry {
 }
 ```
 
-## DLQ with notifications
-
-```vague
-action NotifyOnFailure {
-  for item in items {
-    get concat("/api/", item.id)
-
-    match response {
-      { error: e } -> {
-        // Queue for retry
-        queue dlq { item: { id: item.id, error: e } }
-
-        // Check if threshold exceeded
-        match dlq {
-          _ where length(dlq) > 100 -> {
-            // Too many failures - alert
-            post NotificationAPI "/alerts" {
-              body: {
-                message: "DLQ threshold exceeded",
-                count: length(dlq),
-                timestamp: now()
-              }
-            }
-          },
-          _ -> continue
-        }
-      },
-      _ -> continue
-    }
-  }
-}
-```
-
 ## Best practices
 
 ### Include enough context
 
+Queue an entry that records what failed and when, so you can act on it later without guessing:
+
 ```vague
-queue dlq {
-  item: {
-    // What failed
-    id: item.id,
-    originalData: item,
+let entry = {
+  id: item.id,
+  originalData: item,
+  error: response,
+  timestamp: now()
+}
 
-    // Why it failed
-    error: response.error,
-    errorCode: response.code,
-
-    // When it failed
-    timestamp: now(),
-
-    // Can we retry?
-    retryable: response.code >= 500,
-
-    // How many times have we tried?
-    attemptCount: 1
-  }
+match entry {
+  _ -> queue dlq
 }
 ```
 
-### Separate retryable vs permanent
+### Separate retryable from permanent
+
+Use different stores so reprocessing can target only the entries worth retrying:
 
 ```vague
-// Retryable: server errors, rate limits
-queue retryQueue { item: { ... } }
-
-// Permanent: validation errors, not found
-queue permanentQueue { item: { ... } }
-```
-
-### Set retention policies
-
-Periodically clean old entries:
-
-```vague
-action CleanOldEntries {
-  for item in dlq where .timestamp < addDays(now(), -30) {
-    // Archive or delete items older than 30 days
-    delete dlq[item.id]
-  }
+match response {
+  Retryable -> queue retryQueue,
+  Rejected -> queue permanentQueue,
+  _ -> continue
 }
 ```
 
-### Monitor queue size
+### Make reprocessing idempotent
+
+Use `upsert` when re-storing so a re-run doesn't create duplicates:
 
 ```vague
-action MonitorDLQ {
-  match dlq {
-    _ where length(dlq) > 1000 -> {
-      // Alert on large queue
-      store {
-        alert: "DLQ size exceeded 1000",
-        size: length(dlq),
-        timestamp: now()
-      } -> alerts
-    },
-    _ -> continue
-  }
-}
+store response -> data { key: item.id, upsert: true }
 ```
 
 ## Troubleshooting
@@ -373,27 +199,9 @@ action MonitorDLQ {
 ### Queue growing too fast
 
 1. Check for systemic issues
-2. Review error patterns
-3. Fix root cause before retrying
+2. Review the queued entries for a common error
+3. Fix the root cause before reprocessing
 
-### Items never succeed
+### Entries missing keys
 
-Mark as permanent failure:
-
-```vague
-match item {
-  _ where item.attemptCount > 10 -> {
-    store item -> permanentFailures { key: item.id }
-    delete dlq[item.id]
-  },
-  _ -> continue
-}
-```
-
-### Duplicate processing
-
-Use idempotent operations:
-
-```vague
-store response -> data { key: item.id, upsert: true }
-```
+A queued value with no `id` field gets an auto-generated `queued-N` key, which makes targeted reprocessing harder. Include an `id` in the value you queue so each entry has a stable key.
