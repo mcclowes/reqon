@@ -1,4 +1,4 @@
-import type { MatchStep, ActionStep, FlowDirective } from '../../ast/nodes.js';
+import type { MatchStep, MatchArm, ActionStep, FlowDirective } from '../../ast/nodes.js';
 import type { StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
 import type { ExecutionContext } from '../context.js';
@@ -37,6 +37,12 @@ export interface MatchHandlerDeps extends StepHandlerDeps {
     ctx: ExecutionContext
   ) => DebugSnapshot;
   handleDebugCommand?: (cmd: { type: string }) => void;
+}
+
+/** How an arm was written, for logs and the no-match error. */
+function describeArm(arm: MatchArm): string {
+  if (arm.status !== undefined) return String(arm.status);
+  return arm.isArray ? `[${arm.schema}]` : arm.schema;
 }
 
 /**
@@ -92,10 +98,17 @@ export class MatchHandler {
     }
 
     if (!matchedArm) {
-      throw new NoMatchError(value);
+      // A match written purely on statuses is a status dispatch, not a schema
+      // assertion: `404 -> skip` next to `allow: [404]` says what to do about a
+      // 404 and nothing about a 200. Failing the step there would make every
+      // successful response need a `_ -> continue` companion arm.
+      if (step.arms.every((arm) => arm.status !== undefined)) {
+        return;
+      }
+      throw new NoMatchError(value, step.arms.map(describeArm));
     }
 
-    const matchedLabel = matchedArm.isArray ? `[${matchedArm.schema}]` : matchedArm.schema;
+    const matchedLabel = describeArm(matchedArm);
     this.deps.log(`Matched schema: ${matchedLabel}${matchedArm.guard ? ' (with guard)' : ''}`);
 
     // Handle flow directive

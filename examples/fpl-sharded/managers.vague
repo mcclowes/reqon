@@ -21,6 +21,11 @@ mission FplManagerHistory {
     // Each entry is one egress IP, rotated round-robin per request attempt.
     // Rate limit and breaker state are keyed per proxy, so this worker gets
     // four independent budgets rather than four ways to burn one.
+    //
+    // Leave all four unset and the mission runs direct from this host, which is
+    // how to try it without a proxy provider. Setting only some of them is an
+    // error: a short pool concentrates the whole request rate onto whichever
+    // proxies did resolve, which is the failure the pool exists to prevent.
     proxy: [
       env("FPL_PROXY_1"),
       env("FPL_PROXY_2"),
@@ -52,9 +57,15 @@ mission FplManagerHistory {
   // sequence.
   store shard: file("fpl_shard")
 
-  // Every worker upserts into one table. Shards are disjoint, so there's no
+  // A file store keeps this runnable on one machine. For a real fleet swap in
+  //   store managers: postgrest("fpl_manager_history")
+  // and every worker upserts into one table. Shards are disjoint, so there's no
   // last-writer-wins race between machines.
-  store managers: postgrest("fpl_manager_history")
+  store managers: file("fpl_manager_history")
+
+  // Items that exhaust their retries land here instead of failing the run, so a
+  // long shard finishes and the stragglers can be swept afterwards.
+  store failures: file("fpl_manager_failures")
 
   schema ManagerHistory {
     id: number,
@@ -67,16 +78,27 @@ mission FplManagerHistory {
     // Eight iterations in flight. Roughly pool size x 2: enough to keep every
     // proxy busy while one is waiting on the wire, low enough that the
     // per-proxy throttle is what paces the run, not the socket count.
-    for entry in shard concurrency 8 {
+    for entry in shard concurrency 8 onError queue failures {
 
       get "/entry/{entry.id}/history/" {
         source: FPL,
+        // A shard drawn from a stale id list will contain managers that no
+        // longer exist. Allowing 404 returns it as data rather than retrying
+        // it five times and burning the budget on a record that isn't coming.
+        allow: [404],
         retry: {
           maxAttempts: 5,
           backoff: exponential,
           initialDelay: 2000,
           maxDelay: 120000
         }
+      }
+
+      // Dispatches on the status the `allow` above let through. A match written
+      // only on statuses falls through when none apply, so a 200 carries on to
+      // the map below without needing a `_` arm.
+      match response {
+        404 -> skip
       }
 
       // The history payload carries no manager id, so graft it on from the
