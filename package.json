@@ -74,13 +74,17 @@
   },
   "peerDependencies": {
     "better-sqlite3": ">=11",
-    "pg": ">=8"
+    "pg": ">=8",
+    "undici": ">=6"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {
       "optional": true
     },
     "pg": {
+      "optional": true
+    },
+    "undici": {
       "optional": true
     }
   },
@@ -102,6 +106,7 @@
     "prettier": "^3.4.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.18.2",
+    "undici": "^8.9.0",
     "vitest": "^4.0.15"
   }
 }

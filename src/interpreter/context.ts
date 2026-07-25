@@ -29,6 +29,13 @@ export interface ActionScope {
   attempt: number;
   /** Sync checkpoints deferred until the action's data is durably stored. */
   pendingCheckpoints: Array<() => Promise<void>>;
+  /**
+   * Disambiguates step ids across concurrent for-loop iterations (`[3]`).
+   * Iterations interleave, so a shared counter would hand the same step id to
+   * different work on every run and break durable resume and effect dedup.
+   * Derived from the item's position, so it's stable across replays.
+   */
+  idPrefix?: string;
 }
 
 export interface ExecutionContext {

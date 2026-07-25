@@ -27,13 +27,15 @@ mission SyncData {
 ## Core Constructs
 
 - `mission` - Pipeline container (sources, stores, schemas, actions, schedule)
-- `source` - API: auth (bearer/basic/api_key/oauth2/none), base, headers, rateLimit
+- `source` - API: auth (bearer/basic/api_key/oauth2/none), base, headers, rateLimit, proxy
+- `proxy: [...]` - Egress proxy pool, rotated per request; limiter/breaker keyed per IP
 - `source Name from "./spec.yaml"` - OAS-based source
 - `store` - Storage: `memory("name")`, `file("path")`, `sql("table")`, `postgrest("table")`
 - `action` - Pipeline step: fetch, map, validate, store, wait
 - `run [A, B] then C` - Parallel then sequential execution
 - `match response { Schema -> ..., _ -> skip }` - Pattern matching
 - `for item in store where .active { ... }` - Iteration with filter
+- `for item in store concurrency 8 { ... }` - Bounded concurrent iteration (default 1)
 - `call Source.operationId` - OAS-based fetch by operationId
 - `wait { timeout, path, eventFilter, storage }` - Webhook/callback waiting
 - `schedule: every N hours` or `schedule: cron "..."` or `schedule: at "datetime"`

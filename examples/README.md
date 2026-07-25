@@ -22,6 +22,7 @@ This directory contains examples demonstrating Reqon's features for declarative 
 | [postgrest-sync](./postgrest-sync/) | PostgREST integration | **`postgrest()` store**, PostgreSQL via REST |
 | [crud-operations](./crud-operations/) | Full CRUD lifecycle | **PUT, PATCH, DELETE** methods, resource management |
 | [file-export](./file-export/) | Data export workflows | **`file()` store**, reports, backups, scheduling |
+| [fpl-sharded](./fpl-sharded/) | Sharded bulk fetch across IPs | **Proxy pools**, **`concurrency` on for loops**, shard-by-env |
 
 ## Feature Index
 
@@ -42,6 +43,27 @@ Run multiple actions concurrently:
 run [FetchOrders, FetchPayments, FetchShipments] then Reconcile
 ```
 See: [github-sync](./github-sync/), [temporal-comparison](./temporal-comparison/)
+
+### Concurrent Iteration
+Fan a loop out instead of one request at a time:
+```vague
+for id in ids concurrency 8 {
+  get "/entry/{id.id}"
+  store response -> entries { key: .id, upsert: true }
+}
+```
+See: [fpl-sharded](./fpl-sharded/)
+
+### Egress Proxy Pools
+Spread a source's requests across IPs, with rate limits tracked per proxy:
+```vague
+source API {
+  auth: none,
+  base: "https://api.example.com",
+  proxy: [env("PROXY_A"), env("PROXY_B")]
+}
+```
+See: [fpl-sharded](./fpl-sharded/)
 
 ### Schema Overloading with Match Steps
 Handle different API response types declaratively:

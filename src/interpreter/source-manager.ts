@@ -16,6 +16,8 @@ import { HttpClient, BearerAuthProvider, OAuth2AuthProvider, type AuthProvider }
 import { loadOAS, type OASSource } from '../oas/index.js';
 import type { RateLimiter } from '../auth/types.js';
 import type { CircuitBreaker } from '../auth/circuit-breaker.js';
+import { ProxyPool } from './proxy.js';
+import { evaluate } from './evaluator.js';
 
 export interface AuthConfig {
   type: 'bearer' | 'oauth2' | 'none';
@@ -47,6 +49,7 @@ export interface SourceManagerDeps {
 export class SourceManager {
   private oasSources: Map<string, OASSource> = new Map();
   private sourceConfigs: Map<string, SourceDefinition> = new Map();
+  private proxyPools: Map<string, ProxyPool> = new Map();
   private config: SourceManagerConfig;
   private deps: SourceManagerDeps;
 
@@ -67,6 +70,7 @@ export class SourceManager {
 
     this.configureRateLimiter(source);
     this.configureCircuitBreaker(source);
+    const proxyPool = this.buildProxyPool(source, ctx);
 
     const client = new HttpClient({
       baseUrl,
@@ -74,6 +78,7 @@ export class SourceManager {
       rateLimiter: this.deps.rateLimiter,
       circuitBreaker: this.deps.circuitBreaker,
       sourceName: source.name,
+      proxyPool,
     });
 
     ctx.sources.set(source.name, client);
@@ -101,6 +106,52 @@ export class SourceManager {
    */
   getSourceConfig(sourceName: string): SourceDefinition | undefined {
     return this.sourceConfigs.get(sourceName);
+  }
+
+  /**
+   * Get the egress proxy pool for a source, if it declared one.
+   */
+  getProxyPool(sourceName: string): ProxyPool | undefined {
+    return this.proxyPools.get(sourceName);
+  }
+
+  /**
+   * Close every proxy pool, releasing pooled sockets at end of run.
+   */
+  async closeProxyPools(): Promise<void> {
+    const pools = Array.from(this.proxyPools.values());
+    this.proxyPools.clear();
+    await Promise.all(pools.map((pool) => pool.close()));
+  }
+
+  /**
+   * Resolve a source's `proxy` expressions into a pool.
+   *
+   * An entry that resolves to nothing (typically an unset env var) is a hard
+   * error rather than a silently shorter pool. Quietly dropping proxies would
+   * concentrate the run's whole request rate onto the survivors, which is the
+   * exact failure the pool exists to prevent.
+   */
+  private buildProxyPool(source: SourceDefinition, ctx: ExecutionContext): ProxyPool | undefined {
+    const entries = source.config.proxy;
+    if (!entries?.length) return undefined;
+
+    const urls = entries.map((expr, index) => {
+      const value = evaluate(expr, ctx);
+      const url = typeof value === 'string' ? value.trim() : '';
+      if (!url) {
+        throw new Error(
+          `Source ${source.name}: proxy[${index}] resolved to an empty value. ` +
+            'Set the environment variable, or remove the entry from the pool.'
+        );
+      }
+      return url;
+    });
+
+    const pool = new ProxyPool(urls);
+    this.proxyPools.set(source.name, pool);
+    this.log(`Proxy pool for ${source.name}: ${pool.poolLabels.join(', ')}`);
+    return pool;
   }
 
   /**

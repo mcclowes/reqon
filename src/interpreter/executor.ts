@@ -536,6 +536,10 @@ export class MissionExecutor {
         }
         await this.logEvent({ type: 'mission.failed', error: (error as Error).message });
       }
+    } finally {
+      // Release proxy sockets however the run ended. A daemon executing
+      // scheduled missions would otherwise accumulate one agent pool per run.
+      await this.sourceManager.closeProxyPools();
     }
 
     const duration = Date.now() - startTime;
@@ -1168,8 +1172,10 @@ export class MissionExecutor {
     const scope = this.scopeFor(execCtx);
     const currentStepIndex = scope.stepIndex++;
     const stepType = this.getStepType(step.type);
-    // Stable step identity for the execution log: action + per-action index.
-    const stepId = `${actionName}#${currentStepIndex}`;
+    // Stable step identity for the execution log: action + per-action index,
+    // with a loop-iteration prefix when a concurrent `for` gave this work its
+    // own counter.
+    const stepId = `${actionName}${scope.idPrefix ?? ''}#${currentStepIndex}`;
 
     // Emit step.start event
     this.eventEmitter?.emit('step.start', {

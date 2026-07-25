@@ -29,6 +29,7 @@ src/
 │   ├── executor.ts      # Mission/action execution
 │   ├── fetch-handler.ts # HTTP fetch with sync checkpoints
 │   ├── pagination.ts    # Pagination strategies (offset, page, cursor)
+│   ├── proxy.ts         # Egress proxy pool (round-robin, cached undici dispatchers)
 │   ├── http.ts          # HTTP client with retry/backoff
 │   ├── schema-matcher.ts # Schema matching logic
 │   ├── signals.ts       # Execution signals (abort, skip, pause, etc.)
@@ -71,11 +72,12 @@ npm run bench      # Run performance benchmarks
 Key constructs:
 - `mission` - Pipeline definition
 - `source` - API source with auth (oauth2, bearer, basic, api_key, none), or from OAS spec
+- `proxy: [...]` - Egress proxy pool on a source, rotated per request attempt; rate limit and circuit breaker state are keyed per proxy (needs optional peer dep `undici`)
 - `store` - Storage target (memory, file, sql, nosql, postgrest)
 - `action` - Discrete pipeline step
 - `fetch` - HTTP request (get/post/put/patch/delete) with optional pagination/retry
 - `call Source.operationId` - OAS-based fetch using operationId
-- `for...in...where` - Iteration with filtering
+- `for...in...where` - Iteration with filtering, optional `concurrency N` for bounded fan-out (default sequential)
 - `map...->` - Schema transformation
 - `validate` - Constraint checking with `assume`
 - `run...then` - Pipeline sequencing (supports `run [A, B] then C` for parallel)
