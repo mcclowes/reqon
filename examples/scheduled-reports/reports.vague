@@ -9,12 +9,11 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   // Run every day at 6:00 AM UTC
-  schedule: cron "0 6 * * *"
-
-  // Scheduling options
-  skipIfRunning: true      // Don't start new run if previous still running
-  retryOnFailure: 3        // Retry up to 3 times on failure
-  maxConcurrency: 1        // Only one instance at a time
+  schedule: cron "0 6 * * *" {
+    maxConcurrency: 1,        // Only one instance at a time
+    skipIfRunning: true,      // Don't start new run if previous still running
+    retry: { maxRetries: 3 }  // Retry up to 3 times on failure
+  }
 
   // ============================================================
   // SOURCES
@@ -81,7 +80,7 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action FetchUserAnalytics {
-    let yesterday = now() - days(1)
+    let yesterday = now() - 86400000
     let report_date = yesterday
 
     get "/users/stats" {
@@ -111,7 +110,7 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action FetchRevenueMetrics {
-    let yesterday = now() - days(1)
+    let yesterday = now() - 86400000
 
     get "/revenue/daily" {
       source: Metrics,
@@ -128,20 +127,21 @@ mission DailyAnalyticsReports {
           transactions: response.transaction_count
         } -> report_metrics { key: "revenue_" + yesterday }
 
-        // Alert if revenue drops significantly
-        let previous_day_revenue = report_metrics["revenue_" + (yesterday - days(1))].revenue
-
-        validate response {
-          assume .revenue >= previous_day_revenue * 0.7
-        } or {
-          store {
-            id: "alert_revenue_" + yesterday,
-            severity: "high",
-            message: "Revenue dropped more than 30% from previous day",
-            metric: "revenue",
-            threshold: previous_day_revenue * 0.7,
-            actual: response.revenue
-          } -> alerts { key: .id }
+        // Alert if revenue drops more than 30% from the previous day
+        for previous in report_metrics where .report_date == (yesterday - 86400000) {
+          match response {
+            _ where .revenue < previous.revenue * 0.7 -> {
+              store {
+                id: "alert_revenue_" + yesterday,
+                severity: "high",
+                message: "Revenue dropped more than 30% from previous day",
+                metric: "revenue",
+                threshold: previous.revenue * 0.7,
+                actual: response.revenue
+              } -> alerts { key: .id }
+            },
+            _ -> continue
+          }
         }
       },
 
@@ -154,7 +154,7 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action FetchEngagementMetrics {
-    let yesterday = now() - days(1)
+    let yesterday = now() - 86400000
 
     get "/engagement/summary" {
       source: Analytics,
@@ -182,24 +182,41 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action CompileDailyReport {
-    let yesterday = now() - days(1)
-    let users = report_metrics["users_" + yesterday]
-    let revenue = report_metrics["revenue_" + yesterday]
-    let engagement = report_metrics["engagement_" + yesterday]
+    let yesterday = now() - 86400000
+
+    // Aggregate the day's metrics that the earlier actions stored
+    let total_users = 0
+    let active_users = 0
+    let new_signups = 0
+    let revenue = 0
+    let page_views = 0
+    let avg_session_duration = 0
+
+    for m in report_metrics where .report_date == yesterday {
+      let total_users = m.total_users != null ? m.total_users : total_users
+      let active_users = m.active_users != null ? m.active_users : active_users
+      let new_signups = m.new_signups != null ? m.new_signups : new_signups
+      let revenue = m.revenue != null ? m.revenue : revenue
+      let page_views = m.page_views != null ? m.page_views : page_views
+      let avg_session_duration = m.avg_session_duration != null ? m.avg_session_duration : avg_session_duration
+    }
 
     map {
-      users: users,
+      total_users: total_users,
+      active_users: active_users,
+      new_signups: new_signups,
       revenue: revenue,
-      engagement: engagement
+      page_views: page_views,
+      avg_session_duration: avg_session_duration
     } -> DailyReport {
       id: "report_" + yesterday,
       date: yesterday,
-      total_users: users.total_users,
-      active_users: users.active_users,
-      new_signups: users.new_signups,
-      revenue: revenue.revenue,
-      page_views: engagement.page_views,
-      avg_session_duration: engagement.avg_session_duration,
+      total_users: .total_users,
+      active_users: .active_users,
+      new_signups: .new_signups,
+      revenue: .revenue,
+      page_views: .page_views,
+      avg_session_duration: .avg_session_duration,
       generated_at: now()
     }
 
@@ -211,37 +228,34 @@ mission DailyAnalyticsReports {
     store response -> daily_reports { key: .id }
 
     // Calculate trends compared to last week
-    let last_week_report = daily_reports["report_" + (yesterday - days(7))]
-
-    for metric in ["total_users", "active_users", "revenue", "page_views"] {
-      let current_value = match metric {
-        "total_users" => response.total_users,
-        "active_users" => response.active_users,
-        "revenue" => response.revenue,
-        "page_views" => response.page_views
-      }
-
-      let previous_value = match metric {
-        "total_users" => last_week_report.total_users,
-        "active_users" => last_week_report.active_users,
-        "revenue" => last_week_report.revenue,
-        "page_views" => last_week_report.page_views
-      }
-
-      let change = ((current_value - previous_value) / previous_value) * 100
-
-      store {
-        report_id: response.id,
-        metric_name: metric,
-        value: current_value,
-        change_percent: change,
-        trend: match change {
-          x where x > 10 => "up_strong",
-          x where x > 0 => "up",
-          x where x > -10 => "down",
-          _ => "down_strong"
+    for last_week in daily_reports where .id == "report_" + (yesterday - 604800000) {
+      for metric in ["total_users", "active_users", "revenue", "page_views"] {
+        let current_value = match metric {
+          "total_users" => response.total_users,
+          "active_users" => response.active_users,
+          "revenue" => response.revenue,
+          "page_views" => response.page_views,
+          _ => 0
         }
-      } -> report_metrics { key: response.id + "_trend_" + metric }
+
+        let previous_value = match metric {
+          "total_users" => last_week.total_users,
+          "active_users" => last_week.active_users,
+          "revenue" => last_week.revenue,
+          "page_views" => last_week.page_views,
+          _ => 0
+        }
+
+        let change = ((current_value - previous_value) / previous_value) * 100
+
+        store {
+          report_id: response.id,
+          metric_name: metric,
+          value: current_value,
+          change_percent: change,
+          trend: change > 10 ? "up_strong" : (change > 0 ? "up" : (change > -10 ? "down" : "down_strong"))
+        } -> report_metrics { key: response.id + "_trend_" + metric }
+      }
     }
   }
 
@@ -250,27 +264,30 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action SendSlackSummary {
-    let yesterday = now() - days(1)
-    let report = daily_reports["report_" + yesterday]
-    let pending_alerts = alerts where .severity == "high"
+    let yesterday = now() - 86400000
 
-    post "/chat.postMessage" {
-      source: Slack,
-      body: {
-        "channel": env("SLACK_REPORTS_CHANNEL"),
-        "text": concat(
-          "*Daily Analytics Report - ", yesterday, "*\n\n",
-          ":busts_in_silhouette: *Users*\n",
-          "Total: ", report.total_users, " | Active: ", report.active_users, " | New: ", report.new_signups, "\n\n",
-          ":moneybag: *Revenue*\n",
-          "$", report.revenue, "\n\n",
-          ":chart_with_upwards_trend: *Engagement*\n",
-          "Page Views: ", report.page_views, " | Avg Session: ", report.avg_session_duration, " min\n\n",
-          match length(pending_alerts) {
-            0 => ":white_check_mark: No alerts",
-            _ => concat(":warning: ", length(pending_alerts), " alert(s) require attention")
-          }
-        )
+    // Count outstanding high-severity alerts
+    let alert_count = 0
+    for alert in alerts where .severity == "high" {
+      let alert_count = alert_count + 1
+    }
+
+    for report in daily_reports where .id == "report_" + yesterday {
+      post "/chat.postMessage" {
+        source: Slack,
+        body: {
+          "channel": env("SLACK_REPORTS_CHANNEL"),
+          "text": concat(
+            "*Daily Analytics Report - ", yesterday, "*\n\n",
+            ":busts_in_silhouette: *Users*\n",
+            "Total: ", report.total_users, " | Active: ", report.active_users, " | New: ", report.new_signups, "\n\n",
+            ":moneybag: *Revenue*\n",
+            "$", report.revenue, "\n\n",
+            ":chart_with_upwards_trend: *Engagement*\n",
+            "Page Views: ", report.page_views, " | Avg Session: ", report.avg_session_duration, " min\n\n",
+            alert_count == 0 ? ":white_check_mark: No alerts" : concat(":warning: ", alert_count, " alert(s) require attention")
+          )
+        }
       }
     }
   }
@@ -292,7 +309,7 @@ mission DailyAnalyticsReports {
 
 // Hourly report
 mission HourlyMetrics {
-  schedule: every 1 hour
+  schedule: every 1 hours
 
   action FetchHourlyStats {
     // ...
@@ -303,8 +320,9 @@ mission HourlyMetrics {
 
 // Weekly digest on Mondays at 9am
 mission WeeklyDigest {
-  schedule: cron "0 9 * * 1"
-  skipIfRunning: true
+  schedule: cron "0 9 * * 1" {
+    skipIfRunning: true
+  }
 
   action CompileWeeklyReport {
     // ...

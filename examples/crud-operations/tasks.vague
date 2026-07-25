@@ -154,11 +154,9 @@ mission TaskManager {
           delete "/tasks/{task.id}" {
             source: TaskAPI
           }
-
-          skip
         },
 
-        _ -> abort "Failed to replace task: " + task.id
+        _ -> abort "Failed to replace task"
       }
     }
   }
@@ -201,20 +199,19 @@ mission TaskManager {
         },
 
         _ where .error == "conflict" -> {
-          // Concurrent modification - refresh and retry
+          // Concurrent modification - refresh and retry the fetch
           get "/tasks/{task.id}" {
-            source: TaskAPI
+            source: TaskAPI,
+            retry: {
+              maxAttempts: 2,
+              backoff: constant,
+              initialDelay: 1000
+            }
           }
 
           store response -> tasks {
             key: .id,
             upsert: true
-          }
-
-          retry {
-            maxAttempts: 2,
-            backoff: constant,
-            initialDelay: 1000
           }
         },
 
@@ -253,8 +250,6 @@ mission TaskManager {
             task_id: task.id,
             timestamp: now()
           } -> operation_log { key: task.id + "_delete" }
-
-          continue
         },
 
         _ where .error == "not_found" -> {
@@ -265,8 +260,6 @@ mission TaskManager {
             archived: true,
             note: "Already deleted on server"
           } -> deleted_tasks { key: task.id }
-
-          continue
         },
 
         _ where .error == "forbidden" -> {
@@ -279,8 +272,6 @@ mission TaskManager {
             key: .id,
             partial: true
           }
-
-          skip
         },
 
         _ -> queue deleted_tasks
@@ -289,39 +280,33 @@ mission TaskManager {
   }
 
   // ============================================================
-  // ACTION: Bulk Delete (DELETE with body)
+  // ACTION: Delete Old Archived Tasks (DELETE)
   // ============================================================
 
   action BulkDeleteOldTasks {
-    // Find tasks older than 90 days that are archived
-    let old_tasks = archived_tasks where .created_at < now() - days(90)
-
-    // Bulk delete via API
-    delete "/tasks/bulk" {
-      source: TaskAPI,
-      body: {
-        "task_ids": old_tasks.id
+    // Delete archived tasks older than 90 days
+    for task in archived_tasks where .created_at < now() - 7776000000 {
+      delete "/tasks/{task.id}" {
+        source: TaskAPI
       }
-    }
 
-    match response {
-      _ where .deleted_count > 0 -> {
-        for task_id in response.deleted_ids {
+      match response {
+        _ where .success == true -> {
           store {
-            id: task_id,
+            id: task.id,
             deleted_at: now(),
             bulk_delete: true
-          } -> deleted_tasks { key: task_id }
-        }
+          } -> deleted_tasks { key: task.id }
 
-        store {
-          operation: "bulk_delete",
-          count: response.deleted_count,
-          timestamp: now()
-        } -> operation_log { key: "bulk_" + now() }
-      },
+          store {
+            operation: "bulk_delete",
+            task_id: task.id,
+            timestamp: now()
+          } -> operation_log { key: "bulk_" + task.id }
+        },
 
-      _ -> skip
+        _ -> skip
+      }
     }
   }
 

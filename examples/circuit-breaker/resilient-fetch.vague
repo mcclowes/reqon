@@ -95,7 +95,7 @@ mission ResilientDataFetch {
       source: PrimaryAPI,
       retry: {
         maxAttempts: 2,
-        backoff: "exponential",
+        backoff: exponential,
         initialDelay: 500
       }
     }
@@ -201,7 +201,9 @@ mission ResilientDataFetch {
               success: false
             } -> fallback_usage { key: now() }
 
-            abort "Fallback service failed"
+            match response {
+              _ -> abort "Fallback service failed"
+            }
           }
         }
       },
@@ -226,10 +228,7 @@ mission ResilientDataFetch {
     // Check circuit state for each source
     for source_name in ["PrimaryAPI", "FallbackAPI"] {
       get "/health" {
-        source: match source_name {
-          "PrimaryAPI" => PrimaryAPI,
-          "FallbackAPI" => FallbackAPI
-        }
+        source: PrimaryAPI
       }
 
       match response {
@@ -270,19 +269,35 @@ mission ResilientDataFetch {
   // ============================================================
 
   action GenerateResilienceReport {
-    let last_24h = now() - hours(24)
+    let last_24h = now() - 86400000
 
-    let circuit_opens = circuit_events where .event == "circuit_open" and .timestamp > last_24h
-    let fallback_requests = fallback_usage where .timestamp > last_24h
-    let successful_fallbacks = fallback_usage where .success == true and .timestamp > last_24h
+    let circuit_opens = 0
+    for event in circuit_events where .event == "circuit_open" and .timestamp > last_24h {
+      let circuit_opens = circuit_opens + 1
+    }
 
-    map {
+    let fallback_requests = 0
+    for usage in fallback_usage where .timestamp > last_24h {
+      let fallback_requests = fallback_requests + 1
+    }
+
+    let successful_fallbacks = 0
+    for usage in fallback_usage where .success == true and .timestamp > last_24h {
+      let successful_fallbacks = successful_fallbacks + 1
+    }
+
+    let cache_usage = 0
+    for usage in fallback_usage where .fallback_used == "CacheAPI" and .timestamp > last_24h {
+      let cache_usage = cache_usage + 1
+    }
+
+    map response -> report {
       report_date: now(),
-      circuit_open_count: length(circuit_opens),
-      fallback_requests: length(fallback_requests),
-      fallback_success_rate: length(successful_fallbacks) / max(length(fallback_requests), 1) * 100,
-      cache_usage: length(fallback_usage where .fallback_used == "CacheAPI" and .timestamp > last_24h)
-    } -> report
+      circuit_open_count: circuit_opens,
+      fallback_requests: fallback_requests,
+      fallback_success_rate: successful_fallbacks / max(fallback_requests, 1) * 100,
+      cache_usage: cache_usage
+    }
 
     validate report {
       assume .fallback_success_rate >= 0

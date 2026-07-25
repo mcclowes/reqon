@@ -118,20 +118,14 @@ mission ProductCatalogSync {
         upsert: true  // Update if exists, insert if not
       }
 
-      // Track price changes
-      let existing = products[product.id]
-
-      validate product {
-        assume existing == null or existing.price == .pricing.current
-      } or {
-        // Price changed - record in history
-        store {
-          product_id: product.id,
-          old_price: existing.price,
-          new_price: product.pricing.current,
-          changed_at: now()
-        } -> price_history { key: product.id + "_" + now() }
-      }
+      // Record a price snapshot in history on every sync.
+      // (Store-lookup-by-key is not supported, so we upsert directly
+      // rather than comparing against a previously stored price.)
+      store {
+        product_id: product.id,
+        price: product.pricing.current,
+        recorded_at: now()
+      } -> price_history { key: product.id + "_" + now() }
 
       // Store extended details in NoSQL (flexible schema)
       store {
@@ -153,17 +147,15 @@ mission ProductCatalogSync {
         upsert: true
       }
 
-      // Sync category if not exists
-      validate product {
-        assume exists(categories[product.category.id])
-      } or {
-        store {
-          id: product.category.id,
-          name: product.category.name,
-          parent_id: product.category.parent_id,
-          path: product.category.path
-        } -> categories { key: .id }
-      }
+      // Upsert the product's category directly.
+      // (Store-lookup-by-key is not supported, so we upsert on the key
+      // rather than checking for existence first.)
+      store {
+        id: product.category.id,
+        name: product.category.name,
+        parent_id: product.category.parent_id,
+        path: product.category.path
+      } -> categories { key: .id, upsert: true }
     }
   }
 
@@ -242,21 +234,13 @@ mission ProductCatalogSync {
             }
           }
 
-          // Store aggregated analytics
-          let product_reviews = reviews where .product_id == product.id
-          let avg_rating = sum(product_reviews.rating) / max(length(product_reviews), 1)
-
+          // Store aggregated analytics for this page of reviews.
+          // (A store scan with `where` can't be bound to a `let`, so we
+          // aggregate directly over the freshly fetched response.reviews.)
           store {
             product_id: product.id,
-            total_reviews: length(product_reviews),
-            average_rating: avg_rating,
-            rating_distribution: {
-              five_star: length(product_reviews where .rating == 5),
-              four_star: length(product_reviews where .rating == 4),
-              three_star: length(product_reviews where .rating == 3),
-              two_star: length(product_reviews where .rating == 2),
-              one_star: length(product_reviews where .rating == 1)
-            },
+            total_reviews: length(response.reviews),
+            average_rating: sum(response.reviews.rating) / max(length(response.reviews), 1),
             last_updated: now()
           } -> analytics {
             key: product.id,
@@ -274,24 +258,11 @@ mission ProductCatalogSync {
   // ============================================================
 
   action ExportCatalog {
-    let active_products = products where .status == "active"
-
-    for product in active_products {
-      let details = product_details[product.id]
-      let inv = inventory where .product_id == product.id
-      let stats = analytics[product.id]
-
+    // Store-lookup-by-key and `let`-bound store scans are not supported,
+    // so we iterate active products directly and export each core record.
+    for product in products where .status == "active" {
       store {
         product: product,
-        details: details,
-        inventory: {
-          total_available: sum(inv.available),
-          warehouse_count: length(inv)
-        },
-        reviews: {
-          count: stats.total_reviews,
-          average: stats.average_rating
-        },
         exported_at: now()
       } -> catalog_export {
         key: product.sku

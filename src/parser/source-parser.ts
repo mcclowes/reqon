@@ -121,8 +121,13 @@ export class SourceParser extends ReqonExpressionParser {
 
       switch (key) {
         case 'strategy':
-          config.strategy = this.consume(TokenType.IDENTIFIER, 'Expected strategy').value as
-            'pause' | 'throttle' | 'fail';
+          // Accept the strategy as a quoted string ("pause"), a bare identifier
+          // (throttle, fail), or the `pause` keyword token — `pause` is reserved
+          // by the lexer, so unquoted it never arrives as a plain identifier.
+          config.strategy = this.consumeAny(
+            [TokenType.STRING, TokenType.IDENTIFIER, ReqonTokenType.PAUSE],
+            'Expected strategy'
+          ).value as 'pause' | 'throttle' | 'fail';
           break;
         case 'maxWait':
           config.maxWait = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);

@@ -124,17 +124,14 @@ mission WebhookPaymentFlow {
         // Webhook endpoint path that will receive events
         path: "/webhooks/payment",
 
-        // Expected event types that complete the wait
-        expectedEvents: ["payment_intent.succeeded", "payment_intent.payment_failed"],
+        // Number of matching events that complete the wait
+        expectedEvents: 1,
 
         // Filter to match webhook to this specific payment
         eventFilter: .data.object.id == payment.payment_id,
 
-        // Retry on timeout (useful for slow payment methods)
-        retryOnTimeout: false,
-
         // Store received webhooks for audit
-        storage: webhook_events
+        storage: { target: webhook_events, key: .id }
       }
 
       // webhook variable contains the matched event
@@ -195,10 +192,9 @@ mission WebhookPaymentFlow {
       wait {
         timeout: 0,  // Non-blocking check for existing webhooks
         path: "/webhooks/payment",
-        expectedEvents: ["charge.refunded", "charge.refund.updated"],
+        expectedEvents: 1,
         eventFilter: .data.object.payment_intent == payment.payment_id,
-        retryOnTimeout: false,
-        storage: webhook_events
+        storage: { target: webhook_events, key: .id }
       }
 
       match webhook {
@@ -206,11 +202,11 @@ mission WebhookPaymentFlow {
           let refund_amount = webhook.data.object.amount_refunded / 100
 
           store {
-            ...payment,
-            status: match refund_amount {
-              payment.amount => "refunded",
-              _ => "partially_refunded"
-            },
+            payment_id: payment.payment_id,
+            order_id: payment.order_id,
+            amount: payment.amount,
+            currency: payment.currency,
+            status: refund_amount == payment.amount ? "refunded" : "partially_refunded",
             refunded_amount: refund_amount,
             refunded_at: webhook.created
           } -> completed_payments { key: payment.payment_id, upsert: true }

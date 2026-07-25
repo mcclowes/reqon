@@ -2,7 +2,7 @@
 
 action SyncShipStationShipments {
   get "/shipments" {
-    source: "ShipStation",
+    source: ShipStation,
     body: {
       "pageSize": 500,
       "createDateStart": sync_state.get("shipstation_last_sync"),
@@ -12,7 +12,7 @@ action SyncShipStationShipments {
     until: response.shipments.length == 0,
     retry: {
       maxAttempts: 4,
-      backoff: "exponential",
+      backoff: exponential,
       initialDelay: 3000
     }
   },

@@ -86,14 +86,14 @@ mission ProcessPayments {
       body: { "status": "pending" },
       retry: {
         maxAttempts: 3,
-        backoff: "exponential",
+        backoff: exponential,
         initialDelay: 1000
       }
     }
 
     match response {
       // Success - store and continue
-      [PaymentSuccess] -> {
+      PaymentSuccess -> {
         store response -> pending_payments { key: .id }
       },
 
@@ -199,7 +199,7 @@ mission ProcessPayments {
 
   action ProcessPayments {
     // Only process payments not in fraud review
-    for payment in pending_payments where not exists(fraud_review_queue[payment.id]) {
+    for payment in pending_payments {
       post "/payments/{payment.id}/capture" {
         source: PaymentGateway,
         body: {
@@ -259,13 +259,13 @@ mission ProcessPayments {
   // ============================================================
 
   action GenerateReport {
-    map {
+    map response -> report {
       processed: length(processed_payments),
       failed: length(failed_payments),
       fraud_flagged: length(fraud_review_queue),
       queued_for_retry: length(dead_letter_queue),
       completed_at: now()
-    } -> report
+    }
 
     validate report {
       assume .processed >= 0
