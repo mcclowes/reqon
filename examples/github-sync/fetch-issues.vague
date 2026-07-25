@@ -17,10 +17,12 @@ action FetchIssues {
     }
   }
 
-  // Handle different response types with schema matching
+  // Handle different response types with schema matching. The list endpoint
+  // returns an array of issues, so the `[GitHubIssue]` array pattern matches
+  // only when every element satisfies the GitHubIssue schema.
   match response {
     // Success - continue processing
-    GitHubIssue -> {
+    [GitHubIssue] -> {
       store response -> issues_raw { key: .id }
     },
 

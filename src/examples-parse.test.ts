@@ -3,7 +3,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ReqonLexer } from './lexer/index.js';
 import { ReqonParser } from './parser/parser.js';
-import type { ForStep } from './ast/nodes.js';
+import type { ForStep, MatchStep, ValidateStep, StoreStep, ActionDefinition } from './ast/nodes.js';
+import type { ObjectLiteralExpression } from './parser/expressions.js';
+
+const examplesDir = join(import.meta.dirname, '..', 'examples');
+const parseExample = (...segments: string[]) =>
+  new ReqonParser(
+    new ReqonLexer(readFileSync(join(examplesDir, ...segments), 'utf8')).tokenize()
+  ).parse();
 
 /**
  * The FPL example is the reference for proxy pools and loop concurrency, so it
@@ -40,3 +47,66 @@ describe('fpl-sharded example', () => {
     expect(loop?.concurrency).toBe(8);
   });
 });
+
+/**
+ * These examples are the reference showcases for the features that close the
+ * README feature-index gap. Each assertion keeps the example demonstrating the
+ * advertised syntax (not just parsing), so the docs and the parser can't drift
+ * apart again.
+ */
+describe('feature-showcase examples', () => {
+  it('github-sync matches an array-of-schema pattern ([GitHubIssue])', () => {
+    const action = parseExample('github-sync', 'fetch-issues.vague').statements.find(
+      (s): s is ActionDefinition => s.type === 'ActionDefinition'
+    );
+    const matchStep = action?.steps.find((s): s is MatchStep => s.type === 'MatchStep');
+    const arrayArm = matchStep?.arms.find((a) => a.isArray);
+
+    expect(arrayArm?.schema).toBe('GitHubIssue');
+    expect(arrayArm?.isArray).toBe(true);
+  });
+
+  it('temporal-comparison uses a validate ... or fallback block', () => {
+    const mission = parseExample('temporal-comparison', 'reconciliation.vague').statements.find(
+      (s) => s.type === 'MissionDefinition'
+    );
+    if (mission?.type !== 'MissionDefinition') throw new Error('Expected a mission');
+
+    const validateWithFallback = mission.actions
+      .flatMap((a) => collectSteps(a))
+      .find((s): s is ValidateStep => s.type === 'ValidateStep' && !!s.fallback?.length);
+
+    expect(validateWithFallback).toBeDefined();
+    expect(validateWithFallback?.fallback?.[0].type).toBe('StoreStep');
+  });
+
+  it('data-enrichment spreads a record into a store literal', () => {
+    const mission = parseExample('data-enrichment', 'enrichment.vague').statements.find(
+      (s) => s.type === 'MissionDefinition'
+    );
+    if (mission?.type !== 'MissionDefinition') throw new Error('Expected a mission');
+
+    const spreadStore = mission.actions
+      .flatMap((a) => collectSteps(a))
+      .find((s): s is StoreStep => {
+        if (s.type !== 'StoreStep') return false;
+        const source = s.source as unknown as ObjectLiteralExpression;
+        return source.type === 'ObjectLiteral' && source.properties.some((p) => p.spread);
+      });
+
+    expect(spreadStore).toBeDefined();
+  });
+});
+
+/** Flatten an action's steps, descending into for-loop bodies. */
+function collectSteps(action: ActionDefinition) {
+  const out: ActionDefinition['steps'] = [];
+  const visit = (steps: ActionDefinition['steps']) => {
+    for (const step of steps) {
+      out.push(step);
+      if (step.type === 'ForStep') visit(step.steps);
+    }
+  };
+  visit(action.steps);
+  return out;
+}

@@ -186,13 +186,17 @@ mission CustomerDataEnrichment {
 
       match response {
         _ where .risk_score != null -> {
-          // Compute risk tier using let
+          // Compute risk tier with a guarded match: each `s where <cond>` arm
+          // binds the matched value to `s` and is taken when its guard holds
+          // (top-to-bottom, first match wins).
           let score = response.risk_score
-          let tier = score >= 800 ? "excellent"
-            : score >= 700 ? "good"
-            : score >= 600 ? "fair"
-            : score >= 500 ? "poor"
-            : "high_risk"
+          let tier = match score {
+            s where s >= 800 => "excellent",
+            s where s >= 700 => "good",
+            s where s >= 600 => "fair",
+            s where s >= 500 => "poor",
+            _ => "high_risk"
+          }
 
           let credit_limit = match tier {
             "excellent" => 50000,
@@ -232,9 +236,11 @@ mission CustomerDataEnrichment {
 
   action ComputeSegments {
     for customer in raw_customers {
-      // Complex segmentation logic using let bindings
-      let ltv = customer.lifetime_value
-      let risk_tier = customer.risk_profile.tier
+      // Complex segmentation logic using let bindings. The `??` nullish
+      // coalescing operator supplies a default only when the field is
+      // null/undefined (a real 0 is preserved, unlike `or`).
+      let ltv = customer.lifetime_value ?? 0
+      let risk_tier = customer.risk_profile.tier ?? "unrated"
       let purchase_freq = customer.analytics.purchase_frequency
       let days_inactive = customer.analytics.days_since_last_purchase
 
@@ -266,24 +272,17 @@ mission CustomerDataEnrichment {
       let monetary_score = min(ltv / 100, 100)
       let rfm_score = (recency_score + frequency_score + monetary_score) / 3
 
-      // Create final enriched customer record
-      map customer -> EnrichedCustomer {
-        id: .id,
-        email: .email,
-        full_name: concat(.first_name, " ", .last_name),
-        phone: .phone,
-        address: .address,
-        geo_data: .geo_data,
-        // Carry the enriched analytics object through as-is (rfm_score is
-        // recorded separately in the customer_segments store below).
-        analytics: .analytics,
-        risk_profile: .risk_profile,
+      // Create the final enriched customer record. The spread operator carries
+      // every existing field on the customer through, then the trailing fields
+      // add computed values (and override where names collide) — no need to
+      // restate the untouched fields.
+      store {
+        ...customer,
+        full_name: concat(customer.first_name, " ", customer.last_name),
         segment: segment,
         lifetime_value: ltv,
         enriched_at: now()
-      }
-
-      store response -> enriched_customers {
+      } -> enriched_customers {
         key: .id,
         upsert: true
       }

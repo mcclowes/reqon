@@ -1232,7 +1232,7 @@ export class MissionExecutor {
           await this.executeMap(step, execCtx);
           break;
         case 'ValidateStep':
-          await this.executeValidate(step, execCtx);
+          await this.executeValidate(step, actionName, execCtx);
           break;
         case 'StoreStep':
           await this.executeStore(step, execCtx, stepId);
@@ -1458,13 +1458,19 @@ export class MissionExecutor {
     await handler.execute(step);
   }
 
-  private async executeValidate(step: ValidateStep, ctx: ExecutionContext): Promise<void> {
+  private async executeValidate(
+    step: ValidateStep,
+    actionName: string,
+    ctx: ExecutionContext
+  ): Promise<void> {
     const handler = new ValidateHandler({
       ctx,
       log: (msg) => this.log(msg),
       emit: this.eventEmitter
         ? (type, payload) => this.eventEmitter!.emit(type, payload)
         : undefined,
+      executeStep: (s, a, c) => this.executeStep(s, a, c),
+      actionName,
     });
     await handler.execute(step);
   }

@@ -50,6 +50,8 @@ export enum ReqonTokenType {
   // Additional operators (RIGHT_ARROW is now in Vague)
   NOT_EQUALS = 'NOT_EQUALS', // !=
   BANG = 'BANG', // !
+  NULLISH = 'NULLISH', // ??
+  SPREAD = 'SPREAD', // ...
   // OAS integration
   FROM = 'FROM',
 

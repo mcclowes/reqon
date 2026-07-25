@@ -2,7 +2,7 @@ import type { MatchStep, ActionStep, FlowDirective } from '../../ast/nodes.js';
 import type { StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
 import type { ExecutionContext } from '../context.js';
-import { findMatchingSchema } from '../schema-matcher.js';
+import { findMatchingSchema, matchesSchema } from '../schema-matcher.js';
 import {
   NoMatchError,
   AbortError,
@@ -52,8 +52,20 @@ export class MatchHandler {
     let matchedArm = null;
 
     for (const arm of step.arms) {
-      // Check if schema matches
-      if (arm.schema !== '_') {
+      if (arm.isArray) {
+        // `[Schema]` arm: the value must be an array whose every element
+        // satisfies the schema. An empty array matches vacuously.
+        if (!Array.isArray(value)) {
+          continue;
+        }
+        const schema = this.deps.ctx.schemas.get(arm.schema);
+        if (!schema) {
+          continue;
+        }
+        if (!value.every((element) => matchesSchema(element, schema))) {
+          continue;
+        }
+      } else if (arm.schema !== '_') {
         // Check if this schema matches the value
         const schemaMatches = findMatchingSchema(value, this.deps.ctx.schemas, [arm.schema]);
         if (!schemaMatches) {
@@ -78,7 +90,8 @@ export class MatchHandler {
       throw new NoMatchError(value);
     }
 
-    this.deps.log(`Matched schema: ${matchedArm.schema}${matchedArm.guard ? ' (with guard)' : ''}`);
+    const matchedLabel = matchedArm.isArray ? `[${matchedArm.schema}]` : matchedArm.schema;
+    this.deps.log(`Matched schema: ${matchedLabel}${matchedArm.guard ? ' (with guard)' : ''}`);
 
     // Handle flow directive
     if (matchedArm.flow) {
