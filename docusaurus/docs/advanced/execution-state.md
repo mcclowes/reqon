@@ -4,41 +4,41 @@ sidebar_position: 2
 
 # Execution state
 
-Reqon maintains execution state for resumable missions and audit trails.
+Reqon can persist execution state so missions can resume after a crash or restart, and so you can inspect what happened on a previous run.
+
+State persistence is opt-in. Pass `persistState: true` (or a custom `executionStore`) to the executor, and Reqon writes an execution record for each run.
 
 ## State storage
 
-State is stored in `.vague-data/`:
+By default, state lives under `.reqon-data/`:
 
 ```
-.vague-data/
-├── execution/
-│   ├── CustomerSync-2024-01-20T09-00-00.json
-│   └── CustomerSync-2024-01-20T10-00-00.json
-├── sync-checkpoints.json
-└── stores/
+.reqon-data/
+├── executions/        # Execution records (one JSON file per run)
+├── sync/              # Incremental-sync checkpoints, one per mission
+├── traces/            # Trace snapshots (when trace is enabled)
+└── pauses/            # Pause state (for long pauses)
 ```
+
+The base directory is configurable with the `dataDir` option.
 
 ## Execution record
 
-Each execution creates a record:
+Each run produces an `ExecutionState` record:
 
 ```json
 {
-  "executionId": "exec_abc123",
+  "id": "exec_abc123",
   "mission": "CustomerSync",
+  "status": "completed",
   "startedAt": "2024-01-20T09:00:00Z",
   "completedAt": "2024-01-20T09:02:30Z",
-  "status": "completed",
-  "actionsRun": ["FetchCustomers", "TransformCustomers"],
-  "errors": [],
-  "stores": {
-    "customers": {
-      "count": 1523,
-      "added": 42,
-      "updated": 18
-    }
-  }
+  "duration": 150000,
+  "stages": [
+    { "action": "FetchCustomers", "status": "completed", "itemsProcessed": 1523, "attempt": 0 },
+    { "action": "TransformCustomers", "status": "completed", "attempt": 0 }
+  ],
+  "errors": []
 }
 ```
 
@@ -46,238 +46,173 @@ Each execution creates a record:
 
 | Field | Description |
 |-------|-------------|
-| `executionId` | Unique execution identifier |
+| `id` | Unique execution identifier |
 | `mission` | Mission name |
+| `status` | `pending`, `running`, `completed`, `failed`, or `paused` |
 | `startedAt` | Start timestamp |
-| `completedAt` | Completion timestamp |
-| `status` | `running`, `completed`, `failed`, `interrupted` |
-| `actionsRun` | Actions that completed |
-| `activeStep` | Currently running step (if in progress) |
-| `errors` | Array of errors encountered |
+| `completedAt` | Completion timestamp (if finished) |
+| `duration` | Total duration in milliseconds |
+| `stages` | Per-stage state (`action`, `status`, `itemsProcessed`, `attempt`, …) |
+| `checkpoint` | Latest checkpoint for resume (if any) |
+| `errors` | Errors encountered during the run |
+| `metadata` | User-provided context passed via the `metadata` option |
 
 ## Checkpoints
 
 ### Sync checkpoints
 
-Track incremental sync progress:
+Incremental sync writes a checkpoint per mission to `.reqon-data/sync/{mission}.json`, recording the last sync point so the next run only fetches what changed. See [incremental sync](../http/incremental-sync) for the `since: lastSync` syntax.
+
+### Resume checkpoints
+
+When a run is interrupted, the execution record carries a `checkpoint` describing where to pick up:
 
 ```json
 {
-  "API-/customers": {
-    "lastSync": "2024-01-20T09:00:00Z",
-    "itemsSynced": 1523
-  },
-  "API-/orders": {
-    "lastSync": "2024-01-20T08:45:00Z",
-    "itemsSynced": 8721
-  }
+  "stageIndex": 1,
+  "stepIndex": 3,
+  "itemIndex": 523,
+  "createdAt": "2024-01-20T09:01:00Z"
 }
 ```
 
-### Action checkpoints
-
-Track progress within long-running actions:
-
-```json
-{
-  "FetchCustomers": {
-    "page": 15,
-    "itemsProcessed": 1500
-  }
-}
-```
+`itemIndex` is set when the interruption happened inside a `for` loop, so the resume starts from the next unprocessed item.
 
 ## Resumable execution
 
-### Automatic resume
-
-If a mission is interrupted, Reqon can resume:
+If a run is interrupted (status `paused` or `failed`), resume it by execution ID:
 
 ```bash
-reqon ./missions/ --resume
+reqon ./missions/customer-sync/ --resume exec_abc123
 ```
 
-### Resume point detection
-
-```json
-{
-  "executionId": "exec_abc123",
-  "status": "interrupted",
-  "activeStep": {
-    "action": "TransformCustomers",
-    "index": 523,
-    "item": { "id": "cust_524" }
-  }
-}
-```
-
-Resume starts from `item 523` in `TransformCustomers`.
+When a run pauses or fails, the CLI prints the execution ID and the exact resume command to use.
 
 ## Accessing state
 
 ### Programmatically
 
+State is read through an execution store, not standalone helper functions:
+
 ```typescript
-import { execute, getExecutionState } from 'reqon';
+import { FileExecutionStore } from 'reqon';
 
-// Get last execution
-const lastState = await getExecutionState('CustomerSync');
+const store = new FileExecutionStore('.reqon-data/executions');
 
-// Get specific execution
-const state = await getExecutionState('CustomerSync', 'exec_abc123');
+// Latest run for a mission
+const latest = await store.findLatest('CustomerSync');
 
-// Get all executions
-const history = await getExecutionHistory('CustomerSync', { limit: 10 });
+// A specific run
+const state = await store.load('exec_abc123');
+
+// Recent runs
+const recent = await store.listRecent(10);
+
+// Runs that can be resumed
+const resumable = await store.findResumable('CustomerSync');
 ```
 
-### Via CLI
+`MemoryExecutionStore` offers the same interface for tests and ephemeral runs.
+
+### Via the control server
+
+When a mission runs with `--control`, the control server exposes live status:
 
 ```bash
-# Show last execution
-reqon status CustomerSync
-
-# Show execution history
-reqon history CustomerSync --limit 10
-
-# Show specific execution
-reqon status CustomerSync --execution exec_abc123
+curl http://localhost:3001/status
 ```
 
 ## State cleanup
 
-### Automatic cleanup
+There's no built-in cleanup command. Remove old records directly, or via the store:
 
-```vague
-mission CustomerSync {
-  stateRetention: 7 days  // Keep 7 days of history
-}
+```typescript
+import { FileExecutionStore } from 'reqon';
+
+const store = new FileExecutionStore('.reqon-data/executions');
+await store.delete('exec_abc123');
 ```
 
-### Manual cleanup
-
-```bash
-# Clear old state
-reqon cleanup --older-than 30d
-
-# Clear specific mission
-reqon cleanup CustomerSync --all
-```
+Old files can also be deleted from `.reqon-data/executions/` directly.
 
 ## Monitoring
 
-### Execution callbacks
+### Progress callbacks
+
+Pass `progress` callbacks to observe a run in real time:
 
 ```typescript
 import { execute } from 'reqon';
 
 const result = await execute(source, {
-  progressCallbacks: {
-    onActionStart: (action) => {
-      console.log(`Starting: ${action}`);
-    },
-    onActionComplete: (action, duration) => {
-      console.log(`Completed: ${action} in ${duration}ms`);
-    },
-    onError: (error) => {
-      console.error(`Error: ${error.message}`);
-    },
-    onProgress: (progress) => {
-      console.log(`Progress: ${progress.current}/${progress.total}`);
-    }
-  }
+  progress: {
+    onExecutionStart: (event) => console.log(`Started: ${event.mission}`),
+    onStageStart: (event) => console.log(`Stage: ${event.stageName}`),
+    onStageComplete: (event) => console.log(`Done: ${event.stageName}`),
+    onExecutionComplete: (event) => console.log(`Finished in ${event.duration}ms`),
+  },
 });
 ```
 
-### Metrics export
-
-```bash
-reqon ./missions/ --daemon --metrics-port 9090
-```
-
-Exposes Prometheus metrics:
-
-```
-reqon_execution_duration_seconds{mission="CustomerSync"}
-reqon_execution_items_processed{mission="CustomerSync"}
-reqon_execution_errors_total{mission="CustomerSync"}
-```
+For fine-grained, per-step monitoring, use the [observability event system](../observability/overview).
 
 ## State persistence
 
-### File-based (default)
+### Enabling persistence
 
-```vague
-mission CustomerSync {
-  stateStore: file  // Default
-}
-```
-
-### Custom state store
+State is only written when you opt in:
 
 ```typescript
-import { execute, setStateStore } from 'reqon';
+import { execute } from 'reqon';
 
-setStateStore({
-  async save(state) {
-    await database.insert('execution_state', state);
-  },
-  async load(executionId) {
-    return database.findOne('execution_state', { executionId });
-  }
+const result = await execute(source, {
+  persistState: true,   // write execution records under .reqon-data/executions/
+  dataDir: '.reqon-data',
 });
 ```
 
-## Best practices
+### Custom execution store
 
-### Enable for long-running missions
+Provide your own `executionStore` to persist state somewhere other than the filesystem. Implement the `ExecutionStore` interface (`save`, `load`, `listByMission`, `listRecent`, `delete`, `findLatest`, `findResumable`):
 
-```vague
-mission LongSync {
-  enableState: true
-  stateRetention: 30 days
-}
+```typescript
+import { execute, type ExecutionStore } from 'reqon';
+
+const myStore: ExecutionStore = {
+  async save(state) { /* persist to a database */ },
+  async load(id) { /* ... */ return null; },
+  async listByMission(mission) { return []; },
+  async listRecent(limit) { return []; },
+  async delete(id) { /* ... */ },
+  async findLatest(mission) { return null; },
+  async findResumable(mission) { return []; },
+};
+
+await execute(source, { executionStore: myStore, persistState: true });
 ```
 
-### Use checkpoints for large datasets
+## Event log
 
-```vague
-action ProcessLargeDataset {
-  for item in items checkpoint every 100 {
-    // State saved every 100 items
-  }
-}
-```
-
-### Monitor execution health
-
-```bash
-# Set up alerting for failed executions
-reqon ./missions/ --daemon --alert-on-failure
-```
+For replay-based durable execution, Reqon can also emit an append-only event log via the `executionLog` option. Pause, sync, and trace are all views over this log. See [durability](../durability/overview) for details.
 
 ## Troubleshooting
 
 ### State not persisting
 
-Check directory permissions:
+Confirm you passed `persistState: true` (state isn't written otherwise), then check directory permissions:
 
 ```bash
-ls -la .vague-data/
+ls -la .reqon-data/executions/
 ```
 
 ### Resume not working
 
-Verify state file exists:
+Verify the execution record exists and is resumable:
 
 ```bash
-cat .vague-data/execution/CustomerSync-*.json | jq '.status'
+cat .reqon-data/executions/CustomerSync-*.json | jq '.status'
 ```
 
-### State too large
-
-Reduce retention or clean up:
-
-```bash
-du -sh .vague-data/
-reqon cleanup --older-than 7d
-```
+Only runs with status `paused` or `failed` can be resumed.
+</content>
+</invoke>

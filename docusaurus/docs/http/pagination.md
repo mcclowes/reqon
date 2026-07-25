@@ -140,12 +140,10 @@ get "/items" {
 
 ### With query parameters
 
+There's no `params` option, so put any extra query parameters directly in the path. The pagination parameter is appended automatically:
+
 ```vague
-get "/users" {
-  params: {
-    status: "active",
-    sort: "created_at"
-  },
+get "/users?status=active&sort=created_at" {
   paginate: offset(offset, 100),
   until: length(response.users) == 0
 }
@@ -220,8 +218,7 @@ action ProcessPages {
 
 ```vague
 // API: GET /api/users?limit=100&offset=0
-get "/api/users" {
-  params: { limit: 100 },
+get "/api/users?limit=100" {
   paginate: offset(offset, 100),
   until: length(response.data) == 0
 }
@@ -306,8 +303,7 @@ source API {
   auth: bearer,
   base: "https://api.example.com",
   rateLimit: {
-    requestsPerMinute: 60,
-    strategy: "pause"
+    strategy: pause
   }
 }
 

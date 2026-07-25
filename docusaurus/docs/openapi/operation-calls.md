@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Operation calls
 
-Call OpenAPI operations using the `call` syntax with operation IDs.
+Call OpenAPI operations by operation ID with the `call` syntax.
 
 ## Basic syntax
 
@@ -13,22 +13,25 @@ call SourceName.operationId
 call SourceName.operationId { options }
 ```
 
+The method and path come from the spec. The options block accepts the same keys as a fetch step: `body`, `paginate`, `until`, `retry`, `since`, and `backfill`. There's no `params` or `headers` option.
+
 ## Simple calls
 
 ### GET operations
 
 ```vague
-// OpenAPI: GET /pets with operationId: listPets
+// OpenAPI: GET /pets, operationId listPets
 call Petstore.listPets
 
-// OpenAPI: GET /pets/{petId} with operationId: getPetById
-call Petstore.getPetById { params: { petId: "123" } }
+// OpenAPI: GET /pets/{petId}, operationId getPetById
+let petId = "123"
+call Petstore.getPetById
 ```
 
 ### POST operations
 
 ```vague
-// OpenAPI: POST /pets with operationId: addPet
+// OpenAPI: POST /pets, operationId addPet
 call Petstore.addPet {
   body: {
     name: "Fluffy",
@@ -37,72 +40,56 @@ call Petstore.addPet {
 }
 ```
 
-### PUT/PATCH operations
+### PUT, PATCH, and DELETE
 
 ```vague
-// PUT - full replacement
+let id = "123"
+
 call API.updateItem {
-  params: { id: "123" },
   body: { name: "New Name", status: "active" }
 }
 
-// PATCH - partial update
 call API.patchItem {
-  params: { id: "123" },
   body: { status: "inactive" }
 }
+
+call API.deleteItem
 ```
 
-### DELETE operations
+## Path parameters
+
+Operation paths with placeholders are filled from context variables of the same name. For `GET /pets/{petId}`, bind a variable called `petId`:
 
 ```vague
-call API.deleteItem {
-  params: { id: "123" }
-}
-```
-
-## Parameters
-
-### Path parameters
-
-For `/pets/{petId}`:
-
-```vague
-call Petstore.getPetById {
-  params: { petId: "123" }
-}
+let petId = "123"
+call Petstore.getPetById
 // Generates: GET /pets/123
 ```
 
-### Query parameters
-
-For `/pets?limit=10&status=available`:
+Inside a loop, bind the placeholder from the current item:
 
 ```vague
-call Petstore.listPets {
-  params: {
-    limit: 10,
-    status: "available"
-  }
+for pet in pets {
+  let petId = pet.id
+  call Petstore.getPetById
+  store response -> petDetails { key: .id }
 }
 ```
 
-### Combined parameters
+Interpolated values are URL-encoded, so a path parameter can't inject extra path segments or a query string.
 
-```vague
-call API.listUserOrders {
-  params: {
-    userId: "123",      // Path: /users/{userId}/orders
-    status: "pending",  // Query: ?status=pending
-    limit: 50           // Query: ?limit=50
-  }
-}
-// Generates: GET /users/123/orders?status=pending&limit=50
-```
+## Query parameters
+
+There's no general query-parameter option. The query string is built from:
+
+- `paginate` — pagination parameters (see below).
+- `since` — the incremental-sync parameter or header.
+
+If you need an arbitrary fixed query parameter, use a plain `get "/path?key=value"` fetch instead of an OAS `call`.
 
 ## Request body
 
-### Simple body
+### Inline body
 
 ```vague
 call API.createItem {
@@ -113,24 +100,7 @@ call API.createItem {
 }
 ```
 
-### Dynamic body
-
-```vague
-for item in items {
-  call API.createItem {
-    body: {
-      name: item.name,
-      price: item.price,
-      metadata: {
-        source: "sync",
-        timestamp: now()
-      }
-    }
-  }
-}
-```
-
-### From variable
+### Body from a variable
 
 ```vague
 map data -> Payload {
@@ -141,34 +111,10 @@ map data -> Payload {
 call API.createItem { body: data }
 ```
 
-## Headers
-
-### Custom headers
+## Pagination
 
 ```vague
 call API.listItems {
-  headers: {
-    "X-Request-ID": uuid(),
-    "Accept-Language": "en-US"
-  }
-}
-```
-
-### Tenant headers
-
-```vague
-call Xero.listInvoices {
-  headers: {
-    "Xero-Tenant-Id": env("XERO_TENANT_ID")
-  }
-}
-```
-
-## Pagination with operations
-
-```vague
-call API.listItems {
-  params: { limit: 100 },
   paginate: offset(offset, 100),
   until: length(response.items) == 0
 }
@@ -187,13 +133,6 @@ call API.listItems {
 
 ```vague
 call API.searchItems {
-  params: {
-    query: "test",
-    limit: 50
-  },
-  headers: {
-    "X-Custom": "value"
-  },
   paginate: cursor(after, 50, "pageInfo.endCursor"),
   until: response.pageInfo.hasNextPage == false,
   retry: {
@@ -205,31 +144,33 @@ call API.searchItems {
 
 ## Response handling
 
+After a call, the body is available as `response`. Use `match` on a schema, a guard, or the wildcard:
+
 ```vague
 action FetchWithHandling {
-  call API.getItem { params: { id: itemId } }
+  let id = itemId
+  call API.getItem
 
   match response {
-    { data: item } -> store item -> items { key: .id },
-    { error: e } -> abort e,
+    Item -> store response -> items { key: .id },
     _ -> abort "Unexpected response"
   }
 }
 ```
 
+`match` arms match a schema name, `SchemaName where <guard>`, or `_`. Object or literal patterns aren't supported.
+
 ## Operation chaining
 
 ```vague
 action CreateAndFetch {
-  // Create
   call API.createItem {
     body: { name: "New Item" }
   }
 
-  // response.id from creation
-  call API.getItem {
-    params: { id: response.id }
-  }
+  // response.id from the creation
+  let id = response.id
+  call API.getItem
 
   store response -> items { key: .id }
 }
@@ -237,78 +178,42 @@ action CreateAndFetch {
 
 ## Error handling
 
+Use flow directives in match arms. Note that `retry` uses the retry block keys (no `delay`), `abort` takes a bare string, and `jump` can chain a follow-up directive:
+
 ```vague
-call API.riskyOperation { params: { id: "123" } }
+let id = itemId
+call API.riskyOperation
 
 match response {
-  { code: 400 } -> abort "Invalid request",
-  { code: 401 } -> jump RefreshToken then retry,
-  { code: 404 } -> skip,
-  { code: 429 } -> retry { delay: 60000 },
-  { code: 500 } -> retry { maxAttempts: 3 },
+  _ where response.code == 401 -> jump RefreshToken then retry,
+  _ where response.code == 404 -> skip,
+  _ where response.code == 429 -> retry { maxAttempts: 5, backoff: exponential },
   _ -> continue
-}
-```
-
-## Dynamic operation calls
-
-### Based on condition
-
-```vague
-action SmartSync {
-  call API.checkItem { params: { id: item.id } }
-
-  match response {
-    { exists: false } -> {
-      call API.createItem { body: item }
-    },
-    { exists: true, needsUpdate: true } -> {
-      call API.updateItem { params: { id: item.id }, body: item }
-    },
-    _ -> continue
-  }
 }
 ```
 
 ## Best practices
 
-### Match Operation IDs
+### Match operation IDs exactly
 
 ```yaml
-# In OpenAPI spec
-operationId: listUsers  # camelCase recommended
+# In the OpenAPI spec
+operationId: listUsers
 ```
 
 ```vague
-call API.listUsers  # Match exactly
+call API.listUsers  // must match exactly
 ```
 
-### Use descriptive operations
+### Use descriptive operation IDs
 
 ```yaml
 # Good
 operationId: createInvoice
 operationId: getInvoiceById
-operationId: listInvoicesByCustomer
 
 # Avoid
 operationId: post1
 operationId: get2
 ```
-
-### Handle all response codes
-
-```vague
-call API.operation
-
-match response {
-  { code: 200 } -> continue,
-  { code: 201 } -> continue,
-  { code: 204 } -> continue,
-  { code: 400 } -> abort "Bad request",
-  { code: 401 } -> jump RefreshAuth then retry,
-  { code: 404 } -> skip,
-  { code: 500 } -> retry { maxAttempts: 3 },
-  _ -> abort "Unexpected response"
-}
-```
+</content>

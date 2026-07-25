@@ -28,13 +28,16 @@ source Petstore from "./petstore.yaml" {
 
 ```vague
 action FetchPets {
-  call Petstore.listPets { params: { limit: 100 } }
+  call Petstore.listPets
   store response -> pets { key: .id }
 
-  call Petstore.getPetById { params: { petId: "123" } }
+  let petId = "123"
+  call Petstore.getPetById
   store response -> petDetails { key: .id }
 }
 ```
+
+Path parameters (like `{petId}`) are filled from context variables of the same name. The options block has no `params`; see [operation calls](./operation-calls).
 
 ## How it works
 
@@ -77,8 +80,8 @@ servers:
 ```vague
 source API from "./spec.yaml" {
   auth: bearer,
-  validateResponses: true,  # Validate responses against schema
-  headers: {                # Additional headers
+  validateResponses: true,  // Validate responses against schema
+  headers: {                // Additional headers
     "X-Custom": "value"
   }
 }
@@ -89,25 +92,23 @@ source API from "./spec.yaml" {
 ```vague
 mission PetstoreSync {
   source Petstore from "./petstore.yaml" {
-    auth: api_key,
+    auth: bearer,
     validateResponses: true
   }
 
   store pets: file("pets")
+  store petDetails: file("pet-details")
 
   action SyncPets {
     // List all pets
-    call Petstore.listPets {
-      params: { limit: 100 }
-    }
+    call Petstore.listPets
+    store response -> pets { key: .id }
 
-    for pet in response {
-      // Get full details
-      call Petstore.getPetById {
-        params: { petId: pet.id }
-      }
-
-      store response -> pets { key: .id }
+    for pet in pets {
+      // Get full details; getPetById's path is /pets/{petId}
+      let petId = pet.id
+      call Petstore.getPetById
+      store response -> petDetails { key: .id }
     }
   }
 
@@ -144,7 +145,8 @@ source API from "./spec.yaml" { auth: bearer }
 
 action Fetch {
   call API.listPets
-  call API.getPetById { params: { petId: id } }
+  let petId = id
+  call API.getPetById
 }
 ```
 
@@ -182,7 +184,6 @@ source API from "https://api.example.com/openapi.json"
 
 ```vague
 call API.listItems {
-  params: { limit: 100 },
   paginate: cursor(cursor, 100, "nextCursor"),
   until: response.nextCursor == null
 }
@@ -192,14 +193,15 @@ call API.listItems {
 
 ```vague
 action SyncItem {
-  call API.getItem { params: { id: itemId } }
+  let id = itemId
+  call API.getItem
 
   match response {
-    { exists: false } -> {
+    _ where response.exists == false -> {
       call API.createItem { body: itemData }
     },
     _ -> {
-      call API.updateItem { params: { id: itemId }, body: itemData }
+      call API.updateItem { body: itemData }
     }
   }
 }

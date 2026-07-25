@@ -2,42 +2,66 @@
 sidebar_position: 4
 ---
 
-# PostgREST Store
+# PostgREST store
 
-The PostgREST store adapter connects to PostgreSQL via PostgREST or Supabase, enabling production-ready SQL storage.
+The PostgREST store adapter connects to PostgreSQL via PostgREST or Supabase, for production-ready SQL storage.
 
 ## Configuration
 
 ### Mission file
 
+Declare the store in your mission:
+
 ```vague
-store items: sql("items")
-store users: sql("users")
+store items: postgrest("items")
+store users: postgrest("users")
 ```
 
-### Store configuration
+The string is the table name. A `postgrest` store needs connection options that
+aren't expressed in the DSL, so you wire them up programmatically (see below).
 
-Create `stores.json`:
+### Programmatic setup
 
-```json
-{
-  "sql": {
-    "type": "postgrest",
-    "url": "https://your-project.supabase.co/rest/v1",
-    "apiKey": "your-anon-key"
-  }
-}
+There's no store-config CLI flag. Build a configured PostgREST adapter with
+`createStore`, then pass it in under the store's name. The adapter you supply
+overrides whatever the mission declared for that name:
+
+```typescript
+import { createStore, fromFile } from 'reqon';
+
+const items = createStore({
+  type: 'postgrest',
+  name: 'items', // table name
+  postgrest: {
+    url: 'https://your-project.supabase.co/rest/v1',
+    apiKey: process.env.SUPABASE_ANON_KEY!,
+  },
+});
+
+await fromFile('mission.reqon', {
+  // keyed by the store name from the mission (`store items: ...`)
+  stores: { items },
+});
 ```
 
-Run with:
+### Options
 
-```bash
-reqon mission.vague --store-config ./stores.json
-```
+`createStore`'s `postgrest` options map to the adapter:
+
+| Option | Required | Default | Description |
+|--------|----------|---------|-------------|
+| `url` | Yes | — | Base URL of the PostgREST API (e.g. `https://xxx.supabase.co/rest/v1`) |
+| `apiKey` | Yes | — | API key, sent as both the `apikey` header and a bearer token |
+| `primaryKey` | No | `id` | Primary-key column used to look up and upsert records |
+| `schema` | No | — | Postgres schema, sent as `Accept-Profile`/`Content-Profile` (e.g. `public`) |
+| `timeoutMs` | No | `30000` | Per-request timeout; the request is aborted once it elapses |
+| `allowFullTableClear` | No | `false` | Opt-in guard for `clear()`, which issues a full-table delete |
+
+The table name comes from `name` (set from the store declaration), not from these options.
 
 ## Supabase setup
 
-### 1. Create Supabase project
+### 1. Create a Supabase project
 
 1. Go to [supabase.com](https://supabase.com)
 2. Create a new project
@@ -62,16 +86,17 @@ CREATE TABLE users (
 );
 ```
 
-### 3. Configure Reqon
+### 3. Configure the adapter
 
-```json
-{
-  "sql": {
-    "type": "postgrest",
-    "url": "https://abc123.supabase.co/rest/v1",
-    "apiKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  }
-}
+```typescript
+const items = createStore({
+  type: 'postgrest',
+  name: 'items',
+  postgrest: {
+    url: 'https://abc123.supabase.co/rest/v1',
+    apiKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+  },
+});
 ```
 
 ## Self-hosted PostgREST
@@ -103,29 +128,36 @@ volumes:
 
 ### Configuration
 
-```json
-{
-  "sql": {
-    "type": "postgrest",
-    "url": "http://localhost:3000"
-  }
-}
+```typescript
+const items = createStore({
+  type: 'postgrest',
+  name: 'items',
+  postgrest: {
+    url: 'http://localhost:3000',
+    apiKey: 'your-jwt-or-role-key',
+  },
+});
 ```
+
+`apiKey` is always required by the adapter. For a self-hosted instance, pass the
+key your PostgREST is configured to accept.
 
 ## Operations
 
 ### Write
 
 ```vague
-// Insert
+// Insert (upsert on primary key)
 store response -> items { key: .id }
 
 // Upsert
 store response -> items { key: .id, upsert: true }
 
-// Partial update
+// Partial update (deep merge, same as upsert)
 store response -> items { key: .id, partial: true }
 ```
+
+`set` uses PostgREST's `resolution=merge-duplicates`, so a plain write also upserts on the primary key.
 
 ### Read
 
@@ -134,68 +166,54 @@ for item in items { }
 for item in items where .status == "active" { }
 ```
 
-### Delete
-
-```vague
-delete items[item.id]
-```
-
 ## Query mapping
 
-Reqon where clauses map to PostgREST queries:
+Where clauses are equality-only. Each field becomes a PostgREST equality filter:
 
 | Reqon | PostgREST |
 |-------|-----------|
 | `.field == "value"` | `?field=eq.value` |
-| `.field != "value"` | `?field=neq.value` |
-| `.field > 10` | `?field=gt.10` |
-| `.field >= 10` | `?field=gte.10` |
-| `.field < 10` | `?field=lt.10` |
-| `.field <= 10` | `?field=lte.10` |
+| `.field == null` | `?field=is.null` |
+
+Other operators (not-equal, greater-than, less-than, and so on) aren't translated.
+Filter on what you can express as equality, then narrow further in your action logic.
 
 ## Authentication
 
-### Anon key
+The `apiKey` is sent as both the `apikey` header and an `Authorization: Bearer`
+token. For Supabase, use the anon key for row-level-security-scoped access or the
+service-role key for full access:
 
-```json
-{
-  "sql": {
-    "type": "postgrest",
-    "url": "https://abc.supabase.co/rest/v1",
-    "apiKey": "anon-key"
-  }
-}
+```typescript
+// Anon key — subject to RLS policies
+const items = createStore({
+  type: 'postgrest',
+  name: 'items',
+  postgrest: { url: 'https://abc.supabase.co/rest/v1', apiKey: 'anon-key' },
+});
+
+// Service-role key — full access
+const itemsAdmin = createStore({
+  type: 'postgrest',
+  name: 'items',
+  postgrest: { url: 'https://abc.supabase.co/rest/v1', apiKey: 'service-role-key' },
+});
 ```
 
-### Service role key
+## Clearing a table
 
-For full access:
+`clear()` issues a full-table delete and is disabled by default. Opt in explicitly:
 
-```json
-{
-  "sql": {
-    "type": "postgrest",
-    "url": "https://abc.supabase.co/rest/v1",
-    "apiKey": "service-role-key"
-  }
-}
-```
-
-### Row level security
-
-With RLS enabled:
-
-```json
-{
-  "sql": {
-    "type": "postgrest",
-    "url": "https://abc.supabase.co/rest/v1",
-    "apiKey": "anon-key",
-    "headers": {
-      "Authorization": "Bearer user-jwt"
-    }
-  }
-}
+```typescript
+const items = createStore({
+  type: 'postgrest',
+  name: 'items',
+  postgrest: {
+    url: 'https://abc.supabase.co/rest/v1',
+    apiKey: 'service-role-key',
+    allowFullTableClear: true,
+  },
+});
 ```
 
 ## Best practices
@@ -224,7 +242,7 @@ CREATE INDEX items_created_idx ON items(created_at);
 ### Upsert with timestamps
 
 ```sql
--- Add trigger for updated_at
+-- Add a trigger for updated_at
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -239,61 +257,11 @@ CREATE TRIGGER items_updated
   EXECUTE FUNCTION update_updated_at();
 ```
 
-### Connection pooling
-
-For high-volume usage:
-
-```json
-{
-  "sql": {
-    "type": "postgrest",
-    "url": "https://abc.supabase.co/rest/v1",
-    "apiKey": "...",
-    "poolSize": 10
-  }
-}
-```
-
-## Error handling
-
-```vague
-action SafeStore {
-  get "/items"
-
-  for item in response.items {
-    match {
-      _ where true -> {
-        store item -> items { key: .id }
-      }
-    } catch {
-      { code: 23505 } -> skip,  // Unique violation
-      { code: 23503 } -> skip,  // Foreign key violation
-      _ -> queue errors { item: { id: item.id, error: "Store failed" } }
-    }
-  }
-}
-```
-
-## Monitoring
-
-### Query logs
-
-Enable in Supabase Dashboard or PostgREST config.
-
-### Performance
-
-```sql
--- Check slow queries
-SELECT * FROM pg_stat_statements
-ORDER BY total_time DESC
-LIMIT 10;
-```
-
 ## Troubleshooting
 
 ### "Relation does not exist"
 
-Table hasn't been created:
+The table hasn't been created:
 
 ```sql
 CREATE TABLE your_table (...);
@@ -301,7 +269,7 @@ CREATE TABLE your_table (...);
 
 ### "Permission denied"
 
-Check RLS policies:
+Check your RLS policies:
 
 ```sql
 CREATE POLICY "Allow all" ON items FOR ALL USING (true);
@@ -309,8 +277,9 @@ CREATE POLICY "Allow all" ON items FOR ALL USING (true);
 
 ### Connection issues
 
-Verify URL and credentials:
+Verify the URL and credentials:
 
 ```bash
 curl -H "apikey: your-key" https://abc.supabase.co/rest/v1/items
 ```
+</content>

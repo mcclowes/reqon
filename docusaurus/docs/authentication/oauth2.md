@@ -2,9 +2,9 @@
 sidebar_position: 2
 ---
 
-# OAuth 2.0 Authentication
+# OAuth 2.0 authentication
 
-OAuth 2.0 is the industry standard for API authentication, used by most enterprise APIs. Reqon supports OAuth 2.0 with automatic token refresh.
+OAuth 2.0 is a common choice for enterprise APIs. Reqon sends your access token as a bearer token and refreshes it when a request comes back with a `401`.
 
 ## Configuration
 
@@ -27,9 +27,7 @@ source Xero {
     "clientSecret": "your-client-secret",
     "accessToken": "current-access-token",
     "refreshToken": "current-refresh-token",
-    "tokenUrl": "https://identity.xero.com/connect/token",
-    "scopes": ["accounting.transactions.read", "accounting.contacts.read"],
-    "expiresAt": "2024-01-20T10:30:00Z"
+    "tokenEndpoint": "https://identity.xero.com/connect/token"
   }
 }
 ```
@@ -39,83 +37,30 @@ source Xero {
 | Field | Required | Description |
 |-------|----------|-------------|
 | `type` | Yes | Must be `"oauth2"` |
-| `clientId` | Yes | OAuth client ID |
-| `clientSecret` | Yes | OAuth client secret |
-| `accessToken` | Yes | Current access token |
-| `refreshToken` | Yes | Token used to get new access tokens |
-| `tokenUrl` | Yes | Token endpoint URL |
-| `scopes` | No | Requested scopes |
-| `expiresAt` | No | When current token expires |
+| `accessToken` | Yes | Current access token, sent on every request |
+| `refreshToken` | For refresh | Token used to get a new access token |
+| `tokenEndpoint` | For refresh | Token endpoint URL the refresh request posts to |
+| `clientId` | For refresh | OAuth client ID, sent in the refresh request |
+| `clientSecret` | No | OAuth client secret, sent in the refresh request if present |
+
+Reqon never reads `expiresAt` or `scopes` from credentials, so don't add them. Scoping is decided when you generate the token with the provider.
 
 ## Token refresh
 
-### Automatic refresh
+Reqon doesn't track token expiry. It sends `accessToken` as a bearer token, and when a request comes back with a `401`, it refreshes once and retries:
 
-When `expiresAt` is set and token expires, Reqon automatically:
-
-1. Calls `tokenUrl` with refresh token
-2. Updates access token
-3. Retries the failed request
-
-```json
-{
-  "Xero": {
-    "type": "oauth2",
-    "clientId": "...",
-    "clientSecret": "...",
-    "accessToken": "old-token",
-    "refreshToken": "refresh-token",
-    "tokenUrl": "https://identity.xero.com/connect/token",
-    "expiresAt": "2024-01-20T10:30:00Z"
-  }
-}
-```
-
-### On 401 response
-
-Even without `expiresAt`, Reqon refreshes on 401:
+1. Posts to `tokenEndpoint` with `grant_type=refresh_token`, the refresh token, and the client ID (and secret, if set).
+2. Replaces the in-memory access token with the new one.
+3. Retries the request once.
 
 ```vague
 action FetchData {
   get "/data"
-  // If 401, automatic refresh attempt
+  // On 401, Reqon refreshes the token and retries this request once.
 }
 ```
 
-### Manual refresh pattern
-
-For non-standard APIs:
-
-```vague
-action FetchData {
-  get "/data"
-
-  match response {
-    { error: _, code: 401 } -> jump RefreshToken then retry,
-    _ -> continue
-  }
-}
-
-action RefreshToken {
-  post "/oauth/token" {
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: {
-      grant_type: "refresh_token",
-      refresh_token: env("REFRESH_TOKEN"),
-      client_id: env("CLIENT_ID"),
-      client_secret: env("CLIENT_SECRET")
-    }
-  }
-
-  // Store new tokens
-  store {
-    accessToken: response.access_token,
-    refreshToken: response.refresh_token
-  } -> tokens
-}
-```
+The refreshed token lives in memory for the rest of the run only. It is not written back to the credentials file, so the next run starts from the original `accessToken` again. Refresh needs `refreshToken` and `tokenEndpoint`; without them, a `401` just fails.
 
 ## Common OAuth2 providers
 
@@ -129,7 +74,7 @@ action RefreshToken {
     "clientSecret": "your-client-secret",
     "accessToken": "...",
     "refreshToken": "...",
-    "tokenUrl": "https://identity.xero.com/connect/token"
+    "tokenEndpoint": "https://identity.xero.com/connect/token"
   }
 }
 ```
@@ -144,7 +89,7 @@ action RefreshToken {
     "clientSecret": "your-client-secret",
     "accessToken": "...",
     "refreshToken": "...",
-    "tokenUrl": "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+    "tokenEndpoint": "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
   }
 }
 ```
@@ -159,7 +104,7 @@ action RefreshToken {
     "clientSecret": "your-client-secret",
     "accessToken": "...",
     "refreshToken": "...",
-    "tokenUrl": "https://login.salesforce.com/services/oauth2/token"
+    "tokenEndpoint": "https://login.salesforce.com/services/oauth2/token"
   }
 }
 ```
@@ -174,7 +119,7 @@ action RefreshToken {
     "clientSecret": "your-client-secret",
     "accessToken": "...",
     "refreshToken": "...",
-    "tokenUrl": "https://oauth2.googleapis.com/token"
+    "tokenEndpoint": "https://oauth2.googleapis.com/token"
   }
 }
 ```
@@ -189,24 +134,20 @@ action RefreshToken {
     "clientSecret": "your-client-secret",
     "accessToken": "...",
     "refreshToken": "...",
-    "tokenUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+    "tokenEndpoint": "https://login.microsoftonline.com/common/oauth2/v2.0/token"
   }
 }
 ```
 
 ## Token storage
 
-### File-based (development)
+Tokens come from the credentials file or environment variables. When Reqon refreshes a token on a `401`, the new token is kept in memory for the rest of the run only — it is not written back to the credentials file. Each new run starts from the `accessToken` you supplied, so refresh your stored token out of band if it has rotated.
 
-Tokens are stored in the credentials file. Reqon updates them after refresh.
-
-### Secure storage (production)
-
-For production, use secure storage:
+You can also pass credentials programmatically:
 
 ```typescript
 import { execute } from 'reqon';
-import { getSecureTokens, saveSecureTokens } from './secure-storage';
+import { getSecureTokens } from './secure-storage';
 
 const tokens = await getSecureTokens('Xero');
 
@@ -216,94 +157,29 @@ const result = await execute(source, {
       type: 'oauth2',
       ...tokens
     }
-  },
-  onTokenRefresh: async (source, newTokens) => {
-    await saveSecureTokens(source, newTokens);
   }
 });
 ```
 
-## Scopes
-
-Request specific scopes:
-
-```json
-{
-  "API": {
-    "type": "oauth2",
-    "scopes": [
-      "read:users",
-      "write:users",
-      "read:orders"
-    ]
-  }
-}
-```
-
-## Additional headers
-
-Some APIs require extra headers:
-
-```vague
-source API {
-  auth: oauth2,
-  base: "https://api.example.com",
-  headers: {
-    "Xero-Tenant-Id": env("XERO_TENANT_ID")
-  }
-}
-```
-
-## Handling multi-tenant
-
-For APIs like Xero with multiple organizations:
-
-```vague
-mission XeroSync {
-  source Xero {
-    auth: oauth2,
-    base: "https://api.xero.com/api.xro/2.0",
-    headers: {
-      "Xero-Tenant-Id": env("XERO_TENANT_ID")
-    }
-  }
-}
-```
-
-Or iterate over tenants:
-
-```vague
-action SyncAllTenants {
-  get "/connections"
-
-  for tenant in response {
-    // Each tenant request
-    get concat("/", tenant.tenantId, "/invoices") {
-      headers: { "Xero-Tenant-Id": tenant.tenantId }
-    }
-  }
-}
-```
-
 ## Troubleshooting
 
-### "invalid_grant" Error
+### "invalid_grant" error
 
-Refresh token is invalid or expired. Re-authenticate:
+The refresh token is invalid or expired. Re-authenticate:
 
-1. Go through OAuth flow again
-2. Get new access and refresh tokens
-3. Update credentials file
+1. Go through the OAuth flow again.
+2. Get new access and refresh tokens.
+3. Update the credentials file.
 
-### "Token expired" but no refresh
+### Token expired but no refresh
 
-Ensure `refreshToken` and `tokenUrl` are set:
+Ensure `refreshToken` and `tokenEndpoint` are set:
 
 ```json
 {
   "API": {
     "refreshToken": "must-be-present",
-    "tokenUrl": "must-be-present"
+    "tokenEndpoint": "must-be-present"
   }
 }
 ```
@@ -314,4 +190,4 @@ Check `clientId` and `clientSecret` are correct.
 
 ### Scope issues
 
-Ensure requested scopes are authorized for your app.
+Ensure the token you generated with the provider has the scopes the API requires.

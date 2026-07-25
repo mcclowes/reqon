@@ -4,7 +4,11 @@ sidebar_position: 5
 
 # Basic authentication
 
-HTTP Basic Authentication sends username and password with each request, encoded in Base64. While simple, it should only be used over HTTPS.
+HTTP basic authentication sends a username and password with each request, encoded in Base64. While simple, it should only be used over HTTPS.
+
+:::warning Not applied at runtime
+`auth: basic` parses, and Reqon recognizes basic credentials in a credentials file, but no auth provider is built for it yet. At runtime, requests to a basic source go out **unauthenticated** — Reqon does not add an `Authorization` header. This page documents the configuration shape Reqon recognizes, but the credentials are not sent. For a working option today, use [bearer](./bearer.md) or [OAuth 2.0](./oauth2.md). Some APIs accept a bearer-style token that's equivalent to basic auth with a token; in that case, use `bearer`.
+:::
 
 ## Configuration
 
@@ -31,14 +35,14 @@ source API {
 
 ## How it works
 
-Reqon encodes credentials and adds them to every request:
+Basic auth is meant to send a Base64-encoded `username:password` in the `Authorization` header:
 
 ```http
 GET /api/data HTTP/1.1
 Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=
 ```
 
-The value is `base64(username:password)`.
+The value would be `base64(username:password)`. As noted above, Reqon doesn't build this header yet, so it isn't actually sent.
 
 ## Credential options
 
@@ -68,16 +72,7 @@ export API_PASSWORD="mypass"
 reqon mission.vague --auth credentials.json
 ```
 
-### In mission file
-
-```vague
-source API {
-  auth: basic,
-  base: "https://api.example.com",
-  username: env("API_USERNAME"),
-  password: env("API_PASSWORD")
-}
-```
+The source block only declares the auth type. The username and password never go inline in the source block; they come from the credentials file or environment variables. Reqon also auto-discovers `REQON_API_USERNAME` and `REQON_API_PASSWORD` (using the uppercased source name).
 
 ## Common use cases
 
@@ -162,20 +157,6 @@ Many APIs use Basic auth with a token as password:
     "type": "basic",
     "username": "username",
     "password": "npm_xxxxx"  // Access token
-  }
-}
-```
-
-## Error handling
-
-```vague
-action FetchData {
-  get "/data"
-
-  match response {
-    { error: _, code: 401 } -> abort "Invalid credentials",
-    { error: _, code: 403 } -> abort "Access denied",
-    _ -> continue
   }
 }
 ```

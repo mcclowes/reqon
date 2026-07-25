@@ -33,9 +33,13 @@ Actions can contain the following step types:
 | `call` | OAS operation call |
 | `for...in...where` | Iteration with optional filtering |
 | `map...->` | Data transformation |
+| `apply...to` | Apply a named transform |
 | `validate` | Constraint checking |
 | `store...->` | Data persistence |
 | `match` | Pattern matching with flow control |
+| `let` | Bind a variable |
+| `wait` | Wait for a webhook or callback |
+| `pause` | Resource-free long pause |
 
 ## HTTP request steps
 
@@ -46,12 +50,12 @@ action FetchData {
   // Simple GET
   get "/users"
 
-  // With query parameters
-  get "/users" { params: { limit: 100, offset: 0 } }
+  // Query parameters go in the path string
+  get "/users?limit=100&offset=0"
 
   // With pagination
   get "/users" {
-    paginate: offset(page, 100),
+    paginate: page(page, 100),
     until: length(response.users) == 0
   }
 
@@ -96,9 +100,9 @@ action TransformData {
   for user in response.users {
     map user -> StandardUser {
       id: .id,
-      fullName: concat(.firstName, " ", .lastName),
-      email: lowercase(.email),
-      createdAt: parseDate(.created_at)
+      fullName: .firstName + " " + .lastName,
+      email: .email,
+      createdAt: .created_at
     }
 
     store user -> users { key: .id }
@@ -106,7 +110,7 @@ action TransformData {
 }
 ```
 
-See the [Vague documentation](https://github.com/mcclowes/vague) for expression syntax.
+Each field's right-hand side is an expression. Built-in functions include `length`, `sum`, `count`, `first`, `last`, `round`, `floor`, `ceil`, `now`, and `env`; `+` concatenates strings. See the [Vague documentation](https://github.com/mcclowes/vague) for the full expression syntax.
 
 ## Validation steps
 
@@ -120,7 +124,7 @@ action ValidateData {
     validate user {
       assume .id is string,
       assume length(.name) > 0,
-      assume .email contains "@",
+      assume .email is string,
       assume .age >= 18
     }
 
@@ -128,6 +132,8 @@ action ValidateData {
   }
 }
 ```
+
+Each `assume` takes a single condition expression. A failed assumption throws a `ValidationError` and aborts the mission, so validation is a hard gate, not a warning.
 
 ## Store steps
 
@@ -153,21 +159,23 @@ action SaveData {
 
 ## Pattern matching steps
 
-Route data based on shape:
+Match arms route on schema name, with an optional `where` guard or a `_` wildcard. There are no object, array, or literal patterns. The matched schemas are defined at the mission level:
 
 ```vague
 action HandleResponse {
   get "/users"
 
   match response {
-    { error: e, code: 401 } -> jump RefreshToken then retry,
-    { error: e, code: 429 } -> retry { maxAttempts: 5 },
-    { error: e } -> abort "API error",
-    { users: _ } -> continue,
+    AuthError where .code == 401 -> jump RefreshToken then retry,
+    RateLimitError where .code == 429 -> retry { maxAttempts: 5 },
+    ErrorResponse -> abort "API error",
+    UsersResponse -> continue,
     _ -> abort "Unexpected response"
   }
 }
 ```
+
+Arm right-hand sides are a flow directive (`continue`, `skip`, `abort`, `retry`, `queue`, `jump`), a single step, or a `{ ... }` block of steps. `abort` takes an optional string literal only.
 
 ## Nested actions
 
@@ -195,9 +203,15 @@ Actions are composed in the `run` statement:
 
 ```vague
 mission DataPipeline {
-  action Fetch { /* ... */ }
-  action Transform { /* ... */ }
-  action Export { /* ... */ }
+  action Fetch {
+    // ...
+  }
+  action Transform {
+    // ...
+  }
+  action Export {
+    // ...
+  }
 
   // Sequential
   run Fetch then Transform then Export
@@ -266,7 +280,7 @@ action FetchWithErrorHandling {
   get "/users"
 
   match response {
-    ErrorResponse -> queue failures { item: response },
+    ErrorResponse -> queue failures,
     _ -> store response -> users { key: .id }
   }
 }

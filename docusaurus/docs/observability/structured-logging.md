@@ -162,17 +162,18 @@ const hasWarnings = buffer.find(e => e.level === 'warn') !== undefined;
 buffer.clear();
 ```
 
-### EventOutput
+### Bridging to the event system
 
-Bridge logs to the event system:
+To forward log entries to an event emitter, pass the emitter when you create the logger. It wires up the bridge for you:
 
 ```typescript
-import { EventOutput, createEmitter } from 'reqon';
+import { createStructuredLogger, createEmitter } from 'reqon';
 
-const emitter = createEmitter();
-const output = new EventOutput(emitter);
+const emitter = createEmitter('my-run', 'SyncCustomers');
 
-logger.addOutput(output);
+const logger = createStructuredLogger({
+  eventEmitter: emitter
+});
 ```
 
 ## Multiple outputs
@@ -277,7 +278,7 @@ if (duration > 5000) {
 ```typescript
 import { execute, createStructuredLogger, createEmitter } from 'reqon';
 
-const emitter = createEmitter();
+const emitter = createEmitter('my-run', 'SyncCustomers');
 const logger = createStructuredLogger({
   eventEmitter: emitter,
   level: 'debug'
@@ -286,9 +287,9 @@ const logger = createStructuredLogger({
 // Events flow to logger
 emitter.on('fetch.complete', (event) => {
   logger.info('Fetch complete', {
-    url: event.url,
-    status: event.status,
-    duration: event.duration
+    url: event.payload.path,
+    status: event.payload.statusCode,
+    records: event.payload.recordCount
   });
 });
 

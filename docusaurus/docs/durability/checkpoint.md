@@ -91,45 +91,42 @@ When resuming from a checkpoint:
 4. Stores are reconnected (data persists separately)
 
 ```bash
-# Resume an interrupted mission
-reqon mission.vague --resume
+# Resume an interrupted mission by its execution ID
+reqon mission.vague --resume exec_abc123
 ```
 
 ## Checkpoint storage
 
 ### Default storage
 
-Checkpoints are stored in `.vague-data/execution/`:
+The checkpoint lives inside the execution record, under `.reqon-data/executions/`:
 
 ```
-.vague-data/execution/
+.reqon-data/executions/
 ├── SyncMission-2024-01-20T09-00-00.json
-├── SyncMission-2024-01-20T10-00-00.json
-└── checkpoints/
-    └── SyncMission-exec-abc123.json
+└── SyncMission-2024-01-20T10-00-00.json
 ```
 
-### Checkpoint file structure
+### Checkpoint structure
+
+Each execution record carries the latest checkpoint under its `checkpoint` field:
 
 ```json
 {
-  "executionId": "exec-abc123",
+  "id": "exec-abc123",
   "mission": "SyncMission",
-  "timestamp": "2024-01-20T09:15:30Z",
-  "stageIndex": 1,
-  "stepIndex": 3,
-  "action": "ProcessData",
-  "variables": {
-    "page": 5,
-    "total": 100
-  },
-  "response": { "items": [...] },
-  "loopContext": {
+  "status": "paused",
+  "checkpoint": {
+    "stageIndex": 1,
+    "stepIndex": 3,
     "itemIndex": 42,
-    "collection": "items"
+    "variables": { "page": 5 },
+    "createdAt": "2024-01-20T09:15:30Z"
   }
 }
 ```
+
+`itemIndex` is present when the run was interrupted inside a `for` loop.
 
 ## Use cases
 
@@ -255,20 +252,22 @@ mission LongRunning {
 ## Programmatic access
 
 ```typescript
-import { execute, getExecutionState } from 'reqon';
+import { execute, FileExecutionStore } from 'reqon';
 
-// Check for existing checkpoint
-const state = await getExecutionState('SyncMission');
+const store = new FileExecutionStore('.reqon-data/executions');
 
-if (state?.status === 'interrupted') {
-  // Resume from checkpoint
+// Check for an existing, resumable run
+const state = await store.findLatest('SyncMission');
+
+if (state && (state.status === 'paused' || state.status === 'failed')) {
+  // Resume from the last checkpoint
   const result = await execute(source, {
-    resume: true,
-    executionId: state.executionId
+    persistState: true,
+    resumeFrom: state.id,
   });
 } else {
   // Fresh execution
-  const result = await execute(source);
+  const result = await execute(source, { persistState: true });
 }
 ```
 
@@ -287,15 +286,15 @@ if (state?.status === 'interrupted') {
 | `onFailure` | Lower (checkpoint only on failure) | Good |
 | None | None | No durability |
 
-For high-throughput pipelines, consider:
+For high-throughput pipelines where re-processing is cheap, prefer `onFailure` to keep overhead low:
 
 ```vague
 mission HighThroughput {
   checkpoint: onFailure  // Lower overhead
 
   action Batch {
-    for batch in batches checkpoint every 100 {
-      // Checkpoint every 100 iterations, not every item
+    for item in items {
+      post "/process" { source: API, body: item }
     }
   }
 

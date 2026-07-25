@@ -17,13 +17,19 @@ source SourceName {
 
 ## Authentication types
 
+The `auth:` value is just the type; there's no sub-config in the DSL, and credentials never go in the `source {}` block. They come from an auth file (`--auth <file>`) or environment variables.
+
 | Type | Description |
 |------|-------------|
 | `none` | No authentication |
-| `bearer` | Bearer token in Authorization header |
+| `bearer` | Bearer token in the Authorization header |
 | `basic` | HTTP Basic authentication |
-| `api_key` | API key in header or query |
+| `api_key` | API key in a request header |
 | `oauth2` | OAuth 2.0 with token refresh |
+
+:::note Runtime support
+Only `bearer` and `oauth2` are wired up at runtime today. `basic` and `api_key` parse fine, but no auth provider is attached, so requests go out unauthenticated. Treat them as not yet implemented.
+:::
 
 ### No authentication
 
@@ -67,24 +73,13 @@ source StripeAPI {
 {
   "StripeAPI": {
     "type": "api_key",
-    "key": "sk_live_xxxx",
-    "header": "Authorization",
-    "prefix": "Bearer"
+    "apiKey": "sk_live_xxxx",
+    "headerName": "X-API-Key"
   }
 }
 ```
 
-Or in query parameter:
-
-```json
-{
-  "StripeAPI": {
-    "type": "api_key",
-    "key": "sk_live_xxxx",
-    "query": "api_key"
-  }
-}
-```
+`headerName` defaults to `X-API-Key`. API keys are placed in a header only; there's no query-parameter option. (As noted above, `api_key` isn't applied at runtime yet.)
 
 ### Basic authentication
 
@@ -122,13 +117,12 @@ source Xero {
     "clientSecret": "your-client-secret",
     "accessToken": "current-access-token",
     "refreshToken": "current-refresh-token",
-    "tokenUrl": "https://identity.xero.com/connect/token",
-    "scopes": ["accounting.transactions.read"]
+    "tokenEndpoint": "https://identity.xero.com/connect/token"
   }
 }
 ```
 
-Reqon automatically refreshes tokens when they expire.
+Reqon refreshes tokens when they expire, but the refreshed token is held in memory only for the current run.
 
 ## OpenAPI spec sources
 
@@ -170,16 +164,22 @@ source RateLimitedAPI {
   auth: bearer,
   base: "https://api.example.com",
   rateLimit: {
-    requestsPerMinute: 60,
-    strategy: "pause"
+    strategy: pause,
+    maxWait: 300,
+    fallbackRpm: 60
   }
 }
 ```
 
+Options:
+- `strategy` (unquoted identifier) - one of `pause`, `throttle`, or `fail`
+- `maxWait` - longest wait in seconds before giving up (default 300)
+- `fallbackRpm` - requests per minute to assume when the API sends no rate-limit headers (default 60)
+
 Strategies:
-- `pause` - Wait when limit reached
-- `throttle` - Slow down requests
-- `fail` - Throw error when limit reached
+- `pause` - wait when the limit is reached
+- `throttle` - slow down requests
+- `fail` - throw an error when the limit is reached
 
 ### Circuit breaker
 
@@ -197,21 +197,11 @@ source UnreliableAPI {
 }
 ```
 
-See [Circuit Breaker](../http/circuit-breaker) for details.
-
-### Timeout
-
-```vague
-source SlowAPI {
-  auth: bearer,
-  base: "https://slow-api.example.com",
-  timeout: 60000
-}
-```
+The full set of options is `failureThreshold` (default 5), `resetTimeout` in milliseconds (default 30000), `successThreshold` (default 2), and `failureWindow` in milliseconds (default 60000). See [Circuit Breaker](../http/circuit-breaker) for details.
 
 ## Using sources
 
-Sources are automatically selected when making requests:
+The first defined source is used by default. To target another source, set the `source` option on the request:
 
 ```vague
 mission MultiSource {
@@ -219,13 +209,13 @@ mission MultiSource {
   source Secondary { auth: bearer, base: "https://secondary.example.com" }
 
   action FetchFromPrimary {
-    // Uses first source by default
+    // Uses the first source by default
     get "/data"
   }
 
   action FetchFromSecondary {
-    // Explicitly use secondary source
-    get Secondary "/data"
+    // Explicitly use the secondary source
+    get "/data" { source: Secondary }
   }
 }
 ```
@@ -246,40 +236,12 @@ mission Example {
 
 ### Named source reference
 
-Prefix requests with source name:
+Set the `source` option to pick a source per request:
 
 ```vague
 action FetchFromMultiple {
-  get Primary "/users"
-  get Secondary "/users"
-}
-```
-
-## Source variables
-
-Use environment variables in source definitions:
-
-```vague
-source API {
-  auth: bearer,
-  base: env("API_BASE_URL")
-}
-```
-
-## Multiple environments
-
-Pattern for handling different environments:
-
-```vague
-mission Sync {
-  source API {
-    auth: bearer,
-    base: match env("ENVIRONMENT") {
-      "production" => "https://api.example.com",
-      "staging" => "https://staging.api.example.com",
-      _ => "http://localhost:3000"
-    }
-  }
+  get "/users" { source: Primary }
+  get "/users" { source: Secondary }
 }
 ```
 
@@ -298,20 +260,6 @@ source API1 { }
 source Source { }
 ```
 
-### Configure appropriate timeouts
-
-```vague
-// For fast APIs
-source FastAPI {
-  timeout: 5000  // 5 seconds
-}
-
-// For slow/bulk APIs
-source BulkExportAPI {
-  timeout: 300000  // 5 minutes
-}
-```
-
 ### Always use rate limiting for production
 
 ```vague
@@ -319,8 +267,8 @@ source ProductionAPI {
   auth: bearer,
   base: "https://api.example.com",
   rateLimit: {
-    requestsPerMinute: 100,
-    strategy: "pause"
+    strategy: pause,
+    fallbackRpm: 100
   }
 }
 ```

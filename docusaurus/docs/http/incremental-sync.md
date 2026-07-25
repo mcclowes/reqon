@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Incremental sync
 
-Incremental sync allows you to fetch only changes since the last run, reducing API calls and improving performance.
+Incremental sync lets you fetch only what's changed since the last run, reducing API calls and keeping your data current.
 
 ## Basic usage
 
@@ -15,78 +15,103 @@ get "/items" {
 ```
 
 This automatically:
-1. Checks when the last successful sync occurred
-2. Adds a timestamp parameter to the request
-3. Updates the checkpoint after successful completion
+
+1. Looks up when the last successful sync occurred.
+2. Adds a `since` query parameter to the request.
+3. Records a new checkpoint after the action completes.
 
 ## How it works
 
 ### First run
 
-On the first run, no `since` parameter is added:
+On the first run there's no checkpoint yet, so Reqon syncs from the Unix epoch:
 
 ```
-GET /items
+GET /items?since=1970-01-01T00:00:00.000Z
 ```
 
 ### Subsequent runs
 
-On subsequent runs, the last sync timestamp is used:
+On later runs, the last sync timestamp is used:
 
 ```
-GET /items?modified_since=2024-01-20T10:30:00Z
+GET /items?since=2024-01-20T10:30:00.000Z
 ```
+
+The parameter name defaults to `since` and the format defaults to ISO 8601. Both are configurable (see below).
 
 ### Checkpoint storage
 
-Checkpoints are stored in `.vague-data/` by default:
+By default, checkpoints are stored in a per-mission file under `.reqon-data/sync/`:
 
 ```
-.vague-data/
-├── sync-checkpoints.json
-└── stores/
+.reqon-data/
+└── sync/
+    └── MyMission.json
 ```
+
+When you run with a durable execution log, sync is a view over that log instead: `lastSync` is resolved from the recorded `checkpoint.advanced` events, and there's no separate sync file.
 
 ## Configuration
 
+The `since: lastSync` form accepts an optional checkpoint key and an optional config block. There are no separate `sinceParam`, `sinceFormat`, or `syncKey` fetch options.
+
 ### Custom parameter name
 
-Specify the API's expected parameter:
+Tell Reqon which query parameter the API expects:
 
 ```vague
 get "/items" {
-  since: lastSync,
-  sinceParam: "updatedAfter"
+  since: lastSync { param: "modified_since" }
 }
 ```
 
-Generates: `?updatedAfter=2024-01-20T10:30:00Z`
+Generates: `?modified_since=2024-01-20T10:30:00.000Z`
+
+### Send as a header instead
+
+Use a request header rather than a query parameter (mutually exclusive with `param`):
+
+```vague
+get "/items" {
+  since: lastSync { header: "If-Modified-Since" }
+}
+```
 
 ### Date format
 
-Customize the date format:
+Customise the format of the timestamp. The format is an unquoted identifier:
 
 ```vague
 get "/items" {
-  since: lastSync,
-  sinceFormat: "YYYY-MM-DD"
+  since: lastSync { param: "updatedAfter", format: unix }
 }
 ```
 
-Common formats:
-- `"ISO"` - ISO 8601 (default): `2024-01-20T10:30:00Z`
-- `"YYYY-MM-DD"` - Date only: `2024-01-20`
-- `"timestamp"` - Unix timestamp: `1705748400`
-- `"epoch"` - Unix epoch milliseconds: `1705748400000`
+Supported formats:
+
+- `iso` — ISO 8601 (default): `2024-01-20T10:30:00.000Z`
+- `unix` — Unix timestamp in seconds: `1705748400`
+- `unix-ms` — Unix timestamp in milliseconds: `1705748400000`
+- `date-only` — date portion only: `2024-01-20`
 
 ### Custom checkpoint key
 
-Override the automatic checkpoint key:
+Override the automatic checkpoint key (which defaults to `source:endpoint`):
 
 ```vague
 get "/items" {
-  since: lastSync,
-  syncKey: "items-main-sync"
+  since: lastSync("items-main-sync")
+}
+```
+
+### Advancing from a response field
+
+By default the checkpoint advances to the sync time. To instead take the new watermark from a field in the response, use `updateFrom`:
+
+```vague
+get "/items" {
+  since: lastSync { param: "modified_since", updateFrom: "meta.lastModified" }
 }
 ```
 
@@ -104,21 +129,17 @@ The `since` parameter is added to each paginated request.
 
 ## Combining with filters
 
+There's no `params` option, so put any extra query parameters directly in the path. The `since` value is appended to whatever you provide:
+
 ```vague
-get "/items" {
-  params: {
-    status: "active",
-    type: "order"
-  },
+get "/items?status=active&type=order" {
   since: lastSync
 }
 ```
 
-Generates: `?status=active&type=order&modified_since=2024-01-20T10:30:00Z`
-
 ## Handling updates
 
-Use upsert mode for incremental updates:
+Use upsert mode so re-synced records overwrite their previous version:
 
 ```vague
 action IncrementalSync {
@@ -136,7 +157,7 @@ action IncrementalSync {
 
 ## Per-source checkpoints
 
-Different sources maintain separate checkpoints:
+Different sources maintain separate checkpoints, because the checkpoint key includes the source name:
 
 ```vague
 mission MultiSourceSync {
@@ -144,13 +165,13 @@ mission MultiSourceSync {
   source QuickBooks { auth: oauth2, base: "https://quickbooks.api.com" }
 
   action SyncXero {
-    get Xero "/invoices" { since: lastSync }
-    // Uses Xero-specific checkpoint
+    get "/invoices" { source: Xero, since: lastSync }
+    // Uses an Xero-specific checkpoint
   }
 
   action SyncQuickBooks {
-    get QuickBooks "/invoices" { since: lastSync }
-    // Uses QuickBooks-specific checkpoint
+    get "/invoices" { source: QuickBooks, since: lastSync }
+    // Uses a QuickBooks-specific checkpoint
   }
 }
 ```
@@ -162,45 +183,51 @@ Each endpoint maintains its own checkpoint:
 ```vague
 action SyncAll {
   get "/customers" { since: lastSync }
-  // Checkpoint: source-/customers
+  // Checkpoint key: source:/customers
 
   get "/orders" { since: lastSync }
-  // Checkpoint: source-/orders
+  // Checkpoint key: source:/orders
 
   get "/products" { since: lastSync }
-  // Checkpoint: source-/products
+  // Checkpoint key: source:/products
 }
 ```
 
 ## Resetting checkpoints
 
-### Via CLI
+### Via the file system
+
+Checkpoints live in `.reqon-data/sync/{mission}.json`. Delete the file to force a full resync:
 
 ```bash
-# Reset all checkpoints
-rm -rf .vague-data/sync-checkpoints.json
+# Reset all checkpoints for a mission
+rm .reqon-data/sync/MyMission.json
 
 # Then run a full sync
-reqon sync.vague
+reqon sync.reqon
 ```
 
 ### Programmatically
 
+Use a `FileSyncStore`, which exposes `clear(key)` and `clearAll()`:
+
 ```typescript
-import { execute, clearSyncCheckpoints } from 'reqon';
+import { FileSyncStore } from 'reqon';
 
-// Clear all checkpoints
-await clearSyncCheckpoints();
+const sync = new FileSyncStore('MyMission');
 
-// Or clear specific checkpoint
-await clearSyncCheckpoint('source-/items');
+// Clear every checkpoint for the mission
+await sync.clearAll();
+
+// Or clear a single checkpoint by key
+await sync.clear('API:/items');
 ```
 
 ## Full sync vs incremental
 
-### Force full sync
+### Force a full sync
 
-Sometimes you need a full resync:
+Omit `since` to fetch everything:
 
 ```vague
 action FullSync {
@@ -212,55 +239,14 @@ action IncrementalSync {
   get "/items" { since: lastSync }
   store response -> items { key: .id, upsert: true }
 }
-
-// Use conditional in pipeline
-run IncrementalSync  // Default: incremental
-// Or: run FullSync when needed
-```
-
-### Conditional sync
-
-```vague
-action SmartSync {
-  get "/status"
-
-  match response {
-    { needsFullSync: true } -> {
-      get "/items"
-      store response -> items { key: .id }
-    },
-    _ -> {
-      get "/items" { since: lastSync }
-      store response -> items { key: .id, upsert: true }
-    }
-  }
-}
 ```
 
 ## Handling deletions
 
-Incremental sync doesn't automatically handle deleted items. Handle this based on your API:
+Incremental sync only sees records the API returns, so it won't notice items deleted upstream. How you reconcile deletions depends on your API. Two common shapes:
 
-### Soft deletes
-
-```vague
-get "/items" {
-  params: { includeDeleted: true },
-  since: lastSync
-}
-
-for item in response.items {
-  match item {
-    { deleted: true } -> {
-      // Remove from local store
-      delete items[item.id]
-    },
-    _ -> store item -> items { key: .id, upsert: true }
-  }
-}
-```
-
-### Deletion endpoint
+- **Soft deletes.** If the API includes deleted records (often behind a flag) and returns them in the changed set, sync them like any other record and let a `deleted` field on the stored record mark their state.
+- **A separate deletions feed.** If the API exposes a deletions endpoint, sync it alongside the main feed in a parallel stage:
 
 ```vague
 action SyncItems {
@@ -270,10 +256,7 @@ action SyncItems {
 
 action SyncDeletions {
   get "/items/deleted" { since: lastSync }
-
-  for deletion in response.deletions {
-    delete items[deletion.id]
-  }
+  store response.deletions -> deletions { key: .id, upsert: true }
 }
 
 run [SyncItems, SyncDeletions]
@@ -287,44 +270,8 @@ run [SyncItems, SyncDeletions]
 // Good: handles both new and updated items
 store item -> items { key: .id, upsert: true }
 
-// Risky: may fail on duplicates
+// Risky: may fail on records already present
 store item -> items { key: .id }
-```
-
-### Handle empty responses
-
-```vague
-get "/items" { since: lastSync }
-
-match response {
-  { items: [] } -> {
-    // No updates since last sync - this is fine
-    continue
-  },
-  _ -> {
-    for item in response.items {
-      store item -> items { key: .id, upsert: true }
-    }
-  }
-}
-```
-
-### Log sync progress
-
-```vague
-action IncrementalSync {
-  get "/items" { since: lastSync }
-
-  store {
-    timestamp: now(),
-    itemCount: length(response.items),
-    type: "incremental"
-  } -> syncLogs
-
-  for item in response.items {
-    store item -> items { key: .id, upsert: true }
-  }
-}
 ```
 
 ### Schedule regular syncs
@@ -346,49 +293,31 @@ mission RegularSync {
 
 ### Checkpoint not updating
 
-Checkpoints only update on successful completion. Check for errors:
-
-```vague
-action DebugSync {
-  get "/items" { since: lastSync }
-
-  match response {
-    { error: e } -> {
-      store { error: e, timestamp: now() } -> syncErrors
-      abort e
-    },
-    _ -> continue
-  }
-
-  for item in response.items {
-    store item -> items { key: .id, upsert: true }
-  }
-}
-```
+Checkpoints only advance once an action completes. If it aborts partway through, the checkpoint stays where it was, so the next run picks up from the same point.
 
 ### Wrong date format
 
-Match your API's expected format:
+Match your API's expected format with the `format` option:
 
 ```vague
-// For APIs expecting ISO 8601
+// For APIs expecting ISO 8601 (default)
 get "/items" { since: lastSync }
 
-// For APIs expecting Unix timestamp
-get "/items" { since: lastSync, sinceFormat: "timestamp" }
+// For APIs expecting a Unix timestamp
+get "/items" { since: lastSync { format: unix } }
 
-// For APIs expecting date only
-get "/items" { since: lastSync, sinceFormat: "YYYY-MM-DD" }
+// For APIs expecting a date only
+get "/items" { since: lastSync { format: date-only } }
 ```
 
 ### Missing updates
 
-Ensure your API uses the same field for filtering:
+Make sure the parameter name matches what the API filters on:
 
 ```vague
-// If API uses "updatedAt" field
-get "/items" { since: lastSync, sinceParam: "updatedAt" }
+// If the API expects an "updatedAfter" parameter
+get "/items" { since: lastSync { param: "updatedAfter" } }
 
-// If API uses "modifiedSince" parameter
-get "/items" { since: lastSync, sinceParam: "modifiedSince" }
+// If the API expects a "modifiedSince" parameter
+get "/items" { since: lastSync { param: "modifiedSince" } }
 ```

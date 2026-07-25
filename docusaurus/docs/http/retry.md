@@ -24,9 +24,12 @@ get "/data" {
 | Option | Description | Default |
 |--------|-------------|---------|
 | `maxAttempts` | Maximum number of retry attempts | 3 |
-| `backoff` | Backoff strategy | `exponential` |
+| `backoff` | Backoff strategy: `exponential`, `linear`, or `constant` (unquoted) | `exponential` |
 | `initialDelay` | First retry delay (ms) | 1000 |
 | `maxDelay` | Maximum delay between retries (ms) | 30000 |
+| `timeout` | Per-attempt request timeout (ms); aborts a hung request | 30000 |
+
+There's no `delay` or `maxRetries` key. The backoff value is an unquoted identifier (`backoff: exponential`).
 
 ## Backoff strategies
 
@@ -202,8 +205,7 @@ source API {
   auth: bearer,
   base: "https://api.example.com",
   rateLimit: {
-    requestsPerMinute: 60,
-    strategy: "pause"
+    strategy: pause
   }
 }
 
@@ -246,35 +248,15 @@ The `jump RefreshToken then retry` directive:
 1. Executes the `RefreshToken` action
 2. Retries the original request with the new token
 
-## Per-source retry configuration
+## Default retry behaviour
 
-Configure default retry at the source level:
-
-```vague
-source UnreliableAPI {
-  auth: bearer,
-  base: "https://flaky.api.com",
-  retry: {
-    maxAttempts: 5,
-    backoff: exponential,
-    initialDelay: 2000,
-    maxDelay: 60000
-  }
-}
-
-action Fetch {
-  // Uses source-level retry config
-  get "/data"
-}
-```
-
-Request-level config overrides source-level:
+`retry` is a per-request option; there's no source-level `retry` block. When you don't supply one, the HTTP client falls back to its built-in defaults (3 attempts, exponential backoff, 1000 ms initial delay, 30000 ms max delay, 30000 ms per-attempt timeout). Add a `retry` block to a request to override any of those:
 
 ```vague
 action FetchWithOverride {
   get "/data" {
     retry: {
-      maxAttempts: 10  // Override just maxAttempts
+      maxAttempts: 10  // Override just maxAttempts; the rest use defaults
     }
   }
 }

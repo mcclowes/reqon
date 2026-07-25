@@ -135,7 +135,7 @@ Data is not persisted:
 store temp: memory("temp")
 
 // Not recommended: critical data
-store customers: memory("customers")  // Use file or sql instead
+store customers: memory("customers")  // Use file or postgrest instead
 ```
 
 ### Combine with persistent stores
@@ -159,16 +159,10 @@ mission Hybrid {
 }
 ```
 
-### Clear when done
+### Released automatically
 
-Memory is automatically released when mission ends, but you can clear explicitly:
-
-```vague
-action CleanUp {
-  // Clear temporary data
-  clear cache
-}
-```
+Memory stores are held only for the life of the run and are released when the
+mission ends, so there's nothing to clean up.
 
 ## Programmatic access
 
@@ -185,9 +179,9 @@ const item = await cache.get('key');
 
 ## Comparison with other stores
 
-| Feature | Memory | File | SQL |
-|---------|--------|------|-----|
+| Feature | Memory | File | PostgREST |
+|---------|--------|------|-----------|
 | Speed | Fastest | Fast | Medium |
 | Persistence | No | Yes | Yes |
 | Scalability | Limited | Limited | High |
-| Use Case | Testing, temp | Development | Production |
+| Use case | Testing, temp | Development | Production |

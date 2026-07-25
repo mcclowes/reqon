@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Parallel execution
 
-Reqon supports parallel execution of independent actions for improved performance.
+Reqon runs independent actions in parallel when you group them in a pipeline stage.
 
 ## Basic parallel execution
 
@@ -19,6 +19,8 @@ Execution:
 └─ ActionC ─┘
 ```
 
+The three actions run concurrently. Once all of them finish, `MergeResults` runs.
+
 ## Syntax
 
 ### Parallel group
@@ -27,7 +29,7 @@ Execution:
 run [Action1, Action2, Action3]
 ```
 
-All actions run simultaneously.
+All actions in the bracket run together.
 
 ### Parallel then sequential
 
@@ -36,9 +38,27 @@ run [Fetch1, Fetch2] then Process then [Export1, Export2]
 ```
 
 ```
-┌─ Fetch1 ─┐     ┌─ Export1 ─┐
-├──────────┼─ Process ─┼────────────┤
-└─ Fetch2 ─┘     └─ Export2 ─┘
+┌─ Fetch1 ─┐              ┌─ Export1 ─┐
+│          ├─ Process ────┤           │
+└─ Fetch2 ─┘              └─ Export2 ─┘
+```
+
+### Concurrency bound
+
+Parallel stages run with a built-in limit of 8 actions in flight. If a bracket holds more than 8 actions, the rest start as earlier ones finish. There's no DSL option to change this bound.
+
+## Conditional stages
+
+Any stage can carry an `if` condition. The stage runs only when the condition evaluates truthy, otherwise it's skipped:
+
+```vague
+run FetchData then ProcessData if env.shouldProcess then Export
+```
+
+Conditions work on parallel stages too:
+
+```vague
+run [SyncA, SyncB] if env.fullSync then Reconcile
 ```
 
 ## Use cases
@@ -51,233 +71,112 @@ mission MultiSourceSync {
   source QuickBooks { auth: oauth2, base: "https://quickbooks.api.com" }
   source Stripe { auth: bearer, base: "https://api.stripe.com" }
 
+  store xeroInvoices: memory("xero")
+  store qbInvoices: memory("qb")
+  store stripeInvoices: memory("stripe")
+
   action FetchXero {
-    get Xero "/invoices"
+    get "/invoices" { source: Xero }
     store response -> xeroInvoices { key: .InvoiceID }
   }
 
   action FetchQuickBooks {
-    get QuickBooks "/invoices"
+    get "/invoices" { source: QuickBooks }
     store response -> qbInvoices { key: .Id }
   }
 
   action FetchStripe {
-    get Stripe "/invoices"
+    get "/invoices" { source: Stripe }
     store response -> stripeInvoices { key: .id }
   }
 
   action Reconcile {
-    // All invoices are now available
+    // All invoices are now available across the shared stores
     for xero in xeroInvoices {
-      // Cross-reference with other sources
+      // Cross-reference with the other sources
     }
   }
 
-  // Fetch all in parallel, then reconcile
   run [FetchXero, FetchQuickBooks, FetchStripe] then Reconcile
 }
 ```
 
-### Independent processing
-
-```vague
-mission DataProcessing {
-  action ProcessCustomers {
-    for customer in rawCustomers {
-      // Transform customers
-    }
-  }
-
-  action ProcessOrders {
-    for order in rawOrders {
-      // Transform orders
-    }
-  }
-
-  action ProcessProducts {
-    for product in rawProducts {
-      // Transform products
-    }
-  }
-
-  action GenerateReports {
-    // Uses all processed data
-  }
-
-  run [ProcessCustomers, ProcessOrders, ProcessProducts] then GenerateReports
-}
-```
-
-### Fan-out fan-in
+### Fan-out, fan-in
 
 ```vague
 mission FanOutFanIn {
+  source API { auth: bearer, base: "https://api.example.com" }
+  store items: memory("items")
+  store pricing: memory("pricing")
+  store inventory: memory("inventory")
+
   action FetchMaster {
-    get "/items"
+    get "/items" { source: API }
     store response -> items { key: .id }
   }
 
   action EnrichWithPricing {
     for item in items {
-      get "/pricing" { params: { itemId: item.id } }
+      get concat("/pricing/", item.id) { source: API }
       store response -> pricing { key: item.id }
     }
   }
 
   action EnrichWithInventory {
     for item in items {
-      get "/inventory" { params: { itemId: item.id } }
+      get concat("/inventory/", item.id) { source: API }
       store response -> inventory { key: item.id }
     }
   }
 
-  action Combine {
-    for item in items {
-      map item -> EnrichedItem {
-        ...item,
-        price: pricing[item.id].price,
-        stock: inventory[item.id].quantity
-      }
-      store item -> enrichedItems { key: .id }
-    }
-  }
-
-  run FetchMaster then [EnrichWithPricing, EnrichWithInventory] then Combine
+  run FetchMaster then [EnrichWithPricing, EnrichWithInventory]
 }
 ```
 
-## Concurrency control
+## Failure semantics
 
-### Limit parallel actions
+Parallel stages are complete-then-fail:
 
-```vague
-mission ControlledParallel {
-  maxConcurrency: 3
-
-  run [A, B, C, D, E] then Finish
-  // Runs 3 at a time: [A,B,C], then [D,E]
-}
-```
-
-### Per-action limits
-
-```vague
-action FetchWithLimit {
-  concurrency: 5  // Max 5 concurrent requests within this action
-
-  for item in items parallel {
-    get concat("/items/", item.id)
-  }
-}
-```
-
-## Error handling
-
-### Default behavior
-
-All parallel actions run even if one fails:
+- Every branch runs to completion. There's no cancellation of siblings.
+- After all branches finish, the stage fails if any branch failed.
+- There's no rollback. A branch that wrote to a store keeps those writes even when a sibling fails.
 
 ```vague
 run [ActionA, ActionB, ActionC]
-// If ActionB fails, ActionA and ActionC still complete
-```
-
-### Fail-fast mode
-
-```vague
-mission FailFast {
-  parallelMode: "fail-fast"
-
-  run [ActionA, ActionB, ActionC]
-  // If ActionB fails, cancel ActionA and ActionC
-}
-```
-
-### Handling partial results
-
-```vague
-action Merge {
-  // Check which sources succeeded
-  match {
-    length(dataA) > 0 and length(dataB) > 0 -> {
-      // Full merge
-    },
-    length(dataA) > 0 -> {
-      // Partial merge - only A available
-    },
-    _ -> abort "No data available"
-  }
-}
+// If ActionB fails, ActionA and ActionC still run to completion,
+// then the stage reports the failure.
 ```
 
 ## Shared state
 
-### Isolated contexts
+### Isolated action scope
 
-Parallel actions have isolated variable contexts:
+Each branch gets its own action scope, so the step counter, checkpoints, and `response` are independent:
 
 ```vague
 action ParallelA {
-  // Sets its own 'response'
-  get "/a"
+  get "/a" { source: API }  // its own response
 }
 
 action ParallelB {
-  // Has its own 'response', doesn't see A's
-  get "/b"
+  get "/b" { source: API }  // its own response, doesn't see A's
 }
 ```
 
 ### Shared stores
 
-All actions can write to shared stores:
+Stores, sources, and schemas are shared across branches. Writes to the same key are last-writer-wins, so parallel branches should target disjoint keys:
 
 ```vague
 action ParallelA {
-  get "/a"
+  get "/a" { source: API }
   store response -> shared { key: concat("a-", .id) }
 }
 
 action ParallelB {
-  get "/b"
+  get "/b" { source: API }
   store response -> shared { key: concat("b-", .id) }
 }
-```
-
-## Performance considerations
-
-### When to use parallel
-
-| Scenario | Recommendation |
-|----------|----------------|
-| Independent API calls | Parallel |
-| Rate-limited API | Sequential |
-| Data dependencies | Sequential |
-| Mixed workload | Hybrid |
-
-### Memory usage
-
-Parallel execution uses more memory:
-
-```vague
-// Memory-efficient: process and discard
-run Fetch then Process then Export
-
-// Higher memory: all data in memory at once
-run [FetchA, FetchB, FetchC] then Combine
-```
-
-### Network saturation
-
-Too much parallelism can saturate network:
-
-```vague
-// May overwhelm API
-run [A, B, C, D, E, F, G, H, I, J]
-
-// Better: limited parallelism
-maxConcurrency: 3
-run [A, B, C, D, E, F, G, H, I, J]
 ```
 
 ## Best practices
@@ -285,69 +184,32 @@ run [A, B, C, D, E, F, G, H, I, J]
 ### Group related operations
 
 ```vague
-// Good: related fetches together
+// Good: related fetches that have no ordering dependency
 run [FetchOrders, FetchOrderItems, FetchOrderPayments] then ProcessOrders
-
-// Avoid: unrelated operations
-run [FetchOrders, SendEmails, CleanupLogs]
 ```
 
-### Balance parallelism
+### Use disjoint store keys
 
 ```vague
-// Good: measured parallelism
-maxConcurrency: 5
-run [A, B, C, D, E, F, G, H] then Merge
+// Good: per-source key prefix avoids collisions
+store response -> shared { key: concat(source, "-", .id) }
 
-// Risky: unlimited parallelism
-run [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P]
-```
-
-### Handle failures gracefully
-
-```vague
-action Merge {
-  match {
-    length(errors) > 0 -> {
-      store { errors: errors, partial: true } -> mergeLog
-      // Continue with available data
-    },
-    _ -> continue
-  }
-}
+// Risky: branches may overwrite each other
+store response -> shared { key: .id }
 ```
 
 ## Troubleshooting
 
 ### Actions not running in parallel
 
-Check syntax uses brackets:
+Check the bracket syntax:
 
 ```vague
-// This is parallel
-run [A, B, C]
-
-// This is sequential
-run A then B then C
+run [A, B, C]      // parallel
+run A then B then C // sequential
 ```
 
-### Race conditions
+### Last-writer-wins surprises
 
-Use unique keys when writing to shared stores:
-
-```vague
-// Good: unique keys
-store response -> shared { key: concat(source, "-", .id) }
-
-// Risky: may collide
-store response -> shared { key: .id }
-```
-
-### Memory issues
-
-Reduce parallelism or process in batches:
-
-```vague
-maxConcurrency: 2
-run [A, B, C, D, E, F]
-```
+If parallel branches write the same key, only the last write survives. Give each branch a distinct key prefix.
+</content>

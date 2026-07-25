@@ -18,8 +18,9 @@ store storeName: adapter("identifier")
 |---------|-------------|----------|
 | `memory` | In-memory storage | Testing, temporary data |
 | `file` | JSON file storage | Local development, small datasets |
-| `sql` | SQL database | Production with PostgreSQL/MySQL |
-| `nosql` | NoSQL database | Production with MongoDB/DynamoDB |
+| `postgrest` | PostgREST-backed table | Postgres via a PostgREST endpoint |
+| `sql` | SQL store (PostgREST under the hood) | See SQL store below |
+| `nosql` | NoSQL placeholder | Not yet implemented |
 
 ## Memory store
 
@@ -37,7 +38,7 @@ Best for:
 
 ## File store
 
-JSON file storage in the `.vague-data` directory:
+JSON file storage in the `.reqon-data` directory:
 
 ```vague
 store customers: file("customers")
@@ -46,7 +47,7 @@ store orders: file("orders")
 
 Creates files like:
 ```
-.vague-data/
+.reqon-data/
 ├── customers.json
 └── orders.json
 ```
@@ -56,41 +57,27 @@ Best for:
 - Small to medium datasets
 - Simple persistence without database setup
 
-## SQL store
+## PostgREST store
 
-SQL database storage via PostgREST or direct connection:
+Persist to a Postgres table through a PostgREST endpoint:
+
+```vague
+store customers: postgrest("customers")
+store orders: postgrest("orders")
+```
+
+This is the production-ready database adapter. See [PostgREST Store](../stores/postgrest) for connection options.
+
+## SQL and NoSQL stores
+
+`sql` and `nosql` are placeholders rather than full database adapters. There's no MongoDB or DynamoDB support.
 
 ```vague
 store customers: sql("customers_table")
-store orders: sql("orders")
+store events: nosql("events")
 ```
 
-Requires configuration:
-
-```json
-{
-  "stores": {
-    "sql": {
-      "type": "postgrest",
-      "url": "https://your-project.supabase.co/rest/v1",
-      "apiKey": "your-anon-key"
-    }
-  }
-}
-```
-
-See [PostgREST Store](../stores/postgrest) for details.
-
-## NoSQL store
-
-NoSQL database storage:
-
-```vague
-store events: nosql("events_collection")
-store logs: nosql("activity_logs")
-```
-
-Currently falls back to file storage in development. Full MongoDB/DynamoDB support planned.
+In `--dev` mode, both fall back to local JSON files. Outside dev mode, a `sql` store needs PostgREST configuration (use `postgrest` directly), and `nosql` errors loudly because it isn't implemented. For real database persistence, use the `postgrest` adapter.
 
 ## Store operations
 
@@ -118,7 +105,7 @@ The `key` option specifies which field to use as the unique identifier:
 ```vague
 store response -> users { key: .id }
 store response -> users { key: .email }
-store response -> users { key: concat(.orgId, "-", .userId) }
+store response -> users { key: .orgId + "-" + .userId }
 ```
 
 ### Upsert mode
@@ -152,7 +139,7 @@ action ProcessStoredData {
   // Iterate over store contents
   for user in users {
     // Access user data
-    get "/orders" { params: { userId: user.id } }
+    get "/orders?userId=" + user.id
   }
 
   // With filtering
@@ -211,21 +198,15 @@ action ProcessFiltered {
 }
 ```
 
-## Store aggregations
+## Checking store contents
 
-Access store metadata:
+`validate` takes a target expression, and `match` arms route on schema name or `_`:
 
 ```vague
 action CheckStore {
-  // Get count
-  validate {
+  // Fail the mission if the store is empty
+  validate users {
     assume length(users) > 0
-  }
-
-  // Check if empty
-  match users {
-    [] -> abort "No users found",
-    _ -> continue
   }
 }
 ```
@@ -260,7 +241,7 @@ action Reconcile {
 store data: file("data")
 
 // Production
-store data: sql("data_table")
+store data: postgrest("data_table")
 ```
 
 ### Always specify keys
@@ -269,7 +250,8 @@ store data: sql("data_table")
 // Good: explicit key
 store response -> users { key: .id }
 
-// Avoid: no key (uses auto-generated)
+// Avoid: no key. Without one, the store falls back to each record's
+// `id` field and throws if that's missing - nothing is auto-generated.
 store response -> users
 ```
 
@@ -314,10 +296,10 @@ store temp: file("temp")
 
 ## Exporting store data
 
-Use the CLI to export stores after execution:
+Use the CLI to export stores after execution. `--output` writes a single combined JSON file keyed by store name:
 
 ```bash
-reqon mission.vague --output ./exports/
+reqon mission.vague --output ./export.json
 ```
 
 Or programmatically:

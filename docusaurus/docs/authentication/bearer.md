@@ -65,15 +65,18 @@ export API_TOKEN="your-token"
 reqon mission.vague --auth credentials.json
 ```
 
-### In mission file
+The source block only declares the auth type. The token never goes inline in the source block; it always comes from the credentials file or an environment variable.
 
-```vague
-source API {
-  auth: bearer,
-  base: "https://api.example.com",
-  token: env("API_TOKEN")
-}
+### Auto-discovered environment variables
+
+You can skip the credentials file entirely. Reqon reads `REQON_{SOURCE}_{FIELD}`, where `{SOURCE}` is the uppercased source name. For a source named `API`:
+
+```bash
+export REQON_API_TOKEN="your-token"
+reqon mission.vague
 ```
+
+A token with no explicit type defaults to `bearer`.
 
 ## Common use cases
 
@@ -158,38 +161,7 @@ await execute(source, {
 
 ## Handling expiration
 
-Bearer tokens may expire. Handle with match:
-
-```vague
-action FetchData {
-  get "/data"
-
-  match response {
-    { error: _, code: 401 } -> abort "Token expired - please update credentials",
-    _ -> continue
-  }
-}
-```
-
-Or with token refresh:
-
-```vague
-action FetchData {
-  get "/data"
-
-  match response {
-    { error: _, code: 401 } -> jump RefreshToken then retry,
-    _ -> continue
-  }
-}
-
-action RefreshToken {
-  post "/auth/token" {
-    body: { apiKey: env("API_KEY") }
-  }
-  // Response contains new token
-}
-```
+Bearer tokens are sent as-is and are not refreshed. If a bearer token expires, the request fails with a `401` and the mission stops. To recover, update the token in your credentials file or environment variable and run again. If you need automatic refresh on `401`, use [OAuth 2.0](./oauth2.md) instead.
 
 ## Multiple tokens
 

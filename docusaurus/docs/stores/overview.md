@@ -4,16 +4,23 @@ sidebar_position: 1
 
 # Store adapters overview
 
-Store adapters provide pluggable backends for data persistence. Reqon includes several built-in adapters and supports custom implementations.
+Store adapters provide pluggable backends for data persistence. Reqon includes a
+few built-in adapters and lets you supply your own.
 
 ## Available adapters
 
-| Adapter | Description | Best For |
+| Adapter | Description | Best for |
 |---------|-------------|----------|
 | `memory` | In-memory hash map | Testing, temporary data |
-| `file` | JSON file storage | Local development |
-| `sql` | SQL database (via PostgREST) | Production with PostgreSQL |
-| `nosql` | NoSQL database | MongoDB, DynamoDB |
+| `file` | JSON file storage in `.reqon-data/` | Local development |
+| `postgrest` | PostgreSQL via PostgREST or Supabase | Production |
+| `sql` | Falls back to a file store in development mode; otherwise needs a PostgREST backend | See below |
+| `nosql` | Not implemented; falls back to a file store in development mode | See below |
+
+`sql` and `nosql` aren't standalone database adapters. With development mode on
+(`--dev`), both write to local JSON files. Without it, `sql` only works if you wire
+up a PostgREST backend for it, and `nosql` has no implementation at all. There's no
+MongoDB or DynamoDB adapter. For production storage, use `postgrest`.
 
 ## Quick start
 
@@ -22,12 +29,11 @@ mission DataSync {
   // Define stores
   store cache: memory("cache")
   store data: file("my-data")
-  store production: sql("items_table")
 
   action Process {
     get "/items"
 
-    // Write to store
+    // Write to a store
     store response -> data { key: .id }
   }
 }
@@ -35,21 +41,28 @@ mission DataSync {
 
 ## Store interface
 
-All adapters implement this interface:
+All adapters implement this interface (see [Custom adapters](./custom-adapters) for the full version):
 
 ```typescript
 interface StoreAdapter {
   // Read
-  get(key: string): Promise<Record | null>
-  list(filter?: FilterOptions): Promise<Record[]>
+  get(key: string): Promise<Record<string, unknown> | null>;
+  list(filter?: StoreFilter): Promise<Record<string, unknown>[]>;
+  count(filter?: StoreFilter): Promise<number>;
 
   // Write
-  set(key: string, value: Record): Promise<void>
-  update(key: string, partial: Record): Promise<void>
+  set(key: string, value: Record<string, unknown>): Promise<void>;
+  update(key: string, value: Partial<Record<string, unknown>>): Promise<void>;
 
   // Delete
-  delete(key: string): Promise<void>
-  clear(): Promise<void>
+  delete(key: string): Promise<void>;
+  clear(): Promise<void>;
+}
+
+interface StoreFilter {
+  where?: Record<string, unknown>; // equality match
+  limit?: number;
+  offset?: number;
 }
 ```
 
@@ -61,6 +74,10 @@ interface StoreAdapter {
 store response -> myStore
 ```
 
+Without a `key:`, the store key falls back to `record.id`. If the record has no
+`id` (or it's empty), the step throws rather than inventing a key, so re-runs don't
+silently duplicate data.
+
 ### With key
 
 ```vague
@@ -69,7 +86,7 @@ store response -> myStore { key: .id }
 
 ### Upsert mode
 
-Insert or update based on key:
+Insert or update based on the key:
 
 ```vague
 store response -> myStore { key: .id, upsert: true }
@@ -77,7 +94,8 @@ store response -> myStore { key: .id, upsert: true }
 
 ### Partial update
 
-Update only specified fields:
+Deep-merge into the existing record. `partial: true` behaves the same as `upsert`
+at runtime:
 
 ```vague
 store response -> myStore { key: .id, partial: true }
@@ -109,26 +127,7 @@ for item in myStore where .status == "pending" and .priority > 5 {
 }
 ```
 
-## Store operations
-
-### Check existence
-
-```vague
-match myStore {
-  [] -> abort "Store is empty",
-  _ -> continue
-}
-```
-
-### Count items
-
-```vague
-validate {
-  assume length(myStore) > 0
-}
-```
-
-### Cross-store operations
+### Cross-store joins
 
 ```vague
 for order in orders {
@@ -157,62 +156,29 @@ store testData: memory("test")
 ### Production
 
 ```vague
-// Use SQL/NoSQL for production
-store data: sql("items")
+// Use PostgREST for production
+store data: postgrest("items")
 ```
 
-## Environment-based selection
-
-```vague
-mission AdaptiveSync {
-  // Choose adapter based on environment
-  store data: match env("NODE_ENV") {
-    "production" => sql("items"),
-    "staging" => sql("items_staging"),
-    _ => file("items-dev")
-  }
-}
-```
-
-## Store configuration
-
-### Via CLI
-
-```bash
-reqon mission.vague --store-config ./stores.json
-```
-
-### Configuration file
-
-```json
-{
-  "sql": {
-    "type": "postgrest",
-    "url": "https://project.supabase.co/rest/v1",
-    "apiKey": "your-anon-key"
-  },
-  "nosql": {
-    "type": "mongodb",
-    "url": "mongodb://localhost:27017",
-    "database": "reqon"
-  }
-}
-```
+A `postgrest` store needs connection options that aren't expressed in the DSL. See
+[PostgREST store](./postgrest) for how to wire them up.
 
 ## Exporting data
 
-### Via CLI
+### Via the CLI
 
 ```bash
-reqon mission.vague --output ./exports/
+reqon mission.reqon --output ./output.json
 ```
 
-Creates JSON files:
-```
-exports/
-├── customers.json
-├── orders.json
-└── products.json
+This writes a single JSON file containing every store's contents, keyed by store name:
+
+```json
+{
+  "customers": [ /* ... */ ],
+  "orders": [ /* ... */ ],
+  "products": [ /* ... */ ]
+}
 ```
 
 ### Programmatically
@@ -228,6 +194,26 @@ for (const [name, store] of result.stores) {
 }
 ```
 
+## Custom and production stores
+
+There's no `--store-config` flag. To use a PostgREST store or a custom backend, supply
+a configured adapter at runtime through the `stores` option, keyed by the store name
+from the mission:
+
+```typescript
+import { createStore, fromFile } from 'reqon';
+
+const data = createStore({
+  type: 'postgrest',
+  name: 'items',
+  postgrest: { url: 'https://project.supabase.co/rest/v1', apiKey: 'your-anon-key' },
+});
+
+await fromFile('mission.reqon', { stores: { data } });
+```
+
+See [PostgREST store](./postgrest) and [Custom adapters](./custom-adapters) for details.
+
 ## Best practices
 
 ### Use descriptive names
@@ -242,13 +228,13 @@ store data1: file("data1")
 store temp: file("temp")
 ```
 
-### Always specify keys
+### Provide stable keys
 
 ```vague
 // Good: explicit key
 store response -> items { key: .id }
 
-// Risky: auto-generated keys
+// Relies on record.id, and throws if it's missing
 store response -> items
 ```
 
@@ -259,16 +245,16 @@ store response -> items
 store response -> items { key: .id, upsert: true }
 ```
 
-### Match adapter to use case
+### Match the adapter to the use case
 
-| Use Case | Recommended |
+| Use case | Recommended |
 |----------|-------------|
 | Unit tests | `memory` |
 | Local dev | `file` |
 | CI/CD | `file` or `memory` |
-| Staging | `sql` (separate DB) |
-| Production | `sql` or `nosql` |
+| Production | `postgrest` |
 
 ## Custom adapters
 
-See [Custom Adapters](./custom-adapters) for implementing your own store adapter.
+See [Custom adapters](./custom-adapters) for implementing your own store adapter.
+</content>

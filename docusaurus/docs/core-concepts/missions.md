@@ -59,7 +59,7 @@ Define where data is persisted:
 mission DataSync {
   store customers: file("customers")
   store orders: memory("orders")
-  store products: sql("products_table")
+  store products: postgrest("products")
 }
 ```
 
@@ -98,7 +98,7 @@ mission DataSync {
 
   action ProcessOrders {
     for customer in customers {
-      get "/orders" { params: { customerId: customer.id } }
+      get "/orders?customerId=" + customer.id
       store response -> orders { key: .id }
     }
   }
@@ -173,23 +173,38 @@ See [Scheduling](../category/scheduling) for more details.
 
 ## Mission options
 
-Missions can include additional options:
+A mission can carry a few top-level settings alongside its sources, stores, schemas, actions, and pipeline:
+
+- `schedule:` — run the mission automatically (see [Scheduling](../category/scheduling)).
+- `checkpoint:` — durable execution, either `afterStep` or `onFailure`.
+- `trace:` — time-travel debugging, either `full` or `minimal`.
 
 ```vague
 mission RobustSync {
   // Scheduling
   schedule: cron "0 */6 * * *"
 
-  // Concurrency control
-  maxConcurrency: 5
+  // Durable execution: checkpoint after each step
+  checkpoint: afterStep
 
-  // Skip if already running
-  skipIfRunning: true
+  // Record a full trace for time-travel debugging
+  trace: full
 
-  // Retry on failure
-  retryOnFailure: {
-    maxAttempts: 3,
-    backoff: exponential
+  // ... sources, stores, actions ...
+}
+```
+
+Concurrency control, skip-if-running, and retry-on-failure are not mission-level options. They live inside the `schedule:` block:
+
+```vague
+mission RobustSync {
+  schedule: cron "0 */6 * * *" {
+    maxConcurrency: 5,
+    skipIfRunning: true,
+    retry: {
+      maxRetries: 3,
+      delaySeconds: 60
+    }
   }
 
   // ... sources, stores, actions ...

@@ -99,13 +99,13 @@ wait {
 
 ### Retry on timeout
 
-Retry the entire action if the webhook times out:
+Retry the wait if the webhook times out. The option key is `retry`:
 
 ```vague
 wait {
   path: "/webhooks/callback",
   timeout: 30000,
-  retryOnTimeout: {
+  retry: {
     maxAttempts: 3,
     backoff: exponential,
     initialDelay: 1000
@@ -164,6 +164,16 @@ mission PaymentProcessing {
   store payments: file("payments")
   store webhookEvents: file("webhook-events")
 
+  schema PaymentSuccess {
+    type: string,
+    paymentId: string
+  }
+
+  schema PaymentFailed {
+    type: string,
+    error: string
+  }
+
   action ProcessPayment {
     // Create a payment intent
     post "/payment-intents" {
@@ -177,14 +187,14 @@ mission PaymentProcessing {
 
     // Wait for payment confirmation via webhook
     wait {
-      path: concat("/webhooks/payments/", paymentId),
+      path: "/webhooks/payments/{paymentId}",
       timeout: 300000,
       eventFilter: .type == "payment.completed" or .type == "payment.failed",
       storage: {
         target: webhookEvents,
         key: .id
       },
-      retryOnTimeout: {
+      retry: {
         maxAttempts: 2,
         backoff: exponential,
         initialDelay: 5000
@@ -194,12 +204,13 @@ mission PaymentProcessing {
     // Handle the webhook response
     match response {
       PaymentSuccess -> {
-        store { id: paymentId, status: "completed", ...response } -> payments { key: .id }
-      }
+        store { id: paymentId, status: "completed" } -> payments { key: .id }
+      },
       PaymentFailed -> {
         store { id: paymentId, status: "failed", error: response.error } -> payments { key: .id }
         abort "Payment failed"
-      }
+      },
+      _ -> abort "Unexpected webhook payload"
     }
   }
 
@@ -273,4 +284,4 @@ action CollectBatchEvents {
 - The webhook server must be running (`--webhook` flag) for wait steps to work
 - In production, use a public URL (`--webhook-url`) or a tunnel service like ngrok
 - Webhook events are stored in memory during execution; use `storage` for persistence
-- If a wait times out and no `retryOnTimeout` is configured, execution fails
+- If a wait times out and no `retry` is configured, execution fails

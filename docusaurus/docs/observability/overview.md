@@ -39,7 +39,7 @@ Reqon provides comprehensive observability features for monitoring and debugging
 ### Basic logging
 
 ```typescript
-import { execute, createStructuredLogger, ConsoleOutput } from 'reqon';
+import { execute, createStructuredLogger } from 'reqon';
 
 const logger = createStructuredLogger({
   prefix: 'MyApp',
@@ -48,23 +48,25 @@ const logger = createStructuredLogger({
 });
 
 const result = await execute(source, {
-  verbose: true
+  logger
 });
 ```
 
 ### Event listeners
 
+`createEmitter` takes an execution ID and a mission name. Each handler receives an event whose data lives on `event.payload`:
+
 ```typescript
 import { execute, createEmitter } from 'reqon';
 
-const emitter = createEmitter();
+const emitter = createEmitter('my-run', 'SyncCustomers');
 
 emitter.on('fetch.complete', (event) => {
-  console.log(`Fetched ${event.url} in ${event.duration}ms`);
+  console.log(`Fetched ${event.payload.path}: ${event.payload.recordCount} records`);
 });
 
 emitter.on('data.store', (event) => {
-  console.log(`Stored ${event.count} items to ${event.store}`);
+  console.log(`Stored ${event.payload.itemCount} items to ${event.payload.storeName}`);
 });
 
 const result = await execute(source, {
@@ -74,18 +76,21 @@ const result = await execute(source, {
 
 ### OpenTelemetry export
 
+`createOTelListener` takes an OTLP config and returns a `handler` you subscribe to the emitter, plus a `flush`:
+
 ```typescript
-import { execute, OTLPExporter, createOTelListener } from 'reqon';
+import { execute, createEmitter, createOTelListener } from 'reqon';
 
-const exporter = new OTLPExporter({
-  endpoint: 'http://localhost:4318/v1/traces'
+const otel = createOTelListener({
+  endpoint: 'http://localhost:4318/v1/traces',
+  serviceName: 'reqon-sync'
 });
 
-const otelListener = createOTelListener(exporter);
+const emitter = createEmitter('my-run', 'SyncCustomers');
+emitter.onAll(otel.handler);
 
-const result = await execute(source, {
-  eventEmitter: otelListener
-});
+await execute(source, { eventEmitter: emitter });
+await otel.flush();
 ```
 
 ## Event types
@@ -94,16 +99,16 @@ Reqon emits events for every significant operation:
 
 | Category | Events |
 |----------|--------|
-| **Mission** | `mission.start`, `mission.complete`, `mission.failed` |
+| **Mission** | `mission.start`, `mission.complete`, `mission.failed`, `mission.paused` |
 | **Stage** | `stage.start`, `stage.complete` |
 | **Step** | `step.start`, `step.complete` |
-| **HTTP** | `fetch.start`, `fetch.complete`, `fetch.retry`, `fetch.error` |
+| **HTTP** | `fetch.start`, `fetch.complete`, `fetch.retry`, `fetch.error`, `fetch.heartbeat` |
 | **Data** | `data.transform`, `data.validate`, `data.store` |
-| **Loops** | `loop.start`, `loop.iteration`, `loop.complete` |
+| **Loops** | `loop.start`, `loop.iteration`, `loop.complete`, `loop.heartbeat` |
 | **Match** | `match.attempt`, `match.result` |
 | **Webhook** | `webhook.register`, `webhook.event`, `webhook.complete` |
 | **State** | `checkpoint.save`, `checkpoint.resume`, `sync.checkpoint` |
-| **Resilience** | `ratelimit.hit`, `circuitbreaker.state` |
+| **Resilience** | `ratelimit.wait`, `ratelimit.resume`, `circuit.open`, `circuit.halfopen`, `circuit.close` |
 
 ## Output formats
 
@@ -145,16 +150,10 @@ Export spans to observability platforms:
 ### Debugging pipelines
 
 ```typescript
-const emitter = createEmitter();
+const emitter = createEmitter('debug-run', 'SyncCustomers');
 
 emitter.on('fetch.error', (event) => {
-  console.error(`Failed: ${event.url}`, event.error);
-});
-
-emitter.on('data.validate', (event) => {
-  if (!event.valid) {
-    console.warn(`Validation failed: ${event.errors.join(', ')}`);
-  }
+  console.error(`Failed: ${event.payload.path}`, event.payload.error);
 });
 ```
 
@@ -163,13 +162,13 @@ emitter.on('data.validate', (event) => {
 ```typescript
 const metrics = {
   fetchCount: 0,
-  totalDuration: 0,
+  recordsFetched: 0,
   errors: 0
 };
 
 emitter.on('fetch.complete', (event) => {
   metrics.fetchCount++;
-  metrics.totalDuration += event.duration;
+  metrics.recordsFetched += event.payload.recordCount;
 });
 
 emitter.on('fetch.error', () => {
@@ -183,8 +182,8 @@ emitter.on('fetch.error', () => {
 emitter.on('data.store', (event) => {
   auditLog.write({
     action: 'store',
-    store: event.store,
-    count: event.count,
+    store: event.payload.storeName,
+    count: event.payload.itemCount,
     timestamp: new Date()
   });
 });
@@ -201,13 +200,7 @@ emitter.on('data.store', (event) => {
 | `warn` | Warning conditions |
 | `error` | Error conditions |
 
-### Environment variables
-
-| Variable | Description |
-|----------|-------------|
-| `REQON_LOG_LEVEL` | Minimum log level |
-| `REQON_OTEL_ENDPOINT` | OTLP exporter endpoint |
-| `REQON_OTEL_SERVICE` | Service name for traces |
+Set the log level and outputs when you create the logger, and configure the OTLP endpoint when you create the listener. Reqon doesn't read observability settings from environment variables.
 
 ## Next steps
 

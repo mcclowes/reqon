@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # HTTP Requests
 
-Reqon provides powerful HTTP request handling with built-in support for pagination, retries, rate limiting, and more.
+Reqon handles HTTP requests with built-in support for pagination, retries, rate limiting, and incremental sync.
 
 ## Request methods
 
@@ -27,35 +27,22 @@ delete "/users/123"
 
 ## Request options
 
+A fetch step accepts only these options: `source`, `body`, `paginate`, `until`, `retry`, `since`, and `backfill`. There's no `params`, `headers`, `timeout`, or `method` option on a request.
+
 ### Query parameters
 
-Add query parameters to requests:
+There's no `params` option. Put query parameters directly in the path string:
 
 ```vague
-get "/users" {
-  params: {
-    limit: 100,
-    offset: 0,
-    status: "active",
-    sort: "created_at",
-    order: "desc"
-  }
-}
+get "/users?limit=100&offset=0&status=active&sort=created_at&order=desc"
 ```
-
-Generates: `GET /users?limit=100&offset=0&status=active&sort=created_at&order=desc`
 
 ### Dynamic parameters
 
-Use expressions in parameters:
+Build the path with an expression, for example with `concat`:
 
 ```vague
-get "/users" {
-  params: {
-    since: formatDate(lastSync, "YYYY-MM-DD"),
-    limit: env("PAGE_SIZE") or 100
-  }
-}
+get concat("/users?status=active&limit=", pageSize)
 ```
 
 ### Request body
@@ -93,14 +80,15 @@ for user in usersToCreate {
 
 ### Custom headers
 
-Override or add headers:
+Per-request headers aren't supported on a fetch step. Declare headers on the source instead, where they apply to every request:
 
 ```vague
-get "/data" {
+source API {
+  auth: bearer,
+  base: "https://api.example.com",
   headers: {
     "Accept": "application/json",
-    "X-API-Version": "2.0",
-    "X-Request-ID": uuid()
+    "X-API-Version": "2.0"
   }
 }
 ```
@@ -163,7 +151,7 @@ mission Example {
 
 ### Named source
 
-Specify source explicitly:
+Specify the source explicitly with the `source` option:
 
 ```vague
 mission MultiSource {
@@ -171,10 +159,10 @@ mission MultiSource {
   source Backup { auth: bearer, base: "https://backup.api.com" }
 
   action FetchFromBoth {
-    get Primary "/users"
+    get "/users" { source: Primary }
     store response -> primaryUsers { key: .id }
 
-    get Backup "/users"
+    get "/users" { source: Backup }
     store response -> backupUsers { key: .id }
   }
 }
@@ -201,21 +189,14 @@ action FetchDetails {
 
 ## Request timeouts
 
-Configure at source level:
-
-```vague
-source SlowAPI {
-  auth: bearer,
-  base: "https://slow.api.com",
-  timeout: 60000  // 60 seconds
-}
-```
-
-Or per-request (future feature):
+There's no `timeout` option on a source or a standalone `timeout` key on a request. Set a per-attempt request timeout inside the `retry` block (milliseconds):
 
 ```vague
 get "/slow-endpoint" {
-  timeout: 120000  // 2 minutes
+  retry: {
+    maxAttempts: 3,
+    timeout: 120000  // Abort each attempt after 2 minutes
+  }
 }
 ```
 
@@ -230,7 +211,7 @@ action SafeFetch {
   match response {
     { error: _, code: 401 } -> jump RefreshAuth then retry,
     { error: _, code: 404 } -> skip,
-    { error: _, code: 429 } -> retry { delay: 60000 },
+    { error: _, code: 429 } -> retry { initialDelay: 60000 },
     { error: e } -> abort e,
     _ -> store response -> users { key: .id }
   }
@@ -267,7 +248,7 @@ For APIs that support batch operations:
 ```vague
 action BatchFetch {
   // Collect IDs
-  get "/items" { params: { status: "pending" } }
+  get "/items?status=pending"
 
   // Batch request
   post "/items/batch" {
@@ -290,7 +271,7 @@ match response {
   { error: _, code: 401 } -> abort "Authentication failed",
   { error: _, code: 403 } -> abort "Permission denied",
   { error: _, code: 404 } -> abort "Resource not found",
-  { error: _, code: 429 } -> retry { delay: 60000 },
+  { error: _, code: 429 } -> retry { initialDelay: 60000 },
   { error: _, code: 500 } -> retry { maxAttempts: 3 },
   { error: e } -> abort e,
   _ -> continue

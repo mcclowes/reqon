@@ -18,7 +18,7 @@ Reqon supports scheduling missions to run automatically at specified intervals o
 
 ```vague
 mission DailySync {
-  schedule: every 1 day
+  schedule: every 1 days
 
   source API { auth: bearer, base: "https://api.example.com" }
   store data: file("data")
@@ -60,10 +60,10 @@ schedule: every 15 minutes
 schedule: every 6 hours
 
 // Every N days
-schedule: every 1 day
+schedule: every 1 days
 
 // Every N weeks
-schedule: every 1 week
+schedule: every 1 weeks
 ```
 
 ## Cron scheduling
@@ -99,23 +99,30 @@ schedule: at "2024-01-20T09:00:00Z"
 
 ## Schedule options
 
+Options live inside an optional `{ }` block attached to the schedule. They aren't mission-level fields.
+
 ```vague
 mission ConfiguredSync {
-  schedule: every 1 hour
+  schedule: every 1 hours {
+    // Timezone for cron and one-time schedules
+    timezone: "UTC"
 
-  // Concurrency control
-  maxConcurrency: 5
+    // Concurrency control
+    maxConcurrency: 5
 
-  // Skip if already running
-  skipIfRunning: true
+    // Skip if a previous run is still going
+    skipIfRunning: true
 
-  // Retry on failure
-  retryOnFailure: {
-    maxAttempts: 3,
-    backoff: exponential
+    // Retry the whole mission if a run fails
+    retry: {
+      maxRetries: 3,
+      delaySeconds: 60
+    }
   }
 }
 ```
+
+The retry block takes `maxRetries` (default 3) and `delaySeconds` (default 60). There's no backoff strategy on schedule retries; the delay between attempts is fixed.
 
 ## Multiple missions
 
@@ -128,7 +135,7 @@ mission FrequentSync {
 }
 
 mission DailyReport {
-  schedule: every 1 day
+  schedule: every 1 days
   // ...
 }
 
@@ -152,19 +159,6 @@ action IncrementalSync {
 }
 ```
 
-### Scheduled vs manual
-
-Detect if running on schedule:
-
-```vague
-action FlexibleSync {
-  match env("REQON_SCHEDULED") {
-    "true" -> get "/data" { since: lastSync },
-    _ -> get "/data"  // Full sync for manual runs
-  }
-}
-```
-
 ## Best practices
 
 ### Use incremental sync
@@ -184,18 +178,18 @@ mission EfficientSync {
 
 ```vague
 mission RobustSync {
-  schedule: every 1 hour
-
-  retryOnFailure: {
-    maxAttempts: 3,
-    backoff: exponential
+  schedule: every 1 hours {
+    retry: {
+      maxRetries: 3,
+      delaySeconds: 60
+    }
   }
 
   action Sync {
     get "/data"
 
     match response {
-      { error: _ } -> abort "Sync failed",
+      _ where response.error -> abort "Sync failed",
       _ -> store response -> data { key: .id }
     }
   }
@@ -206,7 +200,7 @@ mission RobustSync {
 
 ```vague
 mission MonitoredSync {
-  schedule: every 1 hour
+  schedule: every 1 hours
 
   store syncLog: file("sync-log")
 

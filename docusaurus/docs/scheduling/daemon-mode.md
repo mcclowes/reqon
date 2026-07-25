@@ -26,8 +26,12 @@ reqon ./missions/ --daemon [options]
 
 Options:
   --auth <file>        Credentials file
+  --env <file>         Path to .env file
   --verbose            Enable detailed logging
-  --check-interval     How often to check schedules (default: 1000ms)
+  --dry-run            Run without making actual HTTP requests
+  --once               Run every scheduled mission once, then exit
+  --control            Enable the control server for status and pause/resume
+  --control-port <n>   Port for the control server (default: 3001)
 ```
 
 ## Example setup
@@ -135,7 +139,7 @@ services:
     volumes:
       - ./missions:/app/missions
       - ./credentials.json:/app/credentials.json
-      - reqon-data:/app/.vague-data
+      - reqon-data:/app/.reqon-data
     environment:
       - NODE_ENV=production
     restart: unless-stopped
@@ -163,26 +167,28 @@ systemctl stop reqon
 
 ## Health checks
 
-### Status endpoint
+### Control server
 
-Enable HTTP health endpoint:
-
-```bash
-reqon ./missions/ --daemon --health-port 8080
-```
-
-Check health:
+Enable the control server to expose status and health endpoints:
 
 ```bash
-curl http://localhost:8080/health
-# {"status":"ok","uptime":3600,"missionsLoaded":3}
+reqon ./missions/ --daemon --control --control-port 3001
 ```
+
+The server exposes:
+
+```bash
+curl http://localhost:3001/health   # Health check
+curl http://localhost:3001/status   # Current execution state and progress
+```
+
+It also accepts `POST /pause` to request a graceful pause at the next safe point and `POST /resume` to clear that request.
 
 ### File-based health
 
 ```vague
 mission HealthCheck {
-  schedule: every 1 minute
+  schedule: every 1 minutes
 
   action Check {
     store { status: "ok", timestamp: now() } -> health
@@ -194,7 +200,7 @@ Monitor the health store file.
 
 ## Logging
 
-### Log levels
+The daemon logs to stdout. Use `--verbose` for detailed output; there's no log-level or log-format environment variable.
 
 ```bash
 # Default logging
@@ -202,69 +208,23 @@ reqon ./missions/ --daemon
 
 # Verbose logging
 reqon ./missions/ --daemon --verbose
-
-# Environment variable
-REQON_LOG_LEVEL=debug reqon ./missions/ --daemon
 ```
 
 ### Log output
 
 ```
-[2024-01-20 09:00:00] [INFO] Starting Reqon daemon
-[2024-01-20 09:00:00] [INFO] Loaded 3 missions
-[2024-01-20 09:00:00] [INFO] SyncCustomers: Next run at 09:15:00
-[2024-01-20 09:00:00] [INFO] SyncOrders: Next run at 09:05:00
-[2024-01-20 09:00:00] [INFO] DailyReport: Next run at 2024-01-21 00:00:00
-[2024-01-20 09:05:00] [INFO] SyncOrders: Starting run
-[2024-01-20 09:05:02] [INFO] SyncOrders: Completed (2.1s)
-```
+Found 3 scheduled mission(s)
 
-### Structured logging
+Scheduled jobs:
+  - SyncCustomers: every 15 minutes
+    Next run: 2024-01-20T09:15:00.000Z
+  - SyncOrders: cron "*/5 * * * *"
+    Next run: 2024-01-20T09:05:00.000Z
 
-```bash
-REQON_LOG_FORMAT=json reqon ./missions/ --daemon
-```
+Starting scheduler daemon (Ctrl+C to stop)...
 
-```json
-{"timestamp":"2024-01-20T09:00:00Z","level":"info","message":"Starting run","mission":"SyncCustomers"}
-```
-
-## Monitoring
-
-### Metrics
-
-Export metrics with `--metrics-port`:
-
-```bash
-reqon ./missions/ --daemon --metrics-port 9090
-```
-
-Prometheus format:
-
-```
-# HELP reqon_mission_runs_total Total mission runs
-reqon_mission_runs_total{mission="SyncCustomers",status="success"} 142
-reqon_mission_runs_total{mission="SyncCustomers",status="failure"} 3
-
-# HELP reqon_mission_duration_seconds Mission run duration
-reqon_mission_duration_seconds{mission="SyncCustomers",quantile="0.5"} 2.1
-```
-
-### Alerting
-
-Create alerting rules:
-
-```yaml
-groups:
-  - name: reqon
-    rules:
-      - alert: ReqonMissionFailing
-        expr: rate(reqon_mission_runs_total{status="failure"}[5m]) > 0.1
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Mission {{ $labels.mission }} is failing"
+[2024-01-20 09:05:00] Starting: SyncOrders
+[2024-01-20 09:05:02] Completed: SyncOrders (2100ms)
 ```
 
 ## Best practices
@@ -288,19 +248,19 @@ sudo -u reqon reqon ./missions/ --daemon
 
 ### Persistent storage
 
-Ensure `.vague-data` is on persistent storage:
+Ensure `.reqon-data` is on persistent storage:
 
 ```yaml
 volumes:
-  - /var/lib/reqon:/app/.vague-data
+  - /var/lib/reqon:/app/.reqon-data
 ```
 
 ### Health monitoring
 
-Always enable health checks:
+Enable the control server so you can poll status and health:
 
 ```bash
-reqon ./missions/ --daemon --health-port 8080
+reqon ./missions/ --daemon --control --control-port 3001
 ```
 
 ### Log rotation

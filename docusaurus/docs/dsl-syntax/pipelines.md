@@ -133,7 +133,7 @@ mission DependentActions {
   action FetchOrders {
     // Can access customers store populated by previous action
     for customer in customers {
-      get concat("/customers/", customer.id, "/orders")
+      get "/customers/{customer.id}/orders"
       store response -> orders { key: .id }
     }
   }
@@ -152,12 +152,12 @@ mission ParallelIsolation {
 
   action ProcessA {
     get "/data-a"
-    store response -> results { key: concat("a-", .id) }
+    store response -> results { key: "a-" + .id }
   }
 
   action ProcessB {
     get "/data-b"
-    store response -> results { key: concat("b-", .id) }
+    store response -> results { key: "b-" + .id }
   }
 
   // Both write to same store, but with different key prefixes
@@ -186,25 +186,18 @@ run [FetchA, FetchB, FetchC] then Merge
 // Merge runs but FetchB data is missing
 ```
 
-Handle partial failures:
+## Conditional stages
+
+Each stage can carry an `if` condition. The stage runs only when the condition is true:
 
 ```vague
-action Merge {
-  // Check which data sources succeeded
-  match {
-    length(dataA) > 0 and length(dataB) > 0 -> {
-      // Full merge
-    },
-    length(dataA) > 0 -> {
-      // Partial merge with just A
-    },
-    length(dataB) > 0 -> {
-      // Partial merge with just B
-    },
-    _ -> abort "No data available"
-  }
-}
+run Sync if env("FULL_SYNC") == "true"
+
+// Works for parallel stages too
+run [ExportWarehouse, ExportAnalytics] if env("EXPORT") == "true"
 ```
+
+Conditions are mission-level. You can't put `run` inside an action or a match arm; the pipeline is declared once at the end of the mission.
 
 ## Common pipeline patterns
 
@@ -245,14 +238,14 @@ mission FanOutFanIn {
 
   action EnrichA {
     for item in items {
-      get concat("/enrichA/", item.id)
+      get "/enrichA/{item.id}"
       store response -> enrichA { key: item.id }
     }
   }
 
   action EnrichB {
     for item in items {
-      get concat("/enrichB/", item.id)
+      get "/enrichB/{item.id}"
       store response -> enrichB { key: item.id }
     }
   }
@@ -260,7 +253,7 @@ mission FanOutFanIn {
   action Combine {
     for item in items {
       map item -> Enriched {
-        ...item,
+        id: item.id,
         dataA: enrichA[item.id],
         dataB: enrichB[item.id]
       }
@@ -274,12 +267,11 @@ mission FanOutFanIn {
 
 ### Conditional pipeline
 
+Use `if` conditions on stages to choose a path. The condition can read environment variables and data already in context:
+
 ```vague
 mission ConditionalPipeline {
-  action CheckStatus {
-    get "/status"
-    store response -> status
-  }
+  store data: file("data")
 
   action FullSync {
     get "/all-data"
@@ -291,15 +283,8 @@ mission ConditionalPipeline {
     store response -> data { key: .id, upsert: true }
   }
 
-  action Process {
-    // Determine which sync to run based on status
-    match status {
-      { needsFullSync: true } -> run FullSync,
-      _ -> run IncrementalSync
-    }
-  }
-
-  run CheckStatus then Process
+  run FullSync if env("FULL_SYNC") == "true"
+    then IncrementalSync if env("FULL_SYNC") != "true"
 }
 ```
 
@@ -307,13 +292,19 @@ mission ConditionalPipeline {
 
 ```vague
 mission RetryPipeline {
+  store data: file("data")
+
+  schema ErrorResponse {
+    error: string
+  }
+
   action FetchWithRetry {
     get "/unreliable-endpoint" {
       retry: { maxAttempts: 3, backoff: exponential }
     }
 
     match response {
-      { error: _ } -> abort "Failed after retries",
+      ErrorResponse -> abort "Failed after retries",
       _ -> store response -> data { key: .id }
     }
   }
@@ -363,7 +354,7 @@ mission ExplicitDependencies {
   action FetchChildren {
     // Explicitly depends on parents
     for parent in parents {
-      get concat("/parents/", parent.id, "/children")
+      get "/parents/{parent.id}/children"
       store response -> children { key: .id }
     }
   }

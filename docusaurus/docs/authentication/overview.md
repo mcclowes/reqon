@@ -14,9 +14,15 @@ Reqon supports multiple authentication methods for connecting to APIs. Authentic
 |------|-------------|----------|
 | `none` | No authentication | Public APIs |
 | `bearer` | Bearer token | Most REST APIs |
-| `basic` | HTTP Basic Auth | Legacy systems |
-| `api_key` | API key in header/query | Many SaaS APIs |
+| `basic` | HTTP basic auth | Legacy systems |
+| `api_key` | API key in a header | Many SaaS APIs |
 | `oauth2` | OAuth 2.0 with refresh | Enterprise APIs |
+
+:::warning Runtime support
+All five types parse, but only `bearer` and `oauth2` actually attach credentials to requests today. `basic` and `api_key` parse without error, but no auth is applied at runtime, so requests go out unauthenticated. See the [basic](./basic.md) and [api key](./api-key.md) pages for details.
+:::
+
+The `auth:` value in a `source` block is only the type. Credentials are never written inline in the source block. They come from a `--auth <file>` JSON file keyed by source name, or from `REQON_{SOURCE}_{FIELD}` environment variables.
 
 ## Quick start
 
@@ -69,15 +75,19 @@ Reference in credentials:
 }
 ```
 
-Or in mission file:
+The `${VAR}` reference also supports a default with `${VAR:-fallback}`. A reference with no value and no default throws rather than sending an empty credential.
 
-```vague
-source API {
-  auth: bearer,
-  base: "https://api.example.com",
-  token: env("API_TOKEN")
-}
+### Auto-discovered environment variables
+
+You don't need a credentials file at all. Reqon looks for variables named `REQON_{SOURCE}_{FIELD}`, where `{SOURCE}` is the uppercased source name. For a source named `API`:
+
+```bash
+export REQON_API_TYPE="bearer"
+export REQON_API_TOKEN="your-token"
+reqon mission.vague
 ```
+
+Recognized fields are `TYPE`, `TOKEN`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `TOKEN_ENDPOINT`, `CLIENT_ID`, `CLIENT_SECRET`, `API_KEY`, `HEADER_NAME`, `USERNAME`, and `PASSWORD`. If a token is set without a type, the type defaults to `bearer`.
 
 ### Programmatic
 
@@ -127,7 +137,7 @@ Credentials file:
     "clientSecret": "...",
     "accessToken": "...",
     "refreshToken": "...",
-    "tokenUrl": "https://identity.xero.com/connect/token"
+    "tokenEndpoint": "https://identity.xero.com/connect/token"
   },
   "Stripe": {
     "type": "bearer",
@@ -143,9 +153,7 @@ Credentials file:
 
 ## Refreshing tokens
 
-### OAuth 2.0 automatic refresh
-
-Reqon automatically refreshes OAuth2 tokens when they expire:
+For `oauth2` sources, Reqon refreshes the access token when a request comes back with a `401`. It posts to `tokenEndpoint` with the refresh token, then retries the request once with the new token:
 
 ```json
 {
@@ -153,33 +161,16 @@ Reqon automatically refreshes OAuth2 tokens when they expire:
     "type": "oauth2",
     "accessToken": "current-token",
     "refreshToken": "refresh-token",
-    "tokenUrl": "https://identity.xero.com/connect/token",
-    "expiresAt": "2024-01-20T10:30:00Z"
+    "tokenEndpoint": "https://identity.xero.com/connect/token",
+    "clientId": "...",
+    "clientSecret": "..."
   }
 }
 ```
 
-### Manual refresh with jump
+The refreshed token is held in memory for the rest of the run. It is not written back to the credentials file, so the next run starts from the original `accessToken` again.
 
-For non-standard token refresh:
-
-```vague
-action FetchData {
-  get "/data"
-
-  match response {
-    { error: _, code: 401 } -> jump RefreshToken then retry,
-    _ -> continue
-  }
-}
-
-action RefreshToken {
-  post "/auth/refresh" {
-    body: { refreshToken: env("REFRESH_TOKEN") }
-  }
-  // Response updates auth context
-}
-```
+Bearer tokens are not refreshed. If a bearer token expires, the request fails and you'll need to update the credentials.
 
 ## Security best practices
 
@@ -209,37 +200,28 @@ reqon mission.vague
 
 For OAuth2, ensure refresh tokens are valid.
 
-:::tip Use Environment Variables
+:::tip Use environment variables
 Store credentials in environment variables for local development and use secret management services (AWS Secrets Manager, HashiCorp Vault) in production.
 :::
 
 ### Use least privilege
 
-Request only necessary scopes:
-
-```json
-{
-  "API": {
-    "type": "oauth2",
-    "scopes": ["read:users", "read:orders"]
-  }
-}
-```
+Request only the scopes you need when you generate the token with the provider. Reqon sends whatever access token you give it, so scoping happens on the provider's side.
 
 ## Troubleshooting
 
-### "Authentication Failed" Error
+### Authentication failed
 
-1. Check credentials file path
-2. Verify token is valid
-3. Check source name matches credentials
+1. Check the credentials file path.
+2. Verify the token is valid.
+3. Check the source name matches the credentials key.
 
 ### Token expired
 
 For OAuth2, ensure:
-- `refreshToken` is present
-- `tokenUrl` is correct
-- Token hasn't been revoked
+- `refreshToken` is present.
+- `tokenEndpoint` is correct.
+- The token hasn't been revoked.
 
 ### Wrong auth type
 

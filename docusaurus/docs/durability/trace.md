@@ -114,7 +114,7 @@ Step 2: store response -> data
 ```typescript
 import { TraceReplayer, FileTraceStore } from 'reqon';
 
-const store = new FileTraceStore('.vague-data/traces');
+const store = new FileTraceStore('.reqon-data/traces');
 const replayer = new TraceReplayer(store);
 
 // Load trace by execution ID
@@ -181,7 +181,7 @@ for (const event of timeline) {
 ### File storage (default)
 
 ```
-.vague-data/traces/
+.reqon-data/traces/
 ├── exec-abc123/
 │   ├── meta.json          # Trace metadata
 │   └── snapshots/
@@ -235,10 +235,10 @@ const timeline = replayer.getTimeline();
 const failure = timeline.find(e => e.type === 'error');
 
 // Go to the step before the failure
-await replayer.goToStep(failure.snapshotIndex - 1);
+const result = await replayer.goToStep(failure.snapshotIndex - 1);
 
 // Inspect the data that caused the failure
-console.log(replayer.current().variables.item);
+console.log(result.snapshot.variables.item);
 ```
 
 ### Understanding data transformations
@@ -252,10 +252,7 @@ mission TransformPipeline {
       map item -> CleanedItem {
         name: upper(.name),
         amount: .price * .quantity,
-        status: match .state {
-          "A" => "active",
-          _ => "inactive"
-        }
+        state: .state
       }
     }
   }
@@ -271,13 +268,15 @@ const replayer = new TraceReplayer(store);
 await replayer.loadTrace('exec-123');
 
 // Find map steps
-while (await replayer.next()) {
-  const snap = replayer.current();
+let step = await replayer.next();
+while (step) {
+  const snap = step.snapshot;
   if (snap.stepType === 'map') {
     const diff = replayer.compareSnapshots(snap.index - 1, snap.index);
     console.log('Input:', diff.variableChanges.find(v => v.name === 'item')?.oldValue);
     console.log('Output:', diff.variableChanges.find(v => v.name === 'response')?.newValue);
   }
+  step = await replayer.next();
 }
 ```
 
@@ -349,10 +348,10 @@ const cloned = safeClone(obj);
 
 For production with many executions:
 
+`FileTraceStore` takes a directory path:
+
 ```typescript
-// Set up trace cleanup
-const store = new FileTraceStore('.vague-data/traces', {
-  maxTraces: 100,        // Keep last 100 traces
-  maxAge: '7d'           // Delete traces older than 7 days
-});
+const store = new FileTraceStore('.reqon-data/traces');
 ```
+
+It doesn't prune old traces automatically. For production with many executions, delete old trace directories under `.reqon-data/traces/` yourself, or use `MemoryTraceStore` for ephemeral runs.

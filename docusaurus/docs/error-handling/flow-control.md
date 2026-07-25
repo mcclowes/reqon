@@ -4,18 +4,22 @@ sidebar_position: 1
 
 # Flow control directives
 
-Flow control directives determine what happens after pattern matching. They provide fine-grained control over error handling and execution flow.
+Flow control directives appear on the right-hand side of a `match` arm and determine what happens next. They give you control over error handling and execution flow.
+
+A `match` arm's left side is a schema name, `_` (the wildcard), or either of those with a `where` guard. You can't match on object shapes or literal values, so flow control branches on the matched value against named schemas and guard conditions, not on raw patterns.
+
+`match` works on the matched value, which for `match response` is the successful response body. HTTP errors (status 400 and up) don't reach a `match` arm: the request throws and either retries at the fetch level or fails the mission. Use the fetch `retry:` block for transient HTTP errors (see [Retry strategies](./retry-strategies)), and use these directives to branch on the body you got back.
 
 ## Available directives
 
 | Directive | Description |
 |-----------|-------------|
-| `continue` | Proceed to next step |
-| `skip` | Skip remaining steps in current iteration |
-| `abort` | Stop mission with error |
-| `retry` | Retry previous request with backoff |
-| `queue` | Send to dead letter queue |
-| `jump...then` | Execute action, then continue |
+| `continue` | Proceed to the next step |
+| `skip` | Skip remaining steps in the current action or loop iteration |
+| `abort` | Stop the mission with an error |
+| `retry` | Re-run the current action with backoff |
+| `queue` | Stash the matched value in a store |
+| `jump...then` | Run another action, then continue or retry |
 
 ## Continue
 
@@ -23,16 +27,16 @@ Proceed to the next step normally:
 
 ```vague
 match response {
-  { data: _ } -> continue,
+  Result -> continue,
   _ -> abort "No data"
 }
 
 // Execution continues here
-store response.data -> data { key: .id }
+store response -> data { key: .id }
 ```
 
 Use `continue` when:
-- Pattern matches expected success case
+- The value matches the expected success schema
 - You want explicit confirmation of flow
 
 ## Skip
@@ -42,8 +46,8 @@ Skip remaining steps in the current loop iteration:
 ```vague
 for item in items {
   match item {
-    { status: "inactive" } -> skip,
-    { status: "deleted" } -> skip,
+    Inactive -> skip,
+    Deleted -> skip,
     _ -> continue
   }
 
@@ -53,46 +57,43 @@ for item in items {
 ```
 
 Use `skip` when:
-- Item should be ignored but processing should continue
+- An item should be ignored but processing should continue
 - Filtering within a loop
 - Handling non-critical errors
 
 ## Abort
 
-Stop mission execution immediately:
+Stop mission execution immediately. `abort` takes no message, or a single string literal — it can't take an expression or variable:
 
 ```vague
 match response {
-  { error: msg } -> abort msg,
-  { error: _ } -> abort "Unknown error occurred",
+  ApiError -> abort "API returned an error",
   _ -> continue
 }
 ```
 
-With custom message:
+With different messages per case:
 
 ```vague
 match response {
-  { code: 401 } -> abort "Authentication failed - check credentials",
-  { code: 403 } -> abort "Permission denied - check API permissions",
-  { code: 404 } -> abort "Resource not found",
-  { code: 500 } -> abort "Server error - try again later",
+  AuthError -> abort "Authentication failed - check credentials",
+  RateLimited -> abort "Rate limited - try again later",
   _ -> continue
 }
 ```
 
 Use `abort` when:
-- Unrecoverable error occurs
+- An unrecoverable error occurs
 - Critical validation fails
-- Continuing would cause data corruption
+- Continuing would corrupt data
 
 ## Retry
 
-Retry the previous HTTP request:
+Re-run the current action with backoff. This replays the whole action, not just the last request, so it's for cases where the body tells you the result wasn't ready:
 
 ```vague
 match response {
-  { error: _, code: 429 } -> retry {
+  _ where response.pending -> retry {
     maxAttempts: 5,
     backoff: exponential,
     initialDelay: 1000,
@@ -106,57 +107,33 @@ match response {
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `maxAttempts` | Maximum retry attempts | 3 |
+| `maxAttempts` | Maximum attempts | 3 |
 | `backoff` | Strategy: `exponential`, `linear`, `constant` | `exponential` |
 | `initialDelay` | First retry delay (ms) | 1000 |
-| `maxDelay` | Maximum delay (ms) | 30000 |
-| `delay` | Fixed delay (overrides backoff) | - |
+| `maxDelay` | Maximum delay (ms) | - |
+| `timeout` | Per-attempt timeout (ms) | - |
 
 ### Simple retry
 
 ```vague
 match response {
-  { code: 503 } -> retry,  // Uses defaults
-  _ -> continue
-}
-```
-
-### Fixed delay
-
-```vague
-match response {
-  { code: 429, headers: h } -> retry {
-    delay: h["Retry-After"] * 1000
-  },
+  _ where response.pending -> retry,  // Uses defaults
   _ -> continue
 }
 ```
 
 ## Queue
 
-Send failed items to a dead letter queue:
+Stash the matched value in a store, which acts as a dead letter queue. `queue` takes a store name; it stashes the current matched value (here, the response body). There's no payload block — to control what gets queued, match over the value you want to store:
 
 ```vague
 match response {
-  { error: e } -> queue dlq {
-    item: {
-      request: currentRequest,
-      error: e,
-      timestamp: now()
-    }
-  },
+  ApiError -> queue dlq,
   _ -> continue
 }
 ```
 
-### Queue options
-
-```vague
-queue queueName {
-  item: itemToStore,
-  key: optionalKey
-}
-```
+The queued value is keyed by its own `id` field, or by an auto-generated `queued-N` key when it has none. `queue` with no store name discards the value, so always name a target.
 
 Store the queue as a regular store:
 
@@ -168,7 +145,7 @@ mission ErrorHandling {
     get "/data"
 
     match response {
-      { error: e } -> queue dlq { item: { error: e } },
+      ApiError -> queue dlq,
       _ -> continue
     }
   }
@@ -177,43 +154,39 @@ mission ErrorHandling {
 
 ## Jump then
 
-Execute another action, then continue or retry:
+Run another action, then continue or retry:
 
 ```vague
 match response {
-  { code: 401 } -> jump RefreshToken then retry,
+  _ where response.needsSetup -> jump SetupResource then continue,
   _ -> continue
 }
 
-action RefreshToken {
-  post "/auth/refresh" {
-    body: { refreshToken: env("REFRESH_TOKEN") }
+action SetupResource {
+  post "/setup" {
+    body: { ready: true }
   }
 }
 ```
 
-### Jump then retry
+After `jump SetupResource`, `then retry` re-runs the current action and `then continue` proceeds to the next step. Plain `jump SetupResource` runs the action and continues.
 
-Common pattern for token refresh:
+Note that HTTP 401 responses throw rather than reaching a `match` arm, and OAuth token refresh is handled by the auth provider, not by a flow directive. Use `jump` for application-level conditions you can read off the response body.
+
+### Jump then retry
 
 ```vague
 action FetchData {
-  get "/protected-resource"
+  get "/resource"
 
   match response {
-    { code: 401 } -> jump RefreshToken then retry,
+    _ where response.stale -> jump RefreshCache then retry,
     _ -> store response -> data { key: .id }
   }
 }
 
-action RefreshToken {
-  post "/oauth/token" {
-    body: {
-      grant_type: "refresh_token",
-      refresh_token: env("REFRESH_TOKEN")
-    }
-  }
-  // New token is automatically used
+action RefreshCache {
+  post "/cache/refresh"
 }
 ```
 
@@ -221,54 +194,47 @@ action RefreshToken {
 
 ```vague
 match response {
-  { needsSetup: true } -> jump SetupResource then continue,
+  _ where response.needsSetup -> jump SetupResource then continue,
   _ -> continue
 }
 ```
 
 ## Combining directives
 
-### Layered error handling
+### Layered handling
 
 ```vague
 match response {
-  // Retry transient errors
-  { code: 429 } -> retry { maxAttempts: 5 },
-  { code: 503 } -> retry { maxAttempts: 3 },
-  { code: 504 } -> retry { maxAttempts: 3 },
+  // Re-run while the body says it's not ready
+  _ where response.pending -> retry { maxAttempts: 5 },
 
-  // Handle auth separately
-  { code: 401 } -> jump RefreshToken then retry,
+  // Refresh derived state, then re-run
+  _ where response.stale -> jump RefreshCache then retry,
 
-  // Queue unrecoverable errors
-  { code: 400, error: e } -> queue dlq { item: { error: e } },
+  // Queue bodies the API flagged as errors
+  ApiError -> queue dlq,
 
-  // Abort on critical errors
-  { code: 500, error: e } -> abort e,
-
-  // Skip missing resources
-  { code: 404 } -> skip,
+  // Abort on a fatal flag
+  _ where response.fatal -> abort "Fatal error in response",
 
   // Continue on success
   _ -> continue
 }
 ```
 
-### Per-item error handling
+### Per-item handling
 
 ```vague
 for item in items {
   get concat("/items/", item.id)
 
   match response {
-    { error: _, code: 404 } -> {
-      // Log and skip
+    Missing -> {
       store { id: item.id, status: "not_found" } -> missing
       skip
     },
-    { error: e } -> {
-      // Queue for retry
-      queue failed { item: { id: item.id, error: e } }
+    ApiError -> {
+      queue failed
       skip
     },
     _ -> continue
@@ -283,19 +249,18 @@ for item in items {
 ### Be specific
 
 ```vague
-// Good: specific error handling
+// Good: branch on schemas and clear guards
 match response {
-  { code: 401 } -> jump RefreshToken then retry,
-  { code: 403 } -> abort "Permission denied",
-  { code: 429 } -> retry { delay: 60000 },
-  { code: 404 } -> skip,
-  { error: e } -> abort e,
+  _ where response.stale -> jump RefreshCache then retry,
+  _ where response.fatal -> abort "Fatal error",
+  Missing -> skip,
+  ApiError -> queue dlq,
   _ -> continue
 }
 
 // Avoid: too generic
 match response {
-  { error: _ } -> retry,
+  _ where response.error -> retry,
   _ -> continue
 }
 ```
@@ -304,9 +269,9 @@ match response {
 
 ```vague
 match response {
-  { status: "ok" } -> continue,
-  { status: "error" } -> abort "Error",
-  _ -> abort "Unexpected response"  // Always have catch-all
+  Ok -> continue,
+  ApiError -> abort "Error",
+  _ -> abort "Unexpected response"  // Always have a catch-all
 }
 ```
 
@@ -314,9 +279,9 @@ match response {
 
 ```vague
 match response {
-  { error: e } -> {
-    store { error: e, timestamp: now() } -> errorLog
-    abort e
+  ApiError -> {
+    store { error: response.error, timestamp: now() } -> errorLog
+    abort "API returned an error"
   },
   _ -> continue
 }
@@ -326,12 +291,7 @@ match response {
 
 ```vague
 match response {
-  { error: "rate_limit" } -> queue retryQueue {
-    item: {
-      request: currentRequest,
-      retryAfter: response.retryAfter
-    }
-  },
+  RateLimited -> queue retryQueue,
   _ -> continue
 }
 ```

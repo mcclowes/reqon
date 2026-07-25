@@ -68,7 +68,7 @@ mission XeroInvoiceSync {
   schema XeroInvoice {
     InvoiceID: string,
     InvoiceNumber: string,
-    Contact: { ContactID: string, Name: string },
+    Contact: object,
     Total: number,
     Status: string
   }
@@ -80,7 +80,6 @@ mission XeroInvoiceSync {
 
   action FetchInvoices {
     get "/Invoices" {
-      params: { page: 1 },
       paginate: page(page, 100),
       until: length(response.Invoices) == 0,
       since: lastSync
@@ -88,7 +87,7 @@ mission XeroInvoiceSync {
 
     match response {
       ErrorResponse where .code == 401 -> jump RefreshToken then retry,
-      ErrorResponse -> queue errors { item: { error: response.error } },
+      ErrorResponse -> queue errors,
       _ -> continue
     }
 
@@ -138,8 +137,8 @@ mission OrderReconciliation {
   store discrepancies: file("discrepancies")
 
   action FetchShopify {
-    get Shopify "/orders.json" {
-      params: { status: "any", limit: 250 },
+    get "/orders.json?status=any&limit=250" {
+      source: Shopify,
       paginate: cursor(page_info, 250, "link.next"),
       until: response.orders == null or length(response.orders) == 0
     }
@@ -150,8 +149,8 @@ mission OrderReconciliation {
   }
 
   action FetchStripe {
-    get Stripe "/payment_intents" {
-      params: { limit: 100 },
+    get "/payment_intents?limit=100" {
+      source: Stripe,
       paginate: cursor(starting_after, 100, "data[length(data)-1].id"),
       until: response.has_more == false
     }
@@ -162,7 +161,8 @@ mission OrderReconciliation {
   }
 
   action FetchWarehouse {
-    get Warehouse "/shipments" {
+    get "/shipments" {
+      source: Warehouse,
       paginate: offset(offset, 100),
       until: length(response.shipments) == 0
     }
@@ -218,10 +218,13 @@ mission PetstoreSync {
   store pets: file("pets")
   store newPets: file("new-pets")
 
+  schema Pet {
+    id: number,
+    name: string
+  }
+
   action FetchAllPets {
-    call Petstore.findPetsByStatus {
-      params: { status: "available" }
-    }
+    call Petstore.findPetsByStatus
 
     for pet in response {
       validate pet {
@@ -237,16 +240,13 @@ mission PetstoreSync {
       call Petstore.addPet {
         body: {
           name: pet.name,
-          photoUrls: pet.photos or [],
+          photoUrls: pet.photos,
           status: "available"
         }
       }
 
       match response {
-        { id: _ } -> {
-          store response -> pets { key: .id }
-          delete newPets[pet.id]
-        },
+        Pet -> store response -> pets { key: .id },
         _ -> continue
       }
     }
@@ -255,6 +255,8 @@ mission PetstoreSync {
   run FetchAllPets
 }
 ```
+
+OAS `call` steps take the same option block as `get`/`post` (`paginate`, `until`, `retry`, `body`, and so on). Query parameters aren't a separate option; fold them into the operation as the spec requires.
 
 ## Error handling with dead letter queue
 
@@ -265,7 +267,7 @@ mission RobustSync {
   source API {
     auth: bearer,
     base: "https://api.example.com",
-    rateLimit: { requestsPerMinute: 60, strategy: "pause" },
+    rateLimit: { strategy: throttle, fallbackRpm: 60 },
     circuitBreaker: { failureThreshold: 5, resetTimeout: 30000 }
   }
 
@@ -273,10 +275,10 @@ mission RobustSync {
   store dlq: file("dead-letter-queue")
   store processed: file("processed")
 
-  schema SuccessResponse { data: any }
+  schema SuccessResponse { data: object }
   schema RateLimitError { error: string, retryAfter: number }
   schema AuthError { error: string, code: number }
-  schema ValidationError { error: string, details: array }
+  schema BadData { error: string, details: array }
 
   action FetchWithRetry {
     get "/items" {
@@ -286,13 +288,10 @@ mission RobustSync {
     }
 
     match response {
-      RateLimitError -> retry { delay: response.retryAfter * 1000 },
+      RateLimitError -> retry { maxAttempts: 5 },
       AuthError where .code == 401 -> jump RefreshAuth then retry,
-      AuthError -> abort response.error,
-      ValidationError -> {
-        store response -> dlq { key: uuid() }
-        skip
-      },
+      AuthError -> abort "Authentication failed",
+      BadData -> queue dlq,
       SuccessResponse -> continue,
       _ -> abort "Unexpected response"
     }
@@ -303,24 +302,12 @@ mission RobustSync {
   }
 
   action ProcessItems {
-    for item in data where .processed != true {
+    for item in data where .processed == false {
       get concat("/items/", item.id, "/process")
 
       match response {
-        { error: e } -> {
-          queue dlq {
-            item: {
-              itemId: item.id,
-              error: e,
-              timestamp: now(),
-              retryCount: (item.retryCount or 0) + 1
-            }
-          }
-          skip
-        },
-        _ -> {
-          store { ...item, processed: true } -> processed { key: .id }
-        }
+        BadData -> queue dlq,
+        _ -> store item -> processed { key: .id }
       }
     }
   }
@@ -341,8 +328,9 @@ Regular incremental sync with scheduling:
 
 ```vague
 mission ScheduledSync {
-  schedule: every 15 minutes
-  skipIfRunning: true
+  schedule: every 15 minutes {
+    skipIfRunning: true
+  }
 
   source API {
     auth: oauth2,
@@ -354,7 +342,7 @@ mission ScheduledSync {
   store syncLog: file("sync-log")
 
   action SyncCustomers {
-    store { action: "SyncCustomers", started: now() } -> syncLog
+    store { task: "SyncCustomers", started: now() } -> syncLog { key: .task }
 
     get "/customers" {
       since: lastSync,
@@ -367,14 +355,14 @@ mission ScheduledSync {
     }
 
     store {
-      action: "SyncCustomers",
+      task: "SyncCustomers",
       completed: now(),
       count: length(response.data)
-    } -> syncLog
+    } -> syncLog { key: .task }
   }
 
   action SyncOrders {
-    store { action: "SyncOrders", started: now() } -> syncLog
+    store { task: "SyncOrders", started: now() } -> syncLog { key: .task }
 
     get "/orders" {
       since: lastSync,
@@ -387,10 +375,10 @@ mission ScheduledSync {
     }
 
     store {
-      action: "SyncOrders",
+      task: "SyncOrders",
       completed: now(),
       count: length(response.data)
-    } -> syncLog
+    } -> syncLog { key: .task }
   }
 
   run [SyncCustomers, SyncOrders]
@@ -416,8 +404,7 @@ mission GitHubSync {
   store pullRequests: file("pull-requests")
 
   action FetchRepos {
-    get "/user/repos" {
-      params: { per_page: 100, sort: "updated" },
+    get "/user/repos?per_page=100&sort=updated" {
       paginate: page(page, 100),
       until: length(response) < 100
     }
@@ -439,8 +426,7 @@ mission GitHubSync {
 
   action FetchIssues {
     for repo in repos where .open_issues_count > 0 {
-      get concat("/repos/", repo.fullName, "/issues") {
-        params: { state: "open", per_page: 100 },
+      get concat("/repos/", repo.fullName, "/issues?state=open&per_page=100") {
         paginate: page(page, 100),
         until: length(response) < 100
       }
@@ -462,9 +448,7 @@ mission GitHubSync {
 
   action FetchPRs {
     for repo in repos {
-      get concat("/repos/", repo.fullName, "/pulls") {
-        params: { state: "open", per_page: 100 }
-      }
+      get concat("/repos/", repo.fullName, "/pulls?state=open&per_page=100")
 
       for pr in response {
         map pr -> PullRequest {
@@ -485,6 +469,27 @@ mission GitHubSync {
 }
 ```
 
-## More examples
+## Runnable example projects
 
-For more examples, see the [examples directory](https://github.com/mcclowes/reqon/tree/main/examples) in the Reqon repository.
+The repository ships a set of complete, runnable example projects in the [`examples/` directory](https://github.com/mcclowes/reqon/tree/main/examples). Each is a mission you can run with `node dist/cli.js examples/<name>/<file>.vague` after `npm run build`.
+
+| Example | What it shows |
+|---------|---------------|
+| [jsonplaceholder](https://github.com/mcclowes/reqon/tree/main/examples/jsonplaceholder) | Basic public-API sync: `auth: none`, fetch, map, for loops |
+| [petstore](https://github.com/mcclowes/reqon/tree/main/examples/petstore) | OpenAPI spec integration with `call` and cursor pagination |
+| [xero](https://github.com/mcclowes/reqon/tree/main/examples/xero) | OAuth2 invoice sync with match steps and flow control |
+| [github-sync](https://github.com/mcclowes/reqon/tree/main/examples/github-sync) | Multi-file (folder) mission, parallel execution, schema matching |
+| [multi-source-sync](https://github.com/mcclowes/reqon/tree/main/examples/multi-source-sync) | Fetching from several sources into separate stores |
+| [error-handling](https://github.com/mcclowes/reqon/tree/main/examples/error-handling) | Flow-control directives and dead-letter queues |
+| [temporal-comparison](https://github.com/mcclowes/reqon/tree/main/examples/temporal-comparison) | Multi-source reconciliation with rate limiting |
+| [incremental-sync](https://github.com/mcclowes/reqon/tree/main/examples/incremental-sync) | Delta syncing with `since: lastSync` and checkpoints |
+| [webhook-payment](https://github.com/mcclowes/reqon/tree/main/examples/webhook-payment) | `wait` steps with webhook filtering |
+| [durable-approval](https://github.com/mcclowes/reqon/tree/main/examples/durable-approval) | Resource-free `pause` with `resumeOn: webhook` and restart survival |
+| [scheduled-reports](https://github.com/mcclowes/reqon/tree/main/examples/scheduled-reports) | `schedule: cron` with scheduling options |
+| [circuit-breaker](https://github.com/mcclowes/reqon/tree/main/examples/circuit-breaker) | Circuit breaker and fallback sources |
+| [database-sync](https://github.com/mcclowes/reqon/tree/main/examples/database-sync) | Multi-store operations with upsert and partial updates |
+| [data-enrichment](https://github.com/mcclowes/reqon/tree/main/examples/data-enrichment) | `let` bindings, the spread operator, and computed fields |
+| [postgrest-sync](https://github.com/mcclowes/reqon/tree/main/examples/postgrest-sync) | PostgreSQL via the `postgrest()` store |
+| [crud-operations](https://github.com/mcclowes/reqon/tree/main/examples/crud-operations) | Full CRUD lifecycle with PUT, PATCH, and DELETE |
+| [file-export](https://github.com/mcclowes/reqon/tree/main/examples/file-export) | Exports, reports, and backups with the `file()` store |
+| [mock-server-demo](https://github.com/mcclowes/reqon/tree/main/examples/mock-server-demo) | Running a mission against a local mock server |

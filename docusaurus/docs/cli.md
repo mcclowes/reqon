@@ -6,7 +6,7 @@ keywords: [reqon, CLI, command line, daemon, webhook, CI/CD]
 
 # Command line interface
 
-Reqon provides a powerful CLI for running and managing missions.
+Reqon provides a CLI for running and managing missions. The CLI is the `reqon` binary; install the `reqon-dsl` package to get it.
 
 ## Basic usage
 
@@ -30,16 +30,22 @@ reqon ./missions/customer-sync/
 
 | Option | Description |
 |--------|-------------|
-| `--dry-run` | Parse and validate without executing HTTP requests |
+| `--dry-run` | Run without making actual HTTP requests |
 | `--verbose` | Enable detailed logging output |
-| `--auth <file>` | Path to JSON file containing authentication credentials |
-| `--env <file>` | Path to .env file (default: .env in current directory) |
-| `--output <path>` | Export store contents to JSON files after execution |
-| `--daemon` | Run scheduled missions continuously |
-| `--once` | Run scheduled missions once, then exit |
-| `--webhook` | Enable webhook server for `wait` steps |
-| `--webhook-port <n>` | Port for webhook server (default: 3000) |
+| `--dev` | Development mode: let `sql`/`nosql` stores fall back to local JSON files |
+| `--auth <file>` | Path to a JSON file containing authentication credentials |
+| `--env <file>` | Path to a .env file (default: .env in the current directory) |
+| `--output <path>` | Export all stores to a single JSON file after execution |
+| `--daemon` | Run as a daemon, executing scheduled missions |
+| `--once` | Run scheduled missions once immediately, then exit |
+| `--webhook` | Enable the webhook server for `wait` steps |
+| `--webhook-port <n>` | Port for the webhook server (default: 3000) |
 | `--webhook-url <url>` | Base URL for webhook endpoints (default: http://localhost:3000) |
+| `--control` | Enable the control server for pause/resume and status queries |
+| `--control-port <n>` | Port for the control server (default: 3001) |
+| `--debug` | Enable step-through debugging |
+| `--resume <id>` | Resume a paused or failed execution by ID |
+| `--help`, `-h` | Show the help message |
 
 ## Examples
 
@@ -83,7 +89,7 @@ The credentials file should match your source names:
     "clientSecret": "your-client-secret",
     "accessToken": "current-token",
     "refreshToken": "refresh-token",
-    "tokenUrl": "https://identity.xero.com/connect/token"
+    "tokenEndpoint": "https://identity.xero.com/connect/token"
   },
   "GitHub": {
     "type": "bearer",
@@ -97,15 +103,16 @@ The credentials file should match your source names:
 Save store contents to JSON after execution:
 
 ```bash
-reqon sync-data.vague --output ./output/
+reqon sync-data.vague --output ./output.json
 ```
 
-This creates JSON files for each store:
-```
-output/
-├── customers.json
-├── orders.json
-└── products.json
+This writes a single JSON file, an object keyed by store name, with each store's items as an array:
+
+```json
+{
+  "customers": [ { "id": 1, "name": "Ada" } ],
+  "orders": [ { "id": 100, "customerId": 1 } ]
+}
 ```
 
 ### Daemon mode
@@ -146,6 +153,39 @@ With custom port and URL (for production or tunnels):
 reqon payment-flow.vague --webhook --webhook-port 8080 --webhook-url https://my-server.ngrok.io
 ```
 
+### Control server
+
+Enable the control server to pause, resume, and inspect a running mission:
+
+```bash
+reqon long-running.vague --control --control-port 3001 --verbose
+```
+
+When `--control` is enabled, the server exposes these endpoints:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/pause` | Request a graceful pause at the next safe point |
+| `POST` | `/resume` | Clear a pause request |
+| `GET` | `/status` | Get the current execution state and progress |
+| `GET` | `/health` | Health check |
+
+### Resuming an execution
+
+If a mission pauses or fails, the CLI prints its execution ID. Resume it with `--resume`:
+
+```bash
+reqon long-running.vague --resume exec_abc123
+```
+
+### Development mode
+
+Let `sql` and `nosql` stores fall back to local JSON files instead of requiring a database:
+
+```bash
+reqon sync-data.vague --dev
+```
+
 ### Environment files
 
 Load environment variables from a specific file:
@@ -163,17 +203,13 @@ The `--env` flag supports:
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Runtime error (HTTP failure, validation error, etc.) |
-| 2 | Parse error (invalid syntax) |
-| 3 | Configuration error (missing credentials, invalid options) |
+| 1 | Failure (parse error, runtime error, validation error, missing scheduled mission, etc.) |
+
+A paused mission also exits with code 0; resume it with `--resume`.
 
 ## Environment variables
 
-| Variable | Description |
-|----------|-------------|
-| `REQON_STATE_DIR` | Directory for execution state (default: `.vague-data`) |
-| `REQON_LOG_LEVEL` | Logging level: `debug`, `info`, `warn`, `error` |
-| `REQON_DRY_RUN` | Enable dry-run mode (same as `--dry-run`) |
+The CLI reads `.env` files (via `--env` or a `.env` in the current directory) and discovers per-source credentials from the environment. It does not read configuration flags from environment variables.
 
 ### Auto-discovery from environment
 
@@ -216,18 +252,15 @@ Supported formats:
 
 ## Multi-file missions
 
-For complex missions, organize them as folders:
+For complex missions, organize them as a folder with a `mission.vague` root file plus one action file per action, all in the same directory:
 
 ```
 missions/
 └── customer-sync/
-    ├── mission.vague     # Main mission definition
-    ├── actions/
-    │   ├── fetch.vague   # Fetch action
-    │   ├── transform.vague
-    │   └── export.vague
-    └── schemas/
-        └── customer.vague
+    ├── mission.vague     # Sources, stores, schemas, and the pipeline
+    ├── fetch.vague       # Action file
+    ├── transform.vague   # Action file
+    └── export.vague      # Action file
 ```
 
 Run with:
@@ -236,7 +269,7 @@ Run with:
 reqon ./missions/customer-sync/
 ```
 
-Reqon automatically discovers and loads all `.vague` files in the folder.
+Reqon loads `mission.vague` and merges every other `.vague` file in the folder as an action. The files sit side by side; nested subfolders are not scanned.
 
 ## Integrating with CI/CD
 
@@ -275,20 +308,20 @@ CMD ["npx", "reqon", "./missions/", "--daemon"]
 
 ## Troubleshooting
 
-### "Cannot find module 'reqon'"
+### "Cannot find module 'reqon-dsl'"
 
 Ensure Reqon is installed:
 
 ```bash
-npm install reqon
+npm install reqon-dsl
 ```
 
 ### "Permission denied"
 
-The state directory (`.vague-data`) needs write access:
+The data directory (`.reqon-data`) needs write access:
 
 ```bash
-chmod 755 .vague-data
+chmod 755 .reqon-data
 ```
 
 ### Debugging HTTP issues

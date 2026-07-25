@@ -81,7 +81,7 @@ For expression syntax, pattern matching, and schema definitions, refer to the [V
 |---------|-------------|
 | **Mission** | A complete data pipeline with sources, stores, and actions |
 | **Source** | An API endpoint with authentication configuration |
-| **Store** | A storage backend (memory, file, SQL, NoSQL) |
+| **Store** | A storage backend: `memory`, `file`, or `postgrest` (with `sql`/`nosql` falling back to local files in dev mode) |
 | **Action** | A sequence of steps that process data |
 | **Step** | A single operation (fetch, map, validate, store, etc.) |
 

@@ -4,412 +4,117 @@ sidebar_position: 4
 
 # Extending Reqon
 
-Extend Reqon with custom functions, store adapters, and integrations.
-
-## Custom functions
-
-Register custom functions for use in expressions:
-
-```typescript
-import { registerFunction, execute } from 'reqon';
-
-// Register a custom function
-registerFunction('formatCurrency', (amount: number, currency: string) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency
-  }).format(amount);
-});
-
-// Use in mission
-await execute(`
-  mission Example {
-    action Format {
-      map order -> Formatted {
-        total: formatCurrency(.amount, "USD")
-      }
-    }
-  }
-`);
-```
-
-### Function types
-
-```typescript
-// Simple function
-registerFunction('double', (x: number) => x * 2);
-
-// Async function
-registerFunction('fetchRate', async (currency: string) => {
-  const response = await fetch(`/rates/${currency}`);
-  return response.json();
-});
-
-// Variadic function
-registerFunction('sum', (...args: number[]) => {
-  return args.reduce((a, b) => a + b, 0);
-});
-```
-
-### Using custom functions
-
-```vague
-map order -> Output {
-  doubled: double(.quantity),
-  rate: fetchRate(.currency),
-  total: sum(.item1, .item2, .item3)
-}
-```
+Reqon's extension model is dependency injection, not a plugin registry. You implement an interface and pass the instance to the executor through `ExecutorConfig`. There's no global `register*` API and no hook system.
 
 ## Custom store adapters
 
-See [Custom Adapters](../stores/custom-adapters) for full documentation.
+The most common extension point. Implement the `StoreAdapter` interface and pass your instances in the `stores` config, keyed by store name:
 
 ```typescript
-import { registerStoreAdapter, StoreAdapter } from 'reqon';
+import { execute, type StoreAdapter, type StoreFilter } from 'reqon';
 
 class MyStoreAdapter implements StoreAdapter {
-  async get(key: string) { /* ... */ }
-  async set(key: string, value: any) { /* ... */ }
-  async update(key: string, partial: any) { /* ... */ }
+  async get(key: string) { /* ... */ return null; }
+  async set(key: string, value: Record<string, unknown>) { /* ... */ }
+  async update(key: string, value: Partial<Record<string, unknown>>) { /* ... */ }
   async delete(key: string) { /* ... */ }
-  async list(filter?: any) { /* ... */ }
+  async list(filter?: StoreFilter) { return []; }
+  async count(filter?: StoreFilter) { return 0; }
   async clear() { /* ... */ }
 }
 
-registerStoreAdapter('mystore', (name, config) => {
-  return new MyStoreAdapter(config);
+await execute(source, {
+  stores: {
+    customers: new MyStoreAdapter(),
+  },
 });
 ```
 
-## Custom auth providers
+When a store name in the config matches a `store` declared in the mission, your adapter is used instead of the built-in one. Optional `bulkSet` and `bulkUpsert` methods are called when present for batched writes. See [custom adapters](../stores/custom-adapters) for the full interface.
+
+## Custom durability stores
+
+The execution store, sync store, trace store, and pause store are all injectable the same way:
 
 ```typescript
-import { registerAuthProvider, AuthProvider } from 'reqon';
+import { execute, MemoryExecutionStore, MemorySyncStore, MemoryTraceStore, MemoryPauseStore } from 'reqon';
 
-class MyAuthProvider implements AuthProvider {
-  async getToken(): Promise<string> {
-    // Custom token acquisition logic
-    return 'my-token';
-  }
-
-  async refreshToken(): Promise<string> {
-    // Custom refresh logic
-    return 'new-token';
-  }
-
-  async getHeaders(): Promise<Record<string, string>> {
-    const token = await this.getToken();
-    return {
-      'Authorization': `Bearer ${token}`,
-      'X-Custom-Auth': 'value'
-    };
-  }
-}
-
-registerAuthProvider('myauth', (config) => {
-  return new MyAuthProvider(config);
+await execute(source, {
+  executionStore: new MemoryExecutionStore(),
+  syncStore: new MemorySyncStore(),
+  traceStore: new MemoryTraceStore(),
+  pauseStore: new MemoryPauseStore(),
 });
 ```
 
-Usage:
+Each has a `File*` and a `Memory*` implementation out of the box, and a corresponding interface you can implement yourself.
 
-```vague
-source API {
-  auth: myauth,
-  base: "https://api.example.com"
-}
-```
+## Observability outputs and handlers
 
-## Custom step handlers
-
-Add custom step types:
+Hook into execution by subscribing to the event emitter or by adding a custom log output. See [observability](../observability/overview) for the full event catalog.
 
 ```typescript
-import { registerStepHandler, ExecutionContext } from 'reqon';
+import { execute, ObservabilityEmitter, type LogOutput, type LogEntry } from 'reqon';
 
-registerStepHandler('notify', async (step, ctx: ExecutionContext) => {
-  const { channel, message } = step.options;
-
-  await sendNotification(channel, message);
-
-  return { success: true };
-});
-```
-
-Usage:
-
-```vague
-action WithNotification {
-  get "/data"
-  store response -> data { key: .id }
-
-  notify {
-    channel: "slack",
-    message: concat("Synced ", length(response), " items")
+// Custom log output
+class MyOutput implements LogOutput {
+  write(entry: LogEntry) {
+    // forward to your logging system
   }
 }
 ```
 
 ## Vague plugin integration
 
-Reqon extends Vague (the underlying DSL layer) via its plugin system. This allows Reqon keywords to be recognized by Vague's lexer.
+Reqon extends [Vague](https://github.com/mcclowes/vague) (the underlying DSL layer) through its plugin system. The plugin teaches Vague's lexer about Reqon's keywords.
 
-### Registering Reqon
+### Registering the plugin
 
-Reqon auto-registers with Vague on import:
+Reqon registers its plugin automatically when you import the package. You can also register it explicitly:
 
 ```typescript
-import { parse } from 'reqon';  // Auto-registers reqonPlugin
-
-// Or explicitly register
 import { registerReqonPlugin } from 'reqon';
+
 registerReqonPlugin();
 ```
 
-### Plugin structure
-
-The Reqon plugin adds keywords to Vague:
+### Inspecting the plugin
 
 ```typescript
-import { reqonPlugin, registerReqonPlugin, unregisterReqonPlugin } from 'reqon';
+import { reqonPlugin } from 'reqon';
 
-console.log(reqonPlugin.name);     // 'reqon'
-console.log(reqonPlugin.keywords); // Array of Reqon keywords
-```
-
-## Plugins
-
-### Creating a plugin
-
-```typescript
-import { Plugin, Reqon } from 'reqon';
-
-const myPlugin: Plugin = {
-  name: 'my-plugin',
-  version: '1.0.0',
-
-  install(reqon: Reqon) {
-    // Register functions
-    reqon.registerFunction('myFunc', () => {});
-
-    // Register store adapters
-    reqon.registerStoreAdapter('mystore', () => {});
-
-    // Add hooks
-    reqon.hooks.beforeExecute.tap('my-plugin', (mission) => {
-      console.log(`Starting: ${mission.name}`);
-    });
-
-    reqon.hooks.afterExecute.tap('my-plugin', (result) => {
-      console.log(`Completed: ${result.duration}ms`);
-    });
-  }
-};
-
-export default myPlugin;
-```
-
-### Using a plugin
-
-```typescript
-import { Reqon } from 'reqon';
-import myPlugin from './my-plugin';
-
-const reqon = new Reqon();
-reqon.use(myPlugin);
-
-await reqon.execute(source);
-```
-
-## Execution hooks
-
-### Available hooks
-
-```typescript
-reqon.hooks.beforeParse.tap('plugin', (source) => {
-  // Before parsing mission source
-});
-
-reqon.hooks.afterParse.tap('plugin', (ast) => {
-  // After parsing, before execution
-});
-
-reqon.hooks.beforeExecute.tap('plugin', (mission) => {
-  // Before mission starts
-});
-
-reqon.hooks.afterExecute.tap('plugin', (result) => {
-  // After mission completes
-});
-
-reqon.hooks.beforeAction.tap('plugin', (action) => {
-  // Before each action
-});
-
-reqon.hooks.afterAction.tap('plugin', (action, result) => {
-  // After each action
-});
-
-reqon.hooks.beforeStep.tap('plugin', (step) => {
-  // Before each step
-});
-
-reqon.hooks.afterStep.tap('plugin', (step, result) => {
-  // After each step
-});
-
-reqon.hooks.onError.tap('plugin', (error, context) => {
-  // On any error
-});
-```
-
-### Hook examples
-
-```typescript
-// Logging hook
-reqon.hooks.beforeAction.tap('logger', (action) => {
-  console.log(`[${new Date().toISOString()}] Starting: ${action.name}`);
-});
-
-// Metrics hook
-reqon.hooks.afterAction.tap('metrics', (action, result) => {
-  metrics.record('action_duration', {
-    action: action.name,
-    duration: result.duration,
-    success: result.success
-  });
-});
-
-// Error notification hook
-reqon.hooks.onError.tap('notify', (error, context) => {
-  sendSlackMessage(`Error in ${context.mission}: ${error.message}`);
-});
-```
-
-## Custom pagination strategies
-
-```typescript
-import { registerPaginationStrategy, PaginationStrategy } from 'reqon';
-
-class LinkHeaderPagination implements PaginationStrategy {
-  private nextUrl: string | null = null;
-
-  getInitialParams(): Record<string, any> {
-    return {};
-  }
-
-  hasMore(): boolean {
-    return this.nextUrl !== null;
-  }
-
-  getNextParams(): Record<string, any> {
-    // Parse from nextUrl
-    return { url: this.nextUrl };
-  }
-
-  updateFromResponse(response: any, headers: Headers): void {
-    const linkHeader = headers.get('Link');
-    this.nextUrl = parseLinkHeader(linkHeader).next;
-  }
-}
-
-registerPaginationStrategy('link', () => new LinkHeaderPagination());
-```
-
-Usage:
-
-```vague
-get "/items" {
-  paginate: link(),
-  until: !hasMore
-}
+console.log(reqonPlugin.name);  // 'reqon'
 ```
 
 ## Programmatic API
 
-### Full control
+For full control, parse and execute directly with `MissionExecutor`:
 
 ```typescript
-import { Reqon, parse, createContext } from 'reqon';
+import { parse, MissionExecutor } from 'reqon';
 
-// Parse source
-const ast = parse(source);
+const program = parse(source);
 
-// Create execution context
-const ctx = createContext({
-  stores: new Map(),
-  sources: new Map(),
-  variables: new Map()
-});
-
-// Execute with custom options
-const reqon = new Reqon();
-const result = await reqon.executeMission(ast.missions[0], ctx, {
+const executor = new MissionExecutor({
   dryRun: false,
-  progressCallbacks: {
-    onProgress: (p) => updateUI(p)
-  }
+  verbose: true,
+  progress: {
+    onStageComplete: (event) => console.log(`Stage done: ${event.stageName}`),
+  },
 });
+
+const result = await executor.execute(program);
 ```
 
-### AST manipulation
+The convenience functions `execute`, `fromFile`, and `fromPath` wrap this for the common cases.
 
-```typescript
-import { parse, transform } from 'reqon';
+## Not currently supported
 
-const ast = parse(source);
+These extension points don't exist. Avoid building against them:
 
-// Transform AST
-const transformed = transform(ast, {
-  visitFetchStep(node) {
-    // Add retry to all fetches
-    return {
-      ...node,
-      options: {
-        ...node.options,
-        retry: { maxAttempts: 3 }
-      }
-    };
-  }
-});
-```
-
-## Best practices
-
-### Namespace functions
-
-```typescript
-// Good: namespaced
-registerFunction('myPlugin_formatDate', () => {});
-
-// Avoid: may conflict
-registerFunction('format', () => {});
-```
-
-### Document extensions
-
-```typescript
-/**
- * Formats a phone number to E.164 format
- * @param phone - Raw phone number
- * @param country - ISO country code
- * @returns Formatted phone number
- * @example formatPhone("555-1234", "US") => "+15551234"
- */
-registerFunction('formatPhone', (phone, country) => {});
-```
-
-### Test thoroughly
-
-```typescript
-describe('formatPhone', () => {
-  it('formats US numbers', () => {
-    expect(formatPhone('555-1234', 'US')).toBe('+15551234');
-  });
-
-  it('handles international numbers', () => {
-    expect(formatPhone('7911 123456', 'GB')).toBe('+447911123456');
-  });
-});
-```
+- **Custom expression functions** — there's no `registerFunction`. Expression functions come from Vague's evaluator.
+- **Custom step handlers** — there's no `registerStepHandler`; step types are fixed.
+- **Custom auth providers** — there's no `registerAuthProvider`. The built-in providers are bearer and OAuth2 (see [authentication](../authentication/overview)).
+- **Custom pagination strategies** — there's no `registerPaginationStrategy`; the strategies are `offset`, `page`, and `cursor`.
+- **A plugin/hook system** — there's no `Reqon` class, `reqon.use(...)`, or `reqon.hooks.*`. Use store/observability injection instead.
+</content>

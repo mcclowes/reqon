@@ -2,9 +2,13 @@
 sidebar_position: 4
 ---
 
-# API Key Authentication
+# API key authentication
 
-API key authentication sends a key in either a header or query parameter. Many SaaS APIs use this method.
+API key authentication sends a key in a request header. Many SaaS APIs use this method.
+
+:::warning Not applied at runtime
+`auth: api_key` parses, and Reqon recognizes API key credentials in a credentials file, but no auth provider is built for it yet. At runtime, requests to an `api_key` source go out **unauthenticated** — Reqon does not add the API key header. This page documents the configuration shape Reqon recognizes, but the key is not sent. If your API accepts the key as a bearer token (in `Authorization: Bearer ...`), use [bearer](./bearer.md) instead, which does work end to end.
+:::
 
 ## Configuration
 
@@ -23,8 +27,8 @@ source API {
 {
   "API": {
     "type": "api_key",
-    "key": "your-api-key",
-    "header": "X-API-Key"
+    "apiKey": "your-api-key",
+    "headerName": "X-API-Key"
   }
 }
 ```
@@ -34,14 +38,44 @@ source API {
 | Field | Required | Description |
 |-------|----------|-------------|
 | `type` | Yes | Must be `"api_key"` |
-| `key` | Yes | The API key value |
-| `header` | No* | Header name for the key |
-| `query` | No* | Query parameter name for the key |
-| `prefix` | No | Prefix for header value (e.g., "Bearer") |
+| `apiKey` | Yes | The API key value |
+| `headerName` | No | Header name for the key (default `X-API-Key`) |
 
-*One of `header` or `query` is required.
+There is no query-parameter placement and no value prefix. The key is only ever a header value, and the header name defaults to `X-API-Key` when omitted.
 
-## Header-based API key
+## Environment variables
+
+### In the credentials file
+
+```json
+{
+  "API": {
+    "type": "api_key",
+    "apiKey": "${API_KEY}",
+    "headerName": "X-API-Key"
+  }
+}
+```
+
+```bash
+export API_KEY="your-key"
+reqon mission.vague --auth credentials.json
+```
+
+The source block only declares the auth type. The key never goes inline in the source block.
+
+### Auto-discovered environment variables
+
+Reqon reads `REQON_{SOURCE}_{FIELD}`, where `{SOURCE}` is the uppercased source name. For a source named `API`:
+
+```bash
+export REQON_API_TYPE="api_key"
+export REQON_API_API_KEY="your-key"
+export REQON_API_HEADER_NAME="X-API-Key"
+reqon mission.vague
+```
+
+## Common API examples
 
 ### Standard header
 
@@ -49,259 +83,46 @@ source API {
 {
   "API": {
     "type": "api_key",
-    "key": "your-api-key",
-    "header": "X-API-Key"
+    "apiKey": "your-api-key",
+    "headerName": "X-API-Key"
   }
 }
 ```
 
-Request:
-```http
-GET /api/data HTTP/1.1
-X-API-Key: your-api-key
-```
-
-### Authorization header with prefix
-
-```json
-{
-  "API": {
-    "type": "api_key",
-    "key": "your-api-key",
-    "header": "Authorization",
-    "prefix": "ApiKey"
-  }
-}
-```
-
-Request:
-```http
-GET /api/data HTTP/1.1
-Authorization: ApiKey your-api-key
-```
-
-### Bearer-style API key
-
-Some APIs use bearer format for API keys:
-
-```json
-{
-  "API": {
-    "type": "api_key",
-    "key": "sk_live_xxxxx",
-    "header": "Authorization",
-    "prefix": "Bearer"
-  }
-}
-```
-
-Request:
-```http
-GET /api/data HTTP/1.1
-Authorization: Bearer sk_live_xxxxx
-```
-
-## Query parameter API key
-
-```json
-{
-  "API": {
-    "type": "api_key",
-    "key": "your-api-key",
-    "query": "api_key"
-  }
-}
-```
-
-Request:
-```http
-GET /api/data?api_key=your-api-key HTTP/1.1
-```
-
-## Common API examples
-
-### SendGrid
-
-```json
-{
-  "SendGrid": {
-    "type": "api_key",
-    "key": "SG.xxxxxxxxxxxx",
-    "header": "Authorization",
-    "prefix": "Bearer"
-  }
-}
-```
-
-### Mailchimp
-
-```json
-{
-  "Mailchimp": {
-    "type": "api_key",
-    "key": "your-api-key-us1",
-    "header": "Authorization",
-    "prefix": "apikey"
-  }
-}
-```
-
-### OpenAI
-
-```json
-{
-  "OpenAI": {
-    "type": "api_key",
-    "key": "sk-xxxxxxxxxxxx",
-    "header": "Authorization",
-    "prefix": "Bearer"
-  }
-}
-```
-
-### Google Maps
-
-```json
-{
-  "GoogleMaps": {
-    "type": "api_key",
-    "key": "AIzaxxxxxxxxxxxxx",
-    "query": "key"
-  }
-}
-```
-
-### Custom API
+### Custom header name
 
 ```json
 {
   "CustomAPI": {
     "type": "api_key",
-    "key": "your-api-key",
-    "header": "X-Custom-Auth"
+    "apiKey": "your-api-key",
+    "headerName": "X-Custom-Auth"
   }
 }
 ```
 
-## Environment variables
-
-### In credentials
-
-```json
-{
-  "API": {
-    "type": "api_key",
-    "key": "${API_KEY}",
-    "header": "X-API-Key"
-  }
-}
-```
-
-### In mission
-
-```vague
-source API {
-  auth: api_key,
-  base: "https://api.example.com",
-  apiKey: env("API_KEY"),
-  apiKeyHeader: "X-API-Key"
-}
-```
-
-## Multiple API keys
-
-For APIs requiring multiple keys:
-
-```vague
-source API {
-  auth: api_key,
-  base: "https://api.example.com",
-  headers: {
-    "X-API-Key": env("API_KEY"),
-    "X-App-ID": env("APP_ID")
-  }
-}
-```
-
-Or use custom header addition:
-
-```json
-{
-  "API": {
-    "type": "api_key",
-    "key": "primary-key",
-    "header": "X-API-Key",
-    "additionalHeaders": {
-      "X-App-ID": "your-app-id"
-    }
-  }
-}
-```
+:::tip Bearer-style keys
+APIs such as SendGrid, OpenAI, and Stripe expect the key in `Authorization: Bearer <key>`. Those aren't header-name API keys — configure them as [bearer](./bearer.md) sources, which Reqon sends correctly.
+:::
 
 ## Key rotation
 
 ### Manual rotation
 
-1. Generate new key in provider dashboard
-2. Update credentials file
-3. Run mission
+1. Generate a new key in the provider dashboard.
+2. Update the credentials file.
+3. Run the mission.
 
 ### Zero-downtime rotation
 
 Some APIs support multiple active keys:
 
-```json
-{
-  "API": {
-    "type": "api_key",
-    "key": "new-key",
-    "header": "X-API-Key"
-  }
-}
-```
-
-1. Create new key (old still works)
-2. Update credentials
-3. Verify new key works
-4. Revoke old key
-
-## Error handling
-
-```vague
-action FetchData {
-  get "/data"
-
-  match response {
-    { error: "invalid_api_key" } -> abort "Invalid API key",
-    { error: "expired_api_key" } -> abort "API key expired",
-    { error: _, code: 401 } -> abort "Authentication failed",
-    { error: _, code: 403 } -> abort "API key lacks permissions",
-    _ -> continue
-  }
-}
-```
+1. Create a new key (the old one still works).
+2. Update the credentials.
+3. Verify the new key works.
+4. Revoke the old key.
 
 ## Security best practices
-
-### Never expose in URLs (when possible)
-
-Prefer header over query:
-
-```json
-// Better: key in header
-{
-  "type": "api_key",
-  "key": "...",
-  "header": "X-API-Key"
-}
-
-// Avoid: key in URL (may be logged)
-{
-  "type": "api_key",
-  "key": "...",
-  "query": "api_key"
-}
-```
 
 ### Use environment variables
 
@@ -311,29 +132,20 @@ export API_KEY="your-key"
 
 ### Restrict key permissions
 
-Use keys with minimal required permissions.
+Use keys with the minimum required permissions.
 
 ## Troubleshooting
 
 ### "Invalid API key"
 
-1. Check key is correct
-2. Check for extra whitespace
-3. Verify key hasn't been revoked
+1. Check the key is correct.
+2. Check for extra whitespace.
+3. Verify the key hasn't been revoked.
 
-### "Header not recognized"
+### Header name mismatch
 
-Check the exact header name the API expects:
+The header name is case-sensitive on some servers. Match exactly what the API expects:
 
 ```json
-// Case matters!
-"header": "X-API-Key"  // Not "x-api-key"
-```
-
-### Key being sent wrong
-
-Debug by checking what's being sent:
-
-```bash
-reqon mission.vague --verbose
+"headerName": "X-API-Key"
 ```

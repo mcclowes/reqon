@@ -197,10 +197,13 @@ Cron expressions use the system timezone by default.
 
 ### Specify timezone
 
+`timezone` is a schedule option, so it goes inside the schedule's `{ }` block:
+
 ```vague
 mission TimezoneSync {
-  schedule: cron "0 9 * * *"
-  timezone: "America/New_York"
+  schedule: cron "0 9 * * *" {
+    timezone: "America/New_York"
+  }
 }
 ```
 
@@ -208,32 +211,24 @@ mission TimezoneSync {
 
 ```vague
 mission UTCSync {
-  schedule: cron "0 9 * * *"
-  timezone: "UTC"
+  schedule: cron "0 9 * * *" {
+    timezone: "UTC"
+  }
 }
 ```
 
-## Testing cron expressions
+## Previewing run times
 
-### Dry run
-
-```bash
-reqon ./mission.vague --dry-run
-# Shows: Next run at: 2024-01-20 09:00:00
-```
-
-### Validate expression
+Start the daemon and it prints each scheduled mission's next run time on startup:
 
 ```bash
-reqon --validate-cron "0 9 * * *"
-# Valid cron expression
-# Next 5 runs:
-#   2024-01-20 09:00:00
-#   2024-01-21 09:00:00
-#   2024-01-22 09:00:00
-#   2024-01-23 09:00:00
-#   2024-01-24 09:00:00
+reqon ./missions/ --daemon
+# Scheduled jobs:
+#   - TimezoneSync: cron "0 9 * * *"
+#     Next run: 2024-01-20T09:00:00.000Z
 ```
+
+A malformed cron expression fails when the mission is loaded, so an invalid schedule surfaces as soon as you run the file.
 
 ## Best practices
 
@@ -269,11 +264,10 @@ mission SyncProducts {
 Account for job duration:
 
 ```vague
-// If job takes 10 minutes, don't schedule every 5
-schedule: cron "*/15 * * * *"  // Every 15 minutes
-
-// Or use skipIfRunning
-skipIfRunning: true
+// If a job takes 10 minutes, don't schedule every 5
+schedule: cron "*/15 * * * *" {  // Every 15 minutes
+  skipIfRunning: true            // Or skip overlapping runs
+}
 ```
 
 ## Troubleshooting
@@ -289,17 +283,14 @@ TZ=UTC date  # UTC time
 
 ### Missed runs
 
-If daemon was down, jobs don't backfill. Consider:
+If the daemon was down, jobs don't backfill. Consider retrying failed runs with the schedule's retry block:
 
 ```vague
-retryOnFailure: { maxAttempts: 3 }
+schedule: cron "0 9 * * *" {
+  retry: { maxRetries: 3, delaySeconds: 60 }
+}
 ```
 
 ### Expression errors
 
-Validate syntax:
-
-```bash
-reqon --validate-cron "invalid"
-# Error: Invalid cron expression
-```
+A malformed cron expression fails when the mission loads, with an error naming the bad expression. Fix the expression and run the file again.

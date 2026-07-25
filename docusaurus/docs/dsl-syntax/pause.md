@@ -84,8 +84,8 @@ action WaitForApproval {
   }
 
   match response {
-    { approved: true } => continue
-    _ => abort "Not approved"
+    _ where response.approved == true -> continue,
+    _ -> abort "Not approved"
   }
 }
 ```

@@ -4,9 +4,11 @@ sidebar_position: 4
 
 # Response validation
 
-Reqon can validate API responses against OpenAPI schema definitions.
+When a source is backed by an OpenAPI spec, Reqon can check responses against the operation's schema.
 
 ## Enabling validation
+
+Set `validateResponses: true` on the source:
 
 ```vague
 source API from "./spec.yaml" {
@@ -15,80 +17,25 @@ source API from "./spec.yaml" {
 }
 ```
 
-## How it works
+## What gets validated
 
-### Schema matching
-
-OpenAPI spec:
-```yaml
-paths:
-  /pets/{petId}:
-    get:
-      operationId: getPetById
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Pet'
-
-components:
-  schemas:
-    Pet:
-      type: object
-      required:
-        - id
-        - name
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        tag:
-          type: string
-```
-
-Reqon validates:
-```vague
-call API.getPetById { params: { petId: "123" } }
-// Validates response against Pet schema
-```
-
-## Validation modes
-
-### Strict mode
-
-Fails on schema mismatch:
+Validation runs only for `call Source.operationId` requests, against the operation's `200` JSON response schema. Plain `get`/`post` fetches are not validated, and neither are non-200 responses.
 
 ```vague
-source API from "./spec.yaml" {
-  validateResponses: true,
-  validationMode: "strict"
-}
+call API.getPetById
+// If API has validateResponses: true and getPetById defines a 200 schema,
+// the response body is checked against that schema.
 ```
 
-### Warning mode
+## Behaviour
 
-Logs warning but continues:
+Validation is advisory. When a response doesn't match the schema, Reqon logs warnings (visible with `--verbose`) and execution continues. It does not throw, abort, or change `response`, and there's no `validationMode` option — it always warns and carries on.
 
-```vague
-source API from "./spec.yaml" {
-  validateResponses: true,
-  validationMode: "warn"
-}
-```
-
-### Off
-
-No validation (default):
-
-```vague
-source API from "./spec.yaml" {
-  validateResponses: false
-}
-```
+For checks that must block the pipeline, use a [`validate` step](../dsl-syntax/validate) (see below).
 
 ## Validation rules
+
+The validator checks the following against the schema.
 
 ### Required fields
 
@@ -99,9 +46,10 @@ Pet:
     - name
 ```
 
-Response missing `name` triggers error:
+A response missing `name` is reported:
+
 ```json
-{ "id": "123" }  // Error: missing required field 'name'
+{ "id": "123" }  // warning: missing required property 'name'
 ```
 
 ### Type checking
@@ -117,10 +65,10 @@ Pet:
 
 ```json
 { "id": 123, "age": "five" }
-// Errors: id should be string, age should be integer
+// warnings: id expected string, age expected integer
 ```
 
-### Enum validation
+### Enum
 
 ```yaml
 Pet:
@@ -131,10 +79,14 @@ Pet:
 ```
 
 ```json
-{ "status": "active" }  // Error: status not in enum
+{ "status": "active" }  // warning: value not in enum
 ```
 
-### Array validation
+### Numeric and string constraints
+
+`minimum`/`maximum` for numbers, and `minLength`/`maxLength`/`pattern` for strings, are all checked.
+
+### Arrays
 
 ```yaml
 Pets:
@@ -143,202 +95,65 @@ Pets:
     $ref: '#/components/schemas/Pet'
 ```
 
-Each item in array is validated.
+`minItems`/`maxItems` are checked, and each item is validated against the item schema.
 
-## Error handling
-
-### With validation errors
-
-```vague
-call API.getPet { params: { id: "123" } }
-
-match response {
-  { validationErrors: errors } -> {
-    store {
-      operation: "getPet",
-      errors: errors
-    } -> validationFailures
-    skip
-  },
-  _ -> store response -> pets { key: .id }
-}
-```
-
-### Catching specific errors
-
-```vague
-match response {
-  { validationErrors: e } where includes(e, "missing required") -> {
-    // Handle missing fields
-    abort "Incomplete data from API"
-  },
-  { validationErrors: e } where includes(e, "type mismatch") -> {
-    // Handle type issues
-    store response -> typeIssues { key: response.id }
-    skip
-  },
-  _ -> continue
-}
-```
-
-## Custom validation
-
-### Additional constraints
-
-Beyond schema validation:
-
-```vague
-call API.getOrder { params: { id: orderId } }
-
-// Schema validation happens automatically
-
-// Additional business validation
-validate response {
-  assume .total >= 0,
-  assume .items is array,
-  assume length(.items) > 0,
-  assume .status != "invalid"
-}
-
-store response -> orders { key: .id }
-```
-
-### Combining validations
-
-```vague
-action ValidatedFetch {
-  call API.listItems
-
-  for item in response.items {
-    // Schema already validated by OAS
-
-    // Additional validation
-    validate item {
-      assume .price > 0,
-      assume .quantity >= 0
-    }
-
-    match item {
-      _ where .validationErrors != null -> {
-        queue invalid { item: item }
-        skip
-      },
-      _ -> store item -> items { key: .id }
-    }
-  }
-}
-```
-
-## Schema references
-
-### Component schemas
+### Nested objects
 
 ```yaml
-components:
-  schemas:
-    Pet:
-      type: object
-      properties:
-        id: { type: string }
-        owner:
-          $ref: '#/components/schemas/Owner'
-    Owner:
-      type: object
-      properties:
-        name: { type: string }
+Pet:
+  properties:
+    owner:
+      $ref: '#/components/schemas/Owner'
 ```
 
-Nested schemas are validated:
+Nested object properties are validated recursively, including `additionalProperties` when the schema sets it.
 
-```json
-{
-  "id": "123",
-  "owner": {
-    "name": 123  // Error: name should be string
+## Hard validation with the validate step
+
+Schema validation only logs. To stop the pipeline on bad data, add a `validate` step. Each `assume` is a condition; a failed assumption throws and aborts the mission:
+
+```vague
+action FetchOrder {
+  call API.getOrder
+
+  validate response {
+    assume .total >= 0
+    assume .items is array
+    assume length(.items) > 0
   }
+
+  store response -> orders { key: .id }
 }
 ```
 
-### OneOf/AnyOf
+## Programmatic validation
 
-```yaml
-Response:
-  oneOf:
-    - $ref: '#/components/schemas/Success'
-    - $ref: '#/components/schemas/Error'
-```
+The validator is also exported for direct use:
 
-Validates against matching schema.
+```typescript
+import { validateResponse } from 'reqon';
 
-## Best practices
-
-### Use validation in development
-
-```vague
-source API from "./spec.yaml" {
-  validateResponses: env("NODE_ENV") != "production"
-}
-```
-
-### Log validation failures
-
-```vague
-match response {
-  { validationErrors: e } -> {
-    store {
-      timestamp: now(),
-      operation: currentOperation,
-      errors: e,
-      response: response
-    } -> validationLog
-  },
-  _ -> continue
-}
-```
-
-### Keep specs updated
-
-Ensure spec matches actual API:
-- Run validation in CI/CD
-- Update spec when API changes
-- Use spec versioning
-
-### Handle gracefully
-
-```vague
-// Don't fail hard on validation
-source API from "./spec.yaml" {
-  validateResponses: true,
-  validationMode: "warn"
-}
-
-// Handle in code
-match response {
-  { validationErrors: _ } -> {
-    // Log and continue with caution
-  },
-  _ -> continue
+const result = validateResponse(data, schema);
+if (!result.valid) {
+  for (const err of result.errors) {
+    console.warn(`${err.path}: ${err.message}`);
+  }
 }
 ```
 
 ## Troubleshooting
 
-### "Schema not found"
+### Warnings you didn't expect
 
-Check component name matches:
+The spec may be out of date with the live API. Update the spec, or check for an API version change.
 
-```yaml
-$ref: '#/components/schemas/Pet'  # Case sensitive
-```
+### Validation isn't running
 
-### False positives
+Confirm all of these:
 
-Schema may be outdated:
-- Update spec from API provider
-- Check for API version changes
-
-### Performance
-
-Validation adds overhead:
-- Disable in production if not needed
-- Use sampling for high-volume APIs
+- The source is declared with `from "./spec.yaml"`.
+- `validateResponses: true` is set on the source.
+- You're using `call Source.operationId` (not a plain `get`/`post`).
+- The operation defines a `200` JSON response schema.
+- You're running with `--verbose` so the warnings are visible.
+</content>

@@ -19,8 +19,8 @@ schedule: every N units
 | `seconds` | `every 30 seconds` |
 | `minutes` | `every 15 minutes` |
 | `hours` | `every 6 hours` |
-| `days` | `every 1 day` |
-| `weeks` | `every 1 week` |
+| `days` | `every 1 days` |
+| `weeks` | `every 1 weeks` |
 
 ## Examples
 
@@ -48,7 +48,7 @@ schedule: every 30 minutes
 
 ```vague
 // Hourly
-schedule: every 1 hour
+schedule: every 1 hours
 
 // Every 2 hours
 schedule: every 2 hours
@@ -64,7 +64,7 @@ schedule: every 12 hours
 
 ```vague
 // Daily
-schedule: every 1 day
+schedule: every 1 days
 
 // Every 2 days
 schedule: every 2 days
@@ -74,7 +74,7 @@ schedule: every 2 days
 
 ```vague
 // Weekly
-schedule: every 1 week
+schedule: every 1 weeks
 
 // Bi-weekly
 schedule: every 2 weeks
@@ -110,31 +110,21 @@ Intervals start from:
 1. Daemon start time (for new missions)
 2. Last run time (for existing missions)
 
-### First run behavior
-
-```vague
-mission ImmediateStart {
-  schedule: every 1 hour
-  runImmediately: true  // Run once at start
-}
-
-mission DelayedStart {
-  schedule: every 1 hour
-  runImmediately: false  // Wait for first interval
-}
-```
+To run once immediately rather than waiting for the daemon to reach the next interval, start the daemon with `--once`, which runs every scheduled mission a single time and exits.
 
 ## Combining with options
+
+Schedule options go inside the optional `{ }` block on the schedule, not as mission-level fields.
 
 ### With retry
 
 ```vague
 mission RobustSync {
-  schedule: every 15 minutes
-
-  retryOnFailure: {
-    maxAttempts: 3,
-    backoff: exponential
+  schedule: every 15 minutes {
+    retry: {
+      maxRetries: 3,
+      delaySeconds: 60
+    }
   }
 }
 ```
@@ -143,17 +133,9 @@ mission RobustSync {
 
 ```vague
 mission ControlledSync {
-  schedule: every 5 minutes
-  skipIfRunning: true  // Don't overlap
-}
-```
-
-### With timeout
-
-```vague
-mission TimedSync {
-  schedule: every 1 hour
-  timeout: 1800000  // 30 minute timeout
+  schedule: every 5 minutes {
+    skipIfRunning: true  // Don't overlap
+  }
 }
 ```
 
@@ -176,7 +158,7 @@ mission RealtimeSync {
 
 ```vague
 mission HourlySync {
-  schedule: every 1 hour
+  schedule: every 1 hours
 
   action Sync {
     get "/data"
@@ -189,7 +171,7 @@ mission HourlySync {
 
 ```vague
 mission DailyReport {
-  schedule: every 1 day
+  schedule: every 1 days
 
   action Generate {
     get "/stats/daily"
@@ -198,16 +180,15 @@ mission DailyReport {
 }
 ```
 
-### Weekly cleanup
+### Weekly archive
 
 ```vague
-mission WeeklyCleanup {
-  schedule: every 1 week
+mission WeeklyArchive {
+  schedule: every 1 weeks
 
-  action Cleanup {
-    for item in oldData where .createdAt < addDays(now(), -30) {
-      delete oldData[item.id]
-    }
+  action Archive {
+    get "/records/stale"
+    store response -> archive { key: .id, upsert: true }
   }
 }
 ```
@@ -238,21 +219,13 @@ schedule: every 5 minutes   // Risk: overlapping runs
 
 ```vague
 mission SafeSync {
-  schedule: every 5 minutes
-  skipIfRunning: true
+  schedule: every 5 minutes {
+    skipIfRunning: true
+  }
 
   action Sync {
     // Long-running sync
   }
-}
-```
-
-### Add jitter for distributed systems
-
-```vague
-mission JitteredSync {
-  schedule: every 1 hour
-  jitter: 300000  // +/- 5 minutes random delay
 }
 ```
 
@@ -272,18 +245,18 @@ schedule: every 30 minutes
 
 ### Runs overlapping
 
-Add skipIfRunning:
+Add `skipIfRunning` to the schedule block:
 
 ```vague
-schedule: every 5 minutes
-skipIfRunning: true
+schedule: every 5 minutes {
+  skipIfRunning: true
+}
 ```
 
 ### Missed runs
 
-Intervals don't backfill. If daemon was down for 2 hours with 30-minute interval, you won't get 4 runs.
+Intervals don't backfill. If the daemon was down for 2 hours with a 30-minute interval, you won't get 4 runs.
 
 Consider:
-- Using `runImmediately: true`
 - Adding catch-up logic
 - Using incremental sync with `since: lastSync`

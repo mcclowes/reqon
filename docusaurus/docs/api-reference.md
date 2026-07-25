@@ -1,12 +1,16 @@
 ---
 sidebar_position: 21
-description: Complete API reference for Reqon including parse, execute, store adapters, state management, observability, and MCP server integration.
+description: Programmatic API reference for Reqon - parse, execute, store adapters, executor config, progress callbacks, observability, and the MCP server.
 keywords: [reqon, API, reference, execute, parse, store adapter, observability]
 ---
 
-# API Reference
+# API reference
 
-Reqon's programmatic API for advanced usage.
+Reqon's programmatic API for advanced usage. The package is published as `reqon-dsl`, so import from `'reqon-dsl'`.
+
+```bash
+npm install reqon-dsl
+```
 
 ## Core functions
 
@@ -15,9 +19,9 @@ Reqon's programmatic API for advanced usage.
 Parse a Reqon source string into an AST.
 
 ```typescript
-import { parse } from 'reqon';
+import { parse } from 'reqon-dsl';
 
-const ast = parse(`
+const program = parse(`
   mission Example {
     source API { auth: bearer, base: "https://api.example.com" }
     store data: file("data")
@@ -26,20 +30,21 @@ const ast = parse(`
   }
 `);
 
-console.log(ast.missions[0].name); // "Example"
+console.log(program.statements.length); // 1
 ```
 
 **Parameters:**
 - `source: string` - Reqon source code
+- `filePath?: string` - Optional file path, used for error messages
 
-**Returns:** `ReqonProgram` - The parsed AST
+**Returns:** `ReqonProgram` - the parsed AST, with a `statements` array
 
 ### execute
 
-Execute a Reqon mission from source code.
+Parse and execute a mission from source code.
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 const result = await execute(`
   mission Example {
@@ -60,36 +65,36 @@ console.log(result.actionsRun); // ["Fetch"]
 
 **Parameters:**
 - `source: string` - Reqon source code
-- `config?: ExecutorConfig` - Optional configuration
+- `config?: ExecutorConfig` - optional configuration
 
 **Returns:** `Promise<ExecutionResult>`
 
 ### fromFile
 
-Execute a mission from a file.
+Execute a mission from a single file.
 
 ```typescript
-import { fromFile } from 'reqon';
+import { fromFile } from 'reqon-dsl';
 
 const result = await fromFile('./mission.vague', {
   auth: {
-    API: { type: 'bearer', token: 'xxx' }
-  }
+    API: { type: 'bearer', token: 'xxx' },
+  },
 });
 ```
 
 **Parameters:**
-- `filePath: string` - Path to .vague file
-- `config?: ExecutorConfig` - Optional configuration
+- `filePath: string` - path to a `.vague` or `.reqon` file
+- `config?: ExecutorConfig` - optional configuration
 
 **Returns:** `Promise<ExecutionResult>`
 
 ### fromPath
 
-Execute a mission from a file or folder.
+Execute a mission from a file or a folder (multi-file mission). Use this when you want folder missions to resolve their action files automatically.
 
 ```typescript
-import { fromPath } from 'reqon';
+import { fromPath } from 'reqon-dsl';
 
 // Single file
 const result1 = await fromPath('./mission.vague');
@@ -99,17 +104,17 @@ const result2 = await fromPath('./missions/customer-sync/');
 ```
 
 **Parameters:**
-- `path: string` - Path to file or folder
-- `config?: ExecutorConfig` - Optional configuration
+- `path: string` - path to a file or folder
+- `config?: ExecutorConfig` - optional configuration
 
 **Returns:** `Promise<ExecutionResult>`
 
-### reqon (Tagged Template)
+### reqon (tagged template)
 
-Create a parsed program using a tagged template literal.
+Parse an inline mission with a tagged template literal. It returns a `ReqonProgram`, the same as `parse`; there is no `program.execute()` method, so pass the source to `execute` to run it.
 
 ```typescript
-import { reqon } from 'reqon';
+import { reqon, MissionExecutor } from 'reqon-dsl';
 
 const program = reqon`
   mission Example {
@@ -120,75 +125,92 @@ const program = reqon`
   }
 `;
 
-// Execute the program
-const result = await program.execute();
+const result = await new MissionExecutor().execute(program);
 ```
 
 ## Configuration
 
 ### ExecutorConfig
 
+These are the keys read by the executor. All are optional.
+
 ```typescript
 interface ExecutorConfig {
+  // Auth credentials by source name
+  auth?: Record<string, AuthConfig>;
+  // Custom store adapters by store name
+  stores?: Record<string, StoreAdapter>;
   // Skip actual HTTP requests
   dryRun?: boolean;
-
-  // Enable verbose logging
+  // Verbose logging
   verbose?: boolean;
-
-  // Authentication credentials
-  auth?: Record<string, AuthConfig>;
-
-  // Store configuration
-  storeConfig?: Record<string, StoreConfig>;
-
-  // State directory
-  stateDir?: string;
-
-  // Progress callbacks
-  progressCallbacks?: ProgressCallbacks;
+  // Mission file directory (for resolving relative paths like OAS specs)
+  missionDir?: string;
+  // Use file stores when sql/nosql stores are declared (--dev mode)
+  developmentMode?: boolean;
+  // Base directory for file stores, sync, executions, traces (default: '.reqon-data')
+  dataDir?: string;
+  // Enable state persistence for resumable executions
+  persistState?: boolean;
+  // Resume from a previous execution ID
+  resumeFrom?: string;
+  // Progress callbacks for real-time UI updates
+  progress?: ProgressCallbacks;
+  // Webhook server for handling 'wait' steps
+  webhookServer?: WebhookServer;
+  // Control server for pause/resume and status queries
+  controlServer?: ControlServer;
+  // Append-only execution event log (durable-execution foundation)
+  executionLog?: ExecutionLogStore;
 }
 ```
 
+There are further advanced keys (`metadata`, `executionStore`, `syncStore`, `traceStore`, `pauseStore`, `pauseManager`, `eventEmitter`, `logger`, `debugController`, `rateLimitCallbacks`, `circuitBreakerCallbacks`, `backfillMaxItemsPerRun`); see `ExecutorConfig` in `src/interpreter/executor.ts` for the full list.
+
 ### AuthConfig
 
+Credentials passed programmatically. Only `bearer` and `oauth2` attach auth to outgoing requests at runtime.
+
 ```typescript
-type AuthConfig =
-  | { type: 'none' }
-  | { type: 'bearer'; token: string }
-  | { type: 'basic'; username: string; password: string }
-  | { type: 'api_key'; key: string; header?: string; query?: string; prefix?: string }
-  | {
-      type: 'oauth2';
-      clientId: string;
-      clientSecret: string;
-      accessToken: string;
-      refreshToken: string;
-      tokenUrl: string;
-      scopes?: string[];
-      expiresAt?: string;
-    };
+interface AuthConfig {
+  type: 'bearer' | 'oauth2' | 'none';
+  token?: string; // bearer
+  accessToken?: string; // oauth2
+  refreshToken?: string; // oauth2
+  tokenEndpoint?: string; // oauth2
+  clientId?: string; // oauth2
+  clientSecret?: string; // oauth2
+}
 ```
 
 ### ProgressCallbacks
 
 ```typescript
 interface ProgressCallbacks {
-  onMissionStart?: (mission: string) => void;
-  onMissionComplete?: (mission: string, result: ExecutionResult) => void;
-  onActionStart?: (action: string) => void;
-  onActionComplete?: (action: string, duration: number) => void;
-  onProgress?: (progress: ProgressInfo) => void;
-  onError?: (error: ExecutionError) => void;
+  onExecutionStart?: (event: ExecutionStartEvent) => void;
+  onExecutionComplete?: (event: ExecutionCompleteEvent) => void;
+  onStageStart?: (event: StageStartEvent) => void;
+  onStageComplete?: (event: StageCompleteEvent) => void;
 }
 
-interface ProgressInfo {
-  action: string;
-  step: string;
-  current: number;
-  total?: number;
+interface ExecutionStartEvent {
+  executionId: string;
+  mission: string;
+  stageCount: number;
+  isResume: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+interface StageStartEvent {
+  executionId: string;
+  mission: string;
+  stageIndex: number;
+  stageName: string;
+  totalStages: number;
 }
 ```
+
+`StageCompleteEvent` adds `success`, `duration`, and an optional `error`; `ExecutionCompleteEvent` reports `success`, `duration`, `stagesCompleted`, `stagesFailed`, and `errors`.
 
 ## Results
 
@@ -196,26 +218,15 @@ interface ProgressInfo {
 
 ```typescript
 interface ExecutionResult {
-  // Whether execution completed successfully
   success: boolean;
-
-  // Total duration in milliseconds
-  duration: number;
-
-  // Actions that were executed
+  duration: number; // milliseconds
   actionsRun: string[];
-
-  // Errors encountered
   errors: ExecutionError[];
-
-  // Access to stores
   stores: Map<string, StoreAdapter>;
-
-  // Execution ID (for state tracking)
-  executionId?: string;
-
-  // Execution state (for resume)
-  state?: ExecutionState;
+  executionId?: string; // for resuming
+  state?: ExecutionState; // when persistence is enabled
+  traceId?: string; // when tracing is enabled
+  pauseId?: string; // when execution paused
 }
 ```
 
@@ -230,231 +241,122 @@ interface ExecutionError {
 }
 ```
 
-## Store adapter interface
+## Store adapters
+
+### StoreAdapter interface
 
 ```typescript
 interface StoreAdapter {
   get(key: string): Promise<Record<string, unknown> | null>;
   set(key: string, value: Record<string, unknown>): Promise<void>;
-  update(key: string, partial: Record<string, unknown>): Promise<void>;
+  bulkSet?(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void>;
+  bulkUpsert?(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void>;
+  update(key: string, value: Partial<Record<string, unknown>>): Promise<void>;
   delete(key: string): Promise<void>;
-  list(filter?: FilterOptions): Promise<Record<string, unknown>[]>;
+  list(filter?: StoreFilter): Promise<Record<string, unknown>[]>;
+  count(filter?: StoreFilter): Promise<number>;
   clear(): Promise<void>;
 }
 
-interface FilterOptions {
-  where?: WhereClause[];
+interface StoreFilter {
+  where?: Record<string, unknown>; // equality match by field
   limit?: number;
   offset?: number;
 }
+```
 
-interface WhereClause {
-  field: string;
-  operator: 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains';
-  value: unknown;
+`where` filters are equality-only.
+
+### Built-in stores and createStore
+
+Reqon exports `MemoryStore`, `FileStore`, `PostgRESTStore`, and a `createStore` factory.
+
+```typescript
+import { createStore, MemoryStore, FileStore } from 'reqon-dsl';
+
+const mem = new MemoryStore('cache');
+const file = new FileStore('output', { baseDir: '.reqon-data' });
+```
+
+### Using a custom store
+
+There is no global store registry. To use your own adapter, implement `StoreAdapter` and pass it in `ExecutorConfig.stores`, keyed by the store name used in the mission.
+
+```typescript
+import { execute, type StoreAdapter } from 'reqon-dsl';
+
+class MyStore implements StoreAdapter {
+  /* ... */
 }
-```
 
-## Registration functions
-
-### registerFunction
-
-Register a custom function.
-
-```typescript
-import { registerFunction } from 'reqon';
-
-registerFunction('myFunc', (arg1: string, arg2: number) => {
-  return `${arg1}: ${arg2}`;
+await execute(source, {
+  stores: { customers: new MyStore() },
 });
 ```
 
-### registerStoreAdapter
+## AST types
 
-Register a custom store adapter.
-
-```typescript
-import { registerStoreAdapter } from 'reqon';
-
-registerStoreAdapter('mystore', (name: string, config: any) => {
-  return new MyStoreAdapter(name, config);
-});
-```
-
-### registerAuthProvider
-
-Register a custom auth provider.
-
-```typescript
-import { registerAuthProvider } from 'reqon';
-
-registerAuthProvider('myauth', (config: any) => {
-  return new MyAuthProvider(config);
-});
-```
-
-### registerPaginationStrategy
-
-Register a custom pagination strategy.
-
-```typescript
-import { registerPaginationStrategy } from 'reqon';
-
-registerPaginationStrategy('linkheader', () => {
-  return new LinkHeaderPaginationStrategy();
-});
-```
-
-## State management
-
-### getExecutionState
-
-Get execution state for a mission.
-
-```typescript
-import { getExecutionState } from 'reqon';
-
-const state = await getExecutionState('CustomerSync');
-console.log(state.status); // "completed"
-console.log(state.lastRun); // "2024-01-20T09:00:00Z"
-```
-
-### getExecutionHistory
-
-Get execution history.
-
-```typescript
-import { getExecutionHistory } from 'reqon';
-
-const history = await getExecutionHistory('CustomerSync', {
-  limit: 10,
-  since: '2024-01-01'
-});
-```
-
-### clearSyncCheckpoints
-
-Clear sync checkpoints.
-
-```typescript
-import { clearSyncCheckpoints, clearSyncCheckpoint } from 'reqon';
-
-// Clear all
-await clearSyncCheckpoints();
-
-// Clear specific
-await clearSyncCheckpoint('API-/customers');
-```
-
-## AST Types
-
-### ReqonProgram
+The full AST node set is exported from the package (`export * from './ast'`). The top-level shape is:
 
 ```typescript
 interface ReqonProgram {
-  missions: MissionDefinition[];
+  statements: Statement[]; // mission definitions and other top-level statements
 }
-```
 
-### MissionDefinition
-
-```typescript
 interface MissionDefinition {
   type: 'MissionDefinition';
   name: string;
-  schedule?: ScheduleConfig;
+  schedule?: ScheduleDefinition;
+  checkpoint?: CheckpointConfig; // durable execution
+  trace?: TraceConfig; // time-travel debugging
   sources: SourceDefinition[];
   stores: StoreDefinition[];
   schemas: SchemaDefinition[];
+  transforms: TransformDefinition[];
   actions: ActionDefinition[];
   pipeline: PipelineDefinition;
 }
 ```
 
-### ActionDefinition
+## Error classes
 
 ```typescript
-interface ActionDefinition {
-  type: 'ActionDefinition';
-  name: string;
-  steps: ActionStep[];
+import {
+  ReqonError,
+  ParseError,
+  LexerError,
+  RuntimeError,
+  ValidationError,
+} from 'reqon-dsl';
+
+try {
+  await execute(source);
+} catch (error) {
+  if (error instanceof ParseError) {
+    console.error(error.format());
+  } else if (error instanceof ValidationError) {
+    console.error(`Validation failed: ${error.message}`);
+  }
 }
 ```
 
-### ActionStep
-
-```typescript
-type ActionStep =
-  | FetchStep
-  | CallStep
-  | ForStep
-  | MapStep
-  | ValidateStep
-  | StoreStep
-  | MatchStep
-  | LetStep
-  | WebhookStep;
-```
-
-### LetStep
-
-```typescript
-interface LetStep {
-  type: 'LetStep';
-  name: string;
-  value: Expression;
-}
-```
-
-### WebhookStep
-
-```typescript
-interface WebhookStep {
-  type: 'WebhookStep';
-  timeout?: number;
-  path?: string;
-  expectedEvents?: number;
-  eventFilter?: Expression;
-  retryOnTimeout?: RetryConfig;
-  storage?: {
-    target: string;
-    key?: Expression;
-  };
-}
-```
-
-## CLI programmatic usage
-
-```typescript
-import { CLI } from 'reqon/cli';
-
-const cli = new CLI();
-
-// Run mission
-await cli.run(['./mission.vague', '--verbose']);
-
-// Daemon mode
-await cli.run(['./missions/', '--daemon']);
-
-// With auth
-await cli.run(['./mission.vague', '--auth', './credentials.json']);
-```
+`ReqonError` is the base class; all of the above extend it and provide a `format()` method that renders source context.
 
 ## Observability
 
 ### createStructuredLogger
 
-Create a structured logger with multiple outputs.
+Create a structured logger with console and/or JSON-lines output.
 
 ```typescript
-import { createStructuredLogger, ConsoleOutput, JsonLinesOutput } from 'reqon';
+import { createStructuredLogger } from 'reqon-dsl';
 
 const logger = createStructuredLogger({
   prefix: 'MyApp',
   level: 'info',
   console: true,
   jsonLines: true,
-  context: { service: 'data-sync' }
+  context: { service: 'data-sync' },
 });
 
 logger.info('Starting sync', { count: 100 });
@@ -465,120 +367,81 @@ span.end();
 
 ### createEmitter
 
-Create an event emitter for observability.
+Create an event emitter for observability. It takes an execution ID and a mission name.
 
 ```typescript
-import { createEmitter } from 'reqon';
+import { createEmitter } from 'reqon-dsl';
 
-const emitter = createEmitter();
+const emitter = createEmitter('exec-123', 'CustomerSync');
 
 emitter.on('fetch.complete', (event) => {
-  console.log(`Fetched ${event.url} in ${event.duration}ms`);
+  console.log('fetch complete', event);
 });
 
 emitter.on('mission.complete', (event) => {
-  console.log(`Mission ${event.mission} completed`);
+  console.log('mission complete', event);
 });
 ```
 
 ### OTLPExporter
 
-Export traces to OpenTelemetry collectors.
+Export traces to an OpenTelemetry collector.
 
 ```typescript
-import { OTLPExporter, createOTelListener } from 'reqon';
+import { OTLPExporter, createOTelListener } from 'reqon-dsl';
 
 const exporter = new OTLPExporter({
   endpoint: 'http://localhost:4318/v1/traces',
-  serviceName: 'reqon-pipeline'
+  serviceName: 'reqon-pipeline',
 });
 
-const otelListener = createOTelListener(exporter);
+const listener = createOTelListener(exporter);
 ```
 
 ### Event types
 
 ```typescript
 type EventType =
-  | 'mission.start' | 'mission.complete' | 'mission.failed'
+  | 'mission.start' | 'mission.complete' | 'mission.failed' | 'mission.paused'
   | 'stage.start' | 'stage.complete'
   | 'step.start' | 'step.complete'
-  | 'fetch.start' | 'fetch.complete' | 'fetch.retry' | 'fetch.error'
+  | 'fetch.start' | 'fetch.complete' | 'fetch.retry' | 'fetch.error' | 'fetch.heartbeat'
   | 'data.transform' | 'data.validate' | 'data.store'
-  | 'loop.start' | 'loop.iteration' | 'loop.complete'
+  | 'loop.start' | 'loop.iteration' | 'loop.complete' | 'loop.heartbeat'
   | 'match.attempt' | 'match.result'
   | 'webhook.register' | 'webhook.event' | 'webhook.complete'
-  | 'checkpoint.save' | 'checkpoint.resume' | 'sync.checkpoint'
-  | 'ratelimit.hit' | 'circuitbreaker.state';
+  | 'checkpoint.save' | 'checkpoint.resume'
+  | 'sync.checkpoint'
+  | 'ratelimit.wait' | 'ratelimit.resume'
+  | 'circuit.open' | 'circuit.halfopen' | 'circuit.close';
 ```
 
-## MCP Server
+## MCP server
 
-### Starting the server
+Reqon ships an MCP server, exposed as the `reqon-mcp` binary.
 
 ```typescript
-// As a separate process
-import { spawn } from 'child_process';
-spawn('npx', ['reqon-mcp-server', '--verbose']);
+import { spawn } from 'node:child_process';
+spawn('npx', ['reqon-mcp', '--verbose']);
 ```
 
-### MCP Tools
+### MCP tools
 
 | Tool | Description |
 |------|-------------|
-| `reqon.execute` | Execute mission from source |
-| `reqon.execute_file` | Execute mission from file |
+| `reqon.execute` | Execute a mission from source |
+| `reqon.execute_file` | Execute a mission from a file |
 | `reqon.parse` | Parse and validate source |
 | `reqon.query_store` | Query store data |
-| `reqon.list_stores` | List registered stores |
+| `reqon.list_stores` | List stores |
 | `reqon.register_store` | Register a store |
 
 ## Plugin system
 
-### reqonPlugin
+Reqon registers itself as a Vague plugin on import. The exported helpers are `reqonPlugin` and `registerReqonPlugin`.
 
 ```typescript
-import { reqonPlugin, registerReqonPlugin, unregisterReqonPlugin } from 'reqon';
-
-// Check if registered
-import { isReqonPluginRegistered } from 'reqon';
-console.log(isReqonPluginRegistered()); // true (auto-registered on import)
-
-// Unregister if needed
-unregisterReqonPlugin();
+import { reqonPlugin, registerReqonPlugin } from 'reqon-dsl';
 ```
 
-## Environment variables
-
-| Variable | Description |
-|----------|-------------|
-| `REQON_STATE_DIR` | State directory (default: `.vague-data`) |
-| `REQON_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` |
-| `REQON_LOG_FORMAT` | Log format: `text`, `json` |
-| `REQON_DRY_RUN` | Enable dry-run mode |
-| `REQON_OTEL_ENDPOINT` | OTLP exporter endpoint |
-| `REQON_OTEL_SERVICE` | Service name for traces |
-
-## Error classes
-
-```typescript
-import {
-  ParseError,
-  RuntimeError,
-  ValidationError,
-  AuthenticationError,
-  StoreError
-} from 'reqon/errors';
-
-try {
-  await execute(source);
-} catch (error) {
-  if (error instanceof ParseError) {
-    console.error(`Parse error at line ${error.line}: ${error.message}`);
-  } else if (error instanceof AuthenticationError) {
-    console.error(`Auth failed for ${error.source}: ${error.message}`);
-  }
-}
-```
-
-For more details, see the [source code](https://github.com/mcclowes/reqon) and [Vague documentation](https://github.com/mcclowes/vague) for expression syntax.
+For expression syntax, pattern matching, and schema definitions, see the [Vague documentation](https://github.com/mcclowes/vague). For the authoritative export list, see the [source code](https://github.com/mcclowes/reqon).
