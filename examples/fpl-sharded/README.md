@@ -35,11 +35,27 @@ egress it has. Iterations already get their own scope, so `response` and the
 loop variable stay isolated.
 
 **Sharding by input.** Each worker reads its own `fpl_shard` file and upserts
-into one shared PostgREST table. Shards are disjoint, so workers never contend.
+into one store. Shards are disjoint, so workers never contend.
+
+**Surviving a bad item.** A shard drawn from a stale id list contains managers
+that no longer exist. `allow: [404]` returns that status as data instead of
+retrying five times, and `404 -> skip` drops the item. A match written only on
+statuses falls through when none apply, so a 200 carries on without needing a
+`_` arm. Anything that still fails is queued to `failures` by `onError` rather
+than killing a run that is most of the way through.
 
 ## Running it
 
-Each worker needs its shard and its slice of the pool:
+No configuration required. It runs direct from your own IP, into a file store:
+
+```bash
+reqon examples/fpl-sharded/managers.vague --verbose
+```
+
+That is the right way to try it. Reach for the rest when the shard is big enough
+that one IP won't do.
+
+### With an egress pool
 
 ```bash
 export FPL_USER_AGENT="your-project (you@example.com)"
@@ -51,10 +67,23 @@ export FPL_PROXY_4=http://user:pass@proxy-d:3128
 reqon examples/fpl-sharded/managers.vague --verbose
 ```
 
+Leave all four unset and the mission runs direct. Setting only some of them is
+an error rather than a shorter pool: the missing entries would concentrate the
+whole request rate onto whichever proxies did resolve, which is the failure the
+pool exists to prevent.
+
 Proxy support needs the optional peer dependency:
 
 ```bash
 npm install undici
+```
+
+### As a fleet
+
+Swap the file store for the shared table so every worker upserts into one place:
+
+```
+store managers: postgrest("fpl_manager_history")
 ```
 
 The shard file lives at `.reqon-data/fpl_shard.json`, keyed by id:

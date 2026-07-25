@@ -77,8 +77,16 @@ export class QueueSignal extends Error {
  * Error thrown when a match step has no matching arm
  */
 export class NoMatchError extends Error {
-  constructor(public value: unknown) {
-    super('No matching schema found for response');
+  constructor(
+    public value: unknown,
+    public arms?: string[]
+  ) {
+    super(
+      arms?.length
+        ? `No matching schema found for response. Tried: ${arms.join(', ')}. ` +
+            'To carry on when nothing matches, add a `_` arm.'
+        : 'No matching schema found for response'
+    );
     this.name = 'NoMatchError';
   }
 }

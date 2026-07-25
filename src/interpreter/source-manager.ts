@@ -134,18 +134,34 @@ export class SourceManager {
   /**
    * Resolve a source's `proxy` expressions into a pool.
    *
-   * An entry that resolves to nothing (typically an unset env var) is a hard
-   * error rather than a silently shorter pool. Quietly dropping proxies would
-   * concentrate the run's whole request rate onto the survivors, which is the
-   * exact failure the pool exists to prevent.
+   * A *partially* unset pool is a hard error rather than a silently shorter
+   * pool. Quietly dropping proxies would concentrate the run's whole request
+   * rate onto the survivors, which is the exact failure the pool exists to
+   * prevent.
+   *
+   * Every entry unset is a different statement: no proxies are configured, so
+   * the mission runs direct. That keeps a proxy-capable mission runnable
+   * without a proxy provider, and there is no pool to overload. It is logged
+   * loudly because it means requests leave from this host's own address.
    */
   private buildProxyPool(source: SourceDefinition, ctx: ExecutionContext): ProxyPool | undefined {
     const entries = source.config.proxy;
     if (!entries?.length) return undefined;
 
-    const urls = entries.map((expr, index) => {
+    const resolved = entries.map((expr) => {
       const value = evaluate(expr, ctx);
-      const url = typeof value === 'string' ? value.trim() : '';
+      return typeof value === 'string' ? value.trim() : '';
+    });
+
+    if (resolved.every((url) => !url)) {
+      this.log(
+        `Source ${source.name}: no proxies resolved (${resolved.length} configured), ` +
+          'sending requests direct. Set the proxy environment variables to use the pool.'
+      );
+      return undefined;
+    }
+
+    const urls = resolved.map((url, index) => {
       if (!url) {
         throw new Error(
           `Source ${source.name}: proxy[${index}] resolved to an empty value. ` +
