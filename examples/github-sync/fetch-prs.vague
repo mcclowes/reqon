@@ -17,10 +17,11 @@ action FetchPRs {
     }
   }
 
-  // Handle different response types
+  // Handle different response types. The list endpoint returns an array, so the
+  // `[GitHubPR]` array pattern matches only when every element is a GitHubPR.
   match response {
     // Success - store PRs
-    GitHubPR -> {
+    [GitHubPR] -> {
       store response -> prs_raw { key: .id }
     },
 

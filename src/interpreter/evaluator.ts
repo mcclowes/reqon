@@ -17,7 +17,12 @@
 import type { Expression } from 'vague-lang';
 import type { ExecutionContext } from './context.js';
 import { getVariable } from './context.js';
-import type { IsExpression, ObjectLiteralExpression } from '../parser/expressions.js';
+import type {
+  IsExpression,
+  ObjectLiteralExpression,
+  NullishExpression,
+  IndexExpression,
+} from '../parser/expressions.js';
 import { isRecord } from '../utils/type-guards.js';
 import { EvaluatorError, UnsupportedOperationError } from '../errors/index.js';
 
@@ -41,7 +46,7 @@ import { EvaluatorError, UnsupportedOperationError } from '../errors/index.js';
  * const result = evaluate(expr, ctx, { id: 1, name: 'test' });
  */
 export function evaluate(
-  expr: Expression | IsExpression | ObjectLiteralExpression,
+  expr: Expression | IsExpression | ObjectLiteralExpression | NullishExpression | IndexExpression,
   ctx: ExecutionContext,
   current?: unknown
 ): unknown {
@@ -52,12 +57,51 @@ export function evaluate(
     return checkType(value, isExpr.typeCheck);
   }
 
+  // Nullish coalescing (custom Reqon type). Short-circuits: only null/undefined
+  // on the left falls through to the right operand, unlike `or`'s falsy check.
+  if (expr.type === 'NullishExpression') {
+    const nullishExpr = expr as NullishExpression;
+    const left = evaluate(nullishExpr.left, ctx, current);
+    return left === null || left === undefined ? evaluate(nullishExpr.right, ctx, current) : left;
+  }
+
+  // Subscript access (custom Reqon type): obj[key] / arr[index].
+  if (expr.type === 'IndexExpression') {
+    const indexExpr = expr as IndexExpression;
+    const object = evaluate(indexExpr.object, ctx, current);
+    const index = evaluate(indexExpr.index, ctx, current);
+    if (Array.isArray(object)) {
+      const i = typeof index === 'number' ? index : Number(index);
+      if (!Number.isInteger(i)) return undefined;
+      // Support negative indices (from the end), matching common expectations.
+      return object[i < 0 ? object.length + i : i];
+    }
+    if (isRecord(object)) {
+      return object[String(index)];
+    }
+    if (typeof object === 'string') {
+      const i = typeof index === 'number' ? index : Number(index);
+      if (!Number.isInteger(i)) return undefined;
+      return object[i < 0 ? object.length + i : i];
+    }
+    return undefined;
+  }
+
   // Handle ObjectLiteral before the switch (custom Reqon type)
   if (expr.type === 'ObjectLiteral') {
     const objExpr = expr as ObjectLiteralExpression;
     const result: Record<string, unknown> = {};
     for (const prop of objExpr.properties) {
-      result[prop.key] = evaluate(prop.value, ctx, current);
+      if (prop.spread) {
+        // Merge the source object's own enumerable properties. Non-objects
+        // (null/undefined from a missing field) contribute nothing.
+        const source = evaluate(prop.value, ctx, current);
+        if (isRecord(source)) {
+          Object.assign(result, source);
+        }
+      } else {
+        result[prop.key] = evaluate(prop.value, ctx, current);
+      }
     }
     return result;
   }
@@ -168,6 +212,16 @@ export function evaluate(
           return compareNumbers(left, right, '<=');
         case '>=':
           return compareNumbers(left, right, '>=');
+        case 'in': {
+          // Membership: element in collection. Arrays test by value, strings
+          // test substring, objects test own-key presence.
+          if (Array.isArray(right)) return right.includes(left);
+          if (typeof right === 'string') {
+            return typeof left === 'string' && right.includes(left);
+          }
+          if (isRecord(right)) return String(left) in right;
+          return false;
+        }
         default:
           throw new UnsupportedOperationError(`operator: ${expr.operator}`, 'binary expression');
       }
@@ -207,13 +261,31 @@ export function evaluate(
       const value = evaluate(expr.value, ctx, current);
 
       for (const arm of expr.arms) {
-        const pattern = evaluate(arm.pattern, ctx, current);
+        const guard = (arm as { guard?: Expression }).guard;
+
+        // Guarded arm: a plain identifier pattern binds the matched value into
+        // scope (e.g. `s where s > 800`); `_` is a pure guard. The arm is taken
+        // only when the guard holds. Unguarded arms below keep literal-equality
+        // and wildcard semantics unchanged.
+        if (guard) {
+          let guardScope: unknown = current;
+          if (arm.pattern.type === 'Identifier' && arm.pattern.name !== '_') {
+            guardScope = isRecord(current)
+              ? { ...current, [arm.pattern.name]: value }
+              : { [arm.pattern.name]: value };
+          }
+          if (evaluate(guard, ctx, guardScope)) {
+            return evaluate(arm.result, ctx, guardScope);
+          }
+          continue;
+        }
 
         // Wildcard pattern
         if (arm.pattern.type === 'Identifier' && arm.pattern.name === '_') {
           return evaluate(arm.result, ctx, current);
         }
 
+        const pattern = evaluate(arm.pattern, ctx, current);
         if (value === pattern) {
           return evaluate(arm.result, ctx, current);
         }

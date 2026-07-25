@@ -11,9 +11,10 @@
  *
  * Vague's plugin system lets us register keywords (identifiers) but not new
  * operator characters, and its lexer throws `Unexpected character '!'` on any
- * character it doesn't know. Reqon's parser, however, already understands the
- * `!=` (and bare `!`) operators. This subclass bridges that gap: it intercepts
- * operator scanning so a leading `!` produces the tokens the parser expects and
+ * character it doesn't know. Reqon's parser, however, understands several
+ * operators Vague's lexer can't produce: `!=`/`!`, `??` (nullish coalescing),
+ * and `...` (spread). This subclass bridges that gap: it intercepts operator
+ * scanning so those characters produce the tokens the parser expects and
  * defers to Vague's lexer for everything else.
  */
 
@@ -26,7 +27,10 @@ import { ReqonTokenType } from './tokens.js';
 interface LexerInternals {
   line: number;
   column: number;
+  pos: number;
+  source: string;
   peek(): string;
+  peekNext(): string;
   advance(): string;
   readOperator(): Token;
 }
@@ -35,7 +39,8 @@ const baseReadOperator = (VagueLexer.prototype as unknown as LexerInternals).rea
 
 /**
  * Reqon's lexer. Behaves exactly like Vague's lexer except that it also
- * tokenizes `!=` (NOT_EQUALS) and a bare `!` (BANG).
+ * tokenizes `!=` (NOT_EQUALS), a bare `!` (BANG), `??` (NULLISH), and `...`
+ * (SPREAD).
  */
 export class ReqonLexer extends VagueLexer {}
 
@@ -45,6 +50,25 @@ export class ReqonLexer extends VagueLexer {}
 (ReqonLexer.prototype as unknown as LexerInternals).readOperator = function (
   this: LexerInternals
 ): Token {
+  // `??` nullish coalescing. A lone `?` still falls through to Vague's lexer,
+  // which tokenizes it as QUESTION (ternary / optional-field marker).
+  if (this.peek() === '?' && this.peekNext() === '?') {
+    const { line, column } = this;
+    this.advance(); // consume first '?'
+    this.advance(); // consume second '?'
+    return { type: ReqonTokenType.NULLISH, value: '??', line, column } as unknown as Token;
+  }
+
+  // `...` spread. Must be checked before deferring to Vague, whose lexer would
+  // otherwise scan the leading `..` as DOTDOT (a range operator).
+  if (this.peek() === '.' && this.peekNext() === '.' && this.source[this.pos + 2] === '.') {
+    const { line, column } = this;
+    this.advance(); // consume first '.'
+    this.advance(); // consume second '.'
+    this.advance(); // consume third '.'
+    return { type: ReqonTokenType.SPREAD, value: '...', line, column } as unknown as Token;
+  }
+
   if (this.peek() === '!') {
     const { line, column } = this;
     this.advance(); // consume '!'

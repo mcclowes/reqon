@@ -329,7 +329,22 @@ export class ActionParser extends FetchParser {
 
     this.consume(TokenType.RBRACE, "Expected '}'");
 
-    return { type: 'ValidateStep', target, constraints };
+    // Optional `or { ... }` fallback block: steps to run on validation failure
+    // instead of throwing.
+    let fallback: ActionStep[] | undefined;
+    if (this.match(TokenType.OR)) {
+      this.consume(TokenType.LBRACE, "Expected '{' after 'or'");
+      fallback = [];
+
+      while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+        fallback.push(this.parseActionStep());
+        this.match(TokenType.COMMA);
+      }
+
+      this.consume(TokenType.RBRACE, "Expected '}' to close 'or' block");
+    }
+
+    return { type: 'ValidateStep', target, constraints, fallback };
   }
 
   /**
@@ -419,8 +434,18 @@ export class ActionParser extends FetchParser {
    * Parse a match arm
    */
   protected parseMatchArm(): MatchArm {
-    // Schema name or '_' for wildcard
-    const schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name or _').value;
+    // Array-of-schema pattern: [Schema] matches an array whose elements all
+    // satisfy Schema. A bare identifier (or '_') matches a single value.
+    let schema: string;
+    let isArray = false;
+    if (this.match(TokenType.LBRACKET)) {
+      schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name in array pattern').value;
+      this.consume(TokenType.RBRACKET, "Expected ']' to close array pattern");
+      isArray = true;
+    } else {
+      // Schema name or '_' for wildcard
+      schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name or _').value;
+    }
 
     // Optional guard condition: _ where <condition>
     let guard: Expression | undefined;
@@ -433,7 +458,7 @@ export class ActionParser extends FetchParser {
     // Check for flow directives
     const flow = this.tryParseFlowDirective();
     if (flow) {
-      return { schema, guard, flow };
+      return { schema, isArray, guard, flow };
     }
 
     // Check for step block
@@ -447,12 +472,12 @@ export class ActionParser extends FetchParser {
       }
 
       this.consume(TokenType.RBRACE, "Expected '}'");
-      return { schema, guard, steps };
+      return { schema, isArray, guard, steps };
     }
 
     // Single step
     const step = this.parseActionStep();
-    return { schema, guard, steps: [step] };
+    return { schema, isArray, guard, steps: [step] };
   }
 
   /**

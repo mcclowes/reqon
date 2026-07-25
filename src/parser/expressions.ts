@@ -9,7 +9,7 @@ export interface IsExpression {
   typeCheck: string; // 'array', 'object', 'string', 'number', 'boolean', 'null', 'undefined'
 }
 
-// Object literal expression: { key: value, ... }
+// Object literal expression: { key: value, ..., ...spread }
 export interface ObjectLiteralExpression {
   type: 'ObjectLiteral';
   properties: ObjectProperty[];
@@ -18,6 +18,24 @@ export interface ObjectLiteralExpression {
 export interface ObjectProperty {
   key: string;
   value: Expression;
+  /** When true this is a `...expr` spread; `value` is the source and `key` is unused. */
+  spread?: boolean;
+}
+
+// Nullish coalescing: `a ?? b` yields `a` unless it is null/undefined, then `b`.
+// Distinct from `or`, which falls back on any falsy value. Short-circuits.
+export interface NullishExpression {
+  type: 'NullishExpression';
+  left: Expression;
+  right: Expression;
+}
+
+// Subscript access: `obj[key]` / `arr[0]`. Complements dotted QualifiedName paths
+// with dynamic, computed, and non-identifier keys.
+export interface IndexExpression {
+  type: 'IndexExpression';
+  object: Expression;
+  index: Expression;
 }
 
 // Guards unbounded recursive descent from blowing the JS stack on deeply nested
@@ -44,7 +62,7 @@ export class ReqonExpressionParser extends ReqonParserBase {
   }
 
   private parseTernary(): Expression {
-    const condition = this.parseOr();
+    const condition = this.parseNullish();
 
     if (this.match(TokenType.QUESTION)) {
       const consequent = this.parseTernaryBranch();
@@ -110,6 +128,20 @@ export class ReqonExpressionParser extends ReqonParserBase {
 
     // Skip superposition, go directly to comparison
     return this.parseComparison();
+  }
+
+  // Nullish coalescing sits just below the ternary, above logical `or`, so
+  // `a ?? b` binds tighter than `?:` but the two can't be mixed unparenthesized.
+  private parseNullish(): Expression {
+    let left = this.parseOr();
+
+    while (this.check(ReqonTokenType.NULLISH)) {
+      this.advance();
+      const right = this.parseOr();
+      left = { type: 'NullishExpression', left, right } as unknown as Expression;
+    }
+
+    return left;
   }
 
   private parseOr(): Expression {
@@ -198,6 +230,14 @@ export class ReqonExpressionParser extends ReqonParserBase {
       return { type: 'IsExpression', operand: left, typeCheck } as unknown as Expression;
     }
 
+    // Check for 'in' membership: expr in collection. Safe alongside for-loops,
+    // which consume their own `in` before parsing the collection expression.
+    if (this.check(TokenType.IN)) {
+      this.advance(); // consume 'in'
+      const right = this.parseRange();
+      return { type: 'BinaryExpression', operator: 'in', left, right };
+    }
+
     return left;
   }
 
@@ -269,12 +309,27 @@ export class ReqonExpressionParser extends ReqonParserBase {
         } else if (expr.type === 'QualifiedName') {
           expr = { type: 'CallExpression', callee: expr.parts.join('.'), arguments: args };
         }
+      } else if (this.match(TokenType.LBRACKET)) {
+        // Subscript access: expr[index]. The index is any expression, so both
+        // static (`data["field"]`, `arr[0]`) and dynamic (`cache[id]`) keys work.
+        const index = this.parseExpression();
+        this.consume(TokenType.RBRACKET, "Expected ']' after index expression");
+        expr = { type: 'IndexExpression', object: expr, index } as unknown as Expression;
       } else if (this.match(TokenType.DOT)) {
         const name = this.consumeName('Expected property name').value;
         if (expr.type === 'Identifier') {
           expr = { type: 'QualifiedName', parts: [expr.name, name] };
         } else if (expr.type === 'QualifiedName') {
           expr.parts.push(name);
+        } else {
+          // Property access after a subscript or other computed expression
+          // (e.g. `arr[0].name`) can't extend a QualifiedName, so fall back to
+          // an IndexExpression with the field name as a string literal key.
+          expr = {
+            type: 'IndexExpression',
+            object: expr,
+            index: { type: 'Literal', value: name, dataType: 'string' },
+          } as unknown as Expression;
         }
       } else {
         break;
@@ -365,9 +420,17 @@ export class ReqonExpressionParser extends ReqonParserBase {
     const arms: MatchArm[] = [];
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
       const pattern = this.parseExpression();
+
+      // Optional guard: `pattern where <condition>`. A plain identifier pattern
+      // then acts as a binding for the matched value (e.g. `s where s > 800`).
+      let guard: Expression | undefined;
+      if (this.match(TokenType.WHERE)) {
+        guard = this.parseExpression();
+      }
+
       this.consume(TokenType.ARROW, "Expected '=>'");
       const result = this.parseExpression();
-      arms.push({ pattern, result });
+      arms.push({ pattern, result, ...(guard ? { guard } : {}) } as MatchArm);
       this.match(TokenType.COMMA);
     }
 
@@ -401,6 +464,14 @@ export class ReqonExpressionParser extends ReqonParserBase {
     }
 
     do {
+      // Spread property: `...expr` merges the source object's own enumerable
+      // properties into this literal. Later properties override earlier ones.
+      if (this.match(ReqonTokenType.SPREAD)) {
+        const value = this.parseExpression();
+        properties.push({ key: '', value, spread: true });
+        continue;
+      }
+
       // Key can be an identifier, a string, or any reserved keyword's text.
       // The key sits in a name position (always followed by `:`), so words that
       // the lexer reserves as keywords (`action`, `source`, `status`, ...) are
