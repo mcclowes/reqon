@@ -250,4 +250,3 @@ describe('RedisStoreAdapter', () => {
   });
 });
 ```
-</content>

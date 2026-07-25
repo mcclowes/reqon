@@ -282,4 +282,3 @@ Verify the URL and credentials:
 ```bash
 curl -H "apikey: your-key" https://abc.supabase.co/rest/v1/items
 ```
-</content>
