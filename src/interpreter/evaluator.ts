@@ -27,6 +27,13 @@ import { isRecord } from '../utils/type-guards.js';
 import { EvaluatorError, UnsupportedOperationError } from '../errors/index.js';
 
 /**
+ * Hard cap on the number of items range() will materialise. High enough for a
+ * full FPL manager sweep (~12M), low enough to fail loudly rather than OOM on a
+ * fat-fingered bound like range(1, 1e12).
+ */
+const RANGE_MAX = 20_000_000;
+
+/**
  * Evaluate a Reqon/Vague expression within an execution context.
  *
  * Supports all expression types from the Vague DSL including literals, identifiers,
@@ -315,6 +322,29 @@ export function evaluate(
           return Array.isArray(args[0]) ? args[0][0] : undefined;
         case 'last':
           return Array.isArray(args[0]) ? args[0][args[0].length - 1] : undefined;
+        case 'range': {
+          // range(end) -> [0, 1, ..., end-1]; range(start, end) -> [start, ..., end-1].
+          // Materialises the whole array (the for-loop consumes an array), so a
+          // hard cap guards against an accidental range that would exhaust memory.
+          const hasStart = args.length > 1;
+          const start = hasStart ? toNumber(args[0], 'range') : 0;
+          const end = toNumber(hasStart ? args[1] : args[0], 'range');
+          if (!Number.isFinite(start) || !Number.isFinite(end)) {
+            throw new EvaluatorError('range() bounds must be finite numbers', {
+              expression: 'range',
+            });
+          }
+          const count = Math.max(0, Math.ceil(end - start));
+          if (count > RANGE_MAX) {
+            throw new EvaluatorError(
+              `range() would produce ${count} items, over the ${RANGE_MAX} cap`,
+              { expression: 'range' }
+            );
+          }
+          const out = new Array<number>(count);
+          for (let i = 0; i < count; i++) out[i] = start + i;
+          return out;
+        }
         case 'round':
           return Math.round(toNumber(args[0], 'round'));
         case 'floor':

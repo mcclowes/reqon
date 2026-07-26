@@ -641,6 +641,36 @@ describe('evaluate', () => {
       expect(evaluate(expr, ctx)).toBe(4);
     });
 
+    const rangeExpr = (...values: number[]): Expression => ({
+      type: 'CallExpression',
+      callee: 'range',
+      arguments: values.map((value) => ({ type: 'Literal', value, dataType: 'number' })),
+    });
+
+    it('range(end) counts from 0 to end-1', () => {
+      expect(evaluate(rangeExpr(5), createContext())).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('range(start, end) is start-inclusive, end-exclusive', () => {
+      expect(evaluate(rangeExpr(1, 6), createContext())).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('range yields an empty array when start >= end', () => {
+      expect(evaluate(rangeExpr(5, 5), createContext())).toEqual([]);
+      expect(evaluate(rangeExpr(9, 3), createContext())).toEqual([]);
+    });
+
+    it('range produces a large sweep without an input file', () => {
+      const result = evaluate(rangeExpr(1, 500001), createContext()) as number[];
+      expect(result.length).toBe(500000);
+      expect(result[0]).toBe(1);
+      expect(result[result.length - 1]).toBe(500000);
+    });
+
+    it('range refuses a range past the safety cap', () => {
+      expect(() => evaluate(rangeExpr(0, 20_000_001), createContext())).toThrow(/cap/);
+    });
+
     it('throws on unknown function', () => {
       const ctx = createContext();
       const expr: Expression = {

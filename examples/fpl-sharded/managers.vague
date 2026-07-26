@@ -110,7 +110,7 @@ mission FplManagerHistory {
     // per-proxy throttle is what paces the run, not the socket count.
     for entry in shard concurrency 8 onError queue failures {
 
-      get "/entry/{entry.id}/history/" {
+      get "/entry/{entry.id}/" {
         source: FPL,
         // A shard drawn from a stale id list will contain managers that no
         // longer exist. Allowing 404 returns it as data rather than retrying
@@ -133,11 +133,15 @@ mission FplManagerHistory {
 
       // The history payload carries no manager id, so graft it on from the
       // loop variable - otherwise there's nothing to key the upsert on.
-      map response -> ManagerHistory {
-        id: entry.id,
-        current: .current,
-        past: .past,
-        chips: .chips
+      map response -> Manager {
+        id: id,
+        name: .name,
+        firstName: .player_first_name,
+        lastName: .player_last_name,
+        region: .player_region_name,
+        startedEvent: .started_event,
+        overallPoints: .summary_overall_points,
+        overallRank: .summary_overall_rank
       }
 
       store response -> managers {
