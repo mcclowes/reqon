@@ -10,17 +10,39 @@ All notable changes to Reqon are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.0.0
+
+_Released 2026-07-26_
+
+The bulk fan-out release. Reqon can now saturate an API it is allowed to saturate: bounded concurrency, egress proxy pools, a rate limiter that paces rather than reacts, and batched store ingest so the store stops being the ceiling. The version number is the other half of the story — the DSL surface and the store/source interfaces are stable enough to promise semver on.
 
 ### Added
 
 - **Egress proxy pools on sources** — `proxy: env("PROXY_URL")` for one proxy, or a list for a pool rotated round-robin per request attempt. Rate limit and circuit breaker state are keyed per proxy, so each egress IP gets its own budget and one failing proxy opens only its own circuit. A retry after a 429 leaves from a different IP than the attempt that earned it. Needs the optional peer dependency `undici`.
 - **`concurrency N` on `for` loops** — bounded fan-out for bulk fetches, replacing strictly sequential iteration. Defaults to sequential, so existing missions are unchanged. Concurrent iterations get their own step-index namespace, keeping step ids deterministic for durable resume; the debugger forces sequential iteration.
-- **`fpl-sharded` example** — sharded bulk fetch across IPs, and a note on when the one-request version is all you need.
+- **Batched store ingest** — `store x: postgrest("t") { batch: 500 }` buffers writes and flushes them as one array POST instead of one request per record, with `{ size, maxDelay, durability }` for finer control. `strict` durability (the default) resolves a write only once its batch has flushed, so a loop iteration isn't done until the record is durable; `relaxed` resolves immediately and flushes in the background. PostgREST gained the `bulkSet`/`bulkUpsert` implementations the store handler was already probing for.
+- **Per-item failure tolerance for bulk runs** — a `for` loop continues past a failed item by default, with `onError abort` for strict mode and `onError queue <store>` to capture failures for a later sweep. Fetches can `allow: [404]`, and match arms dispatch on the same number (`404 -> skip`).
+- **Rate-limit modelling** — sources pace against a model of the server's limiter instead of only reacting to 429s, including a self-calibrating model for headerless limiters that infers the budget from observed responses. Circuit breaking gains a rate mode (`failureRate`, `minimumRequests`), since an absolute threshold of five failures sits permanently open at thousands of requests a second.
+- **Progress-shaped `--verbose`, plus `--log-level` and `--log-format`** — one throttled progress line (processed/total, req/s, p50 latency, retries, failures, ETA) instead of per-item narration. `--verbose` is now `--log-level info`; `--log-level debug` adds the per-item narration back, and `--log-format json` emits newline-delimited JSON.
+- **DSL features that the docs advertised but the parser never implemented** — `[Schema]` array match arms, `validate ... or { ... }` fallback blocks, `...spread` in object literals, `??` nullish coalescing, `in` membership over arrays/objects/strings, `[]` subscript indexing (static, dynamic, and negative), and `where` guards with value binding in `match` expressions.
+- **`range()` builtin** for generating id sequences without a source fetch.
+- **Bulk examples** — `fpl-sharded` (sharded fetch across IPs), `first-500k` and `managers.vague` (fast, resumable, fleet-ready single-file bulk pulls).
 
 ### Changed
 
 - **Requires Node 22 or newer.** Node 20 reached end of life in April 2026, and `undici` — the optional peer dependency behind proxy support — needs 22.19 or newer, so proxy pools could never be exercised on 20. CI now covers Node 22 and 24.
+- **Loops no longer fail the mission on the first bad item** (validation failures included) unless `onError abort` is set. Tolerated failures are reported as skipped items rather than mission errors.
+- **Documentation now describes what the runtime actually does**, rather than the intended design — including which auth schemes are actually wired up, what `sql`/`nosql` stores do without `--dev`, and which pause triggers the shipped runtime dispatches.
+
+### Fixed
+
+- **Pacing never engaged for the workload it exists for.** Rate limit and circuit breaker config was registered under the source name but looked up under the proxy lane key, so any mission with a proxy pool silently ran on defaults. Pacing state was keyed by the interpolated path, so a fan-out over `/entry/{id}/history/` filed every request under its own key. And the throttle measured time since the last request, which cannot pace concurrent callers — it is now reservation-based, so concurrent callers take successive slots. A 429 backs off the whole lane rather than the one URL that tripped it.
+- **Proxy pools were separately non-functional** — Node's global fetch rejects a dispatcher built by a different copy of `undici`, so every proxied request died with "fetch failed". Lanes now carry the fetch that owns their dispatcher.
+- **File store writes are serialised**, so concurrent writes can no longer drop keys.
+- `failureRate` is parsed as a proportion, and the breaker logs the mode in effect.
+- A status-only `match` falls through instead of swallowing the result, and `proxy` is genuinely optional.
+- Idempotency signature NUL delimiters are written as explicit `\0` escapes.
+- Parser and lexer bugs behind several broken examples.
 
 ---
 
