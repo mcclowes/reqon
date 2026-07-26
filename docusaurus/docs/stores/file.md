@@ -194,5 +194,3 @@ rm -rf .reqon-data/
 | Speed | Fast | Fastest |
 | Scalability | Medium | Limited |
 | Use case | Development | Testing |
-</content>
-</invoke>

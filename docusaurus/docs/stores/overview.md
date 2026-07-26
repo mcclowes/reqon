@@ -257,4 +257,3 @@ store response -> items { key: .id, upsert: true }
 ## Custom adapters
 
 See [Custom adapters](./custom-adapters) for implementing your own store adapter.
-</content>

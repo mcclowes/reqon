@@ -216,4 +216,3 @@ operationId: getInvoiceById
 operationId: post1
 operationId: get2
 ```
-</content>

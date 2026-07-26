@@ -214,5 +214,3 @@ cat .reqon-data/executions/CustomerSync-*.json | jq '.status'
 ```
 
 Only runs with status `paused` or `failed` can be resumed.
-</content>
-</invoke>
