@@ -253,15 +253,15 @@ export class SourceManager {
       return;
     }
 
-    this.deps.rateLimiter.configure(source.name, {
-      strategy: source.config.rateLimit.strategy,
-      maxWait: source.config.rateLimit.maxWait,
-      fallbackRpm: source.config.rateLimit.fallbackRpm,
-    });
+    const { strategy, maxWait, fallbackRpm, model } = source.config.rateLimit;
+    this.deps.rateLimiter.configure(source.name, { strategy, maxWait, fallbackRpm, model });
 
+    const modelInfo = model
+      ? `, model=${model.type}(capacity ${model.capacity}, refill ${model.refill}/s)`
+      : '';
     this.log(
-      `Rate limit config for ${source.name}: strategy=${source.config.rateLimit.strategy ?? 'pause'}, ` +
-        `maxWait=${source.config.rateLimit.maxWait ?? 300}s`
+      `Rate limit config for ${source.name}: strategy=${strategy ?? 'pause'}, ` +
+        `maxWait=${maxWait ?? 300}s${modelInfo}`
     );
   }
 

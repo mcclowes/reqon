@@ -8,6 +8,7 @@ import type {
 } from './types.js';
 import { sleep } from '../utils/async.js';
 import { laneSource } from './lane.js';
+import { TokenBucketModel } from './rate-model.js';
 import { RATE_LIMIT_DEFAULTS } from '../config/index.js';
 
 interface RateLimitState {
@@ -18,7 +19,12 @@ interface RateLimitState {
   lastRequestAt?: Date;
 }
 
-const DEFAULT_CONFIG: Required<RateLimitConfig> = {
+// `model` has no default - its absence means "no model", so it is omitted from
+// the required defaults rather than given a placeholder.
+type ResolvedRateLimitConfig = Required<Omit<RateLimitConfig, 'model'>> &
+  Pick<RateLimitConfig, 'model'>;
+
+const DEFAULT_CONFIG: Required<Omit<RateLimitConfig, 'model'>> = {
   strategy: RATE_LIMIT_DEFAULTS.STRATEGY,
   maxWait: RATE_LIMIT_DEFAULTS.MAX_WAIT_SECONDS,
   notifyAt: RATE_LIMIT_DEFAULTS.NOTIFY_AT_SECONDS,
@@ -76,6 +82,13 @@ export class AdaptiveRateLimiter implements RateLimiter {
    */
   private laneBackoff: Map<string, Date> = new Map();
   private configs: Map<string, RateLimitConfig> = new Map();
+  /**
+   * A local simulation of the server's limiter, per configured source. When
+   * present it drives throttle pacing instead of the flat `fallbackRpm`, so a
+   * run uses the server's burst allowance and holds its sustained rate. The
+   * model keys its own buckets per lane, so one instance serves a whole pool.
+   */
+  private models: Map<string, TokenBucketModel> = new Map();
   private callbacks: RateLimitCallbacks = {};
   private lastCleanup: number = Date.now();
   private maxStaleAgeMs: number;
@@ -154,13 +167,23 @@ export class AdaptiveRateLimiter implements RateLimiter {
    * limits under the source name alone — without this fallback every pooled
    * request silently runs on defaults instead of the configured limits.
    */
-  private getConfig(source: string): Required<RateLimitConfig> {
+  private getConfig(source: string): ResolvedRateLimitConfig {
     const sourceConfig = this.configs.get(source) ?? this.configs.get(laneSource(source)) ?? {};
     return { ...DEFAULT_CONFIG, ...this.defaultConfig, ...sourceConfig };
   }
 
   configure(source: string, config: RateLimitConfig): void {
     this.configs.set(source, config);
+    if (config.model) {
+      this.models.set(source, new TokenBucketModel(config.model));
+    } else {
+      this.models.delete(source);
+    }
+  }
+
+  /** Resolve the limiter model for a source or one of its proxy lanes. */
+  private getModel(source: string): TokenBucketModel | undefined {
+    return this.models.get(source) ?? this.models.get(laneSource(source));
   }
 
   setCallbacks(callbacks: RateLimitCallbacks): void {
@@ -217,8 +240,15 @@ export class AdaptiveRateLimiter implements RateLimiter {
     const config = this.getConfig(source);
     if (config.strategy !== 'throttle') return 0;
 
-    // Honour whichever is more conservative: the configured floor, or the
-    // spacing implied by the quota headers this endpoint last reported.
+    // A model of the server's limiter governs pacing when configured: it knows
+    // the burst allowance and the sustained rate, which a flat rpm can't
+    // express. Its bucket is keyed per lane, so `source` (the lane key) is the
+    // bucket key.
+    const model = this.getModel(source);
+    if (model) return model.reserve(source, Date.now());
+
+    // Otherwise honour whichever is more conservative: the configured floor, or
+    // the spacing implied by the quota headers this endpoint last reported.
     const intervalMs = Math.max(
       60000 / config.fallbackRpm,
       this.headerIntervalMs(source, endpoint) ?? 0
@@ -342,6 +372,9 @@ export class AdaptiveRateLimiter implements RateLimiter {
     const config = this.getConfig(source);
     if (config.strategy !== 'throttle') return 0;
 
+    const model = this.getModel(source);
+    if (model) return Math.round(model.peek(source, Date.now()));
+
     const now = Date.now();
     const untilNextSlot = Math.max(0, (this.pacing.get(source) ?? 0) - now);
     return Math.round(Math.max(untilNextSlot, this.headerIntervalMs(source, endpoint) ?? 0));
@@ -382,12 +415,12 @@ export class AdaptiveRateLimiter implements RateLimiter {
     // limited by CLEANUP_INTERVAL_MS / MAX_ENTRIES_BEFORE_CLEANUP inside
     // cleanup(), so this counter only decides how often we *consider* sweeping.
     //
-    // TODO: this limiter is purely reactive — it learns limits from response
-    // headers after the fact. Add proactive in-flight token accounting (track
-    // tokens consumed by requests that have been issued but not yet returned a
-    // response) so concurrent callers can't collectively blow past the limit
-    // between header updates. That is a larger redesign; the eviction leak fix
-    // above is independent of it.
+    // Proactive pacing (when a source declares a `model`) is handled by the
+    // token-bucket reservation in reserveSlot, which accounts for issued-but-
+    // unreturned requests by advancing the schedule synchronously. This header
+    // path stays as the reactive safety net: a 429 still backs the lane off even
+    // if the model underestimated. A natural next step is to let an observed 429
+    // tighten the model's effective rate (auto-calibration).
     this.responsesSinceCleanup++;
     if (this.responsesSinceCleanup >= RATE_LIMIT_DEFAULTS.CLEANUP_CHECK_INTERVAL) {
       this.responsesSinceCleanup = 0;

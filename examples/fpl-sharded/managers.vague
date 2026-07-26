@@ -36,6 +36,22 @@ mission FplManagerHistory {
     // FPL sends no rate limit headers, so the fallback is what actually governs
     // pacing. This is per proxy: 30rpm x 4 proxies = 120rpm for the worker.
     // Start conservative and raise it only if you see no 429s.
+    //
+    // `fallbackRpm` paces at a flat rate, which either wastes the server's burst
+    // allowance or, set too high, drains it and eats 429s. FPL runs a token-
+    // bucket limiter (OpenResty): a full bucket absorbs a burst, then sustained
+    // traffic above the refill rate is throttled. If you know that bucket you
+    // can model it and pace exactly under it - burst included, no 429s:
+    //
+    //   rateLimit: {
+    //     strategy: throttle,
+    //     model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
+    //   }
+    //
+    // Calibrate capacity and refill to the server. Probing suggests FPL absorbs
+    // a burst of several thousand from one IP; the sustained refill rate needs a
+    // steady-state measurement (ramp until 429s begin). Until you have it, the
+    // conservative fallbackRpm below is the safe default.
     rateLimit: {
       strategy: throttle,
       maxWait: 300,

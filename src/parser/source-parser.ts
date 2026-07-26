@@ -9,6 +9,7 @@ import type {
   SourceConfig,
   AuthConfig,
   RateLimitSourceConfig,
+  RateLimitModelConfig,
   CircuitBreakerSourceConfig,
 } from '../ast/nodes.js';
 import { ReqonExpressionParser } from './expressions.js';
@@ -154,6 +155,9 @@ export class SourceParser extends ReqonExpressionParser {
             10
           );
           break;
+        case 'model':
+          config.model = this.parseRateLimitModel();
+          break;
         default:
           throw this.error(`Unknown rate limit option: ${key}`);
       }
@@ -164,6 +168,50 @@ export class SourceParser extends ReqonExpressionParser {
     this.consume(TokenType.RBRACE, "Expected '}'");
 
     return config;
+  }
+
+  /** `model: { type: tokenBucket, capacity: N, refill: N, safety?: N }`. */
+  protected parseRateLimitModel(): RateLimitModelConfig {
+    this.consume(TokenType.LBRACE, "Expected '{'");
+
+    let type: string | undefined;
+    let capacity: number | undefined;
+    let refill: number | undefined;
+    let safety: number | undefined;
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      const key = this.consume(TokenType.IDENTIFIER, 'Expected model option').value;
+      this.consume(TokenType.COLON, "Expected ':'");
+      switch (key) {
+        case 'type':
+          type = this.consumeAny(
+            [TokenType.STRING, TokenType.IDENTIFIER],
+            'Expected model type'
+          ).value;
+          break;
+        case 'capacity':
+          capacity = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'refill':
+          refill = parseFloat(this.consume(TokenType.NUMBER, 'Expected number').value);
+          break;
+        case 'safety':
+          safety = parseFloat(this.consume(TokenType.NUMBER, 'Expected number').value);
+          break;
+        default:
+          throw this.error(`Unknown model option: ${key}`);
+      }
+      this.match(TokenType.COMMA);
+    }
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    if (type !== 'tokenBucket') {
+      throw this.error(`Unknown model type: ${type ?? '(none)'} (expected tokenBucket)`);
+    }
+    if (capacity === undefined) throw this.error('model requires a capacity');
+    if (refill === undefined) throw this.error('model requires a refill');
+
+    return { type, capacity, refill, ...(safety !== undefined && { safety }) };
   }
 
   protected parseCircuitBreakerConfig(): CircuitBreakerSourceConfig {
