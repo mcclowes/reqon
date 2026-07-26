@@ -45,6 +45,14 @@ export interface CircuitBreakerConfig {
    * (default: 20)
    */
   minimumRequests?: number;
+  /**
+   * Time in ms a half-open probe may be outstanding before another probe is
+   * admitted (default: 30000). A probe slot that is never explicitly released -
+   * because a request threw before reporting its outcome, say - would otherwise
+   * wedge the circuit in half-open forever. Expiring the slot makes that
+   * self-heal.
+   */
+  probeTimeout?: number;
 }
 
 export interface CircuitBreakerStatus {
@@ -85,8 +93,13 @@ interface CircuitEntry {
   successTimestamps: number[];
   lastFailureTime?: number;
   openedAt?: number;
-  /** True while a single half-open probe request is in flight. */
-  probeInFlight: boolean;
+  /**
+   * Timestamp (ms) at which the current half-open probe was admitted, or
+   * undefined when no probe is outstanding. A timestamp rather than a boolean so
+   * a stale probe (never released because its request threw before reporting)
+   * can expire after `config.probeTimeout` instead of wedging the circuit.
+   */
+  probeStartedAt?: number;
   /** Timestamp of the last state-changing activity, used for eviction. */
   lastActivity: number;
   config: Required<CircuitBreakerConfig>;
@@ -101,6 +114,7 @@ const DEFAULT_CONFIG: Required<CircuitBreakerConfig> = {
   countNetworkErrors: CIRCUIT_BREAKER_DEFAULTS.COUNT_NETWORK_ERRORS,
   failureRate: 0, // 0 = disabled, fall back to the absolute threshold
   minimumRequests: 20,
+  probeTimeout: CIRCUIT_BREAKER_DEFAULTS.PROBE_TIMEOUT_MS,
 };
 
 /**
@@ -176,7 +190,7 @@ export class CircuitBreaker {
       if (timeSinceOpen >= entry.config.resetTimeout) {
         // Transition to half-open and let this single caller be the probe.
         this.transitionTo(entry, 'half_open', source, endpoint);
-        entry.probeInFlight = true;
+        entry.probeStartedAt = now;
         return true;
       }
 
@@ -186,10 +200,19 @@ export class CircuitBreaker {
     // Half-open: allow exactly one probe at a time. Every other request is
     // denied until the in-flight probe resolves (success closes the circuit or
     // advances the count; failure re-opens it), preventing a recovery stampede.
-    if (entry.probeInFlight) {
+    //
+    // The probe slot expires after `probeTimeout`: if a probe's outcome is never
+    // reported (its request threw before recordSuccess/recordFailure ran), the
+    // slot would otherwise stay claimed forever and the circuit would wedge in
+    // half-open — never open, so resetTimeout can't re-arm it, and never
+    // admitting another probe. Expiry lets the next caller probe instead.
+    if (
+      entry.probeStartedAt !== undefined &&
+      now - entry.probeStartedAt < entry.config.probeTimeout
+    ) {
       return false;
     }
-    entry.probeInFlight = true;
+    entry.probeStartedAt = now;
     return true;
   }
 
@@ -239,7 +262,7 @@ export class CircuitBreaker {
         this.transitionTo(entry, 'closed', source, endpoint);
       } else {
         // Probe succeeded but more are needed; release the slot for the next.
-        entry.probeInFlight = false;
+        entry.probeStartedAt = undefined;
       }
     } else if (entry.state === 'closed') {
       // Clear old failures from window
@@ -276,6 +299,15 @@ export class CircuitBreaker {
     const shouldCount = isFailureStatus || (isNetworkError && config.countNetworkErrors);
 
     if (!shouldCount) {
+      // An uncounted failure (a 404, or a 4xx we don't treat as an outage) is
+      // still a failed probe: it must release a half-open slot, or the circuit
+      // wedges in half-open forever (never re-opened, never re-probed). Leaving
+      // it half-open means the next request becomes a fresh probe rather than
+      // being fast-failed against an inconclusive outcome.
+      if (existing?.state === 'half_open') {
+        existing.probeStartedAt = undefined;
+        existing.lastActivity = Date.now();
+      }
       return;
     }
 
@@ -348,7 +380,7 @@ export class CircuitBreaker {
       entry.failureTimestamps = [];
       entry.lastFailureTime = undefined;
       entry.openedAt = undefined;
-      entry.probeInFlight = false;
+      entry.probeStartedAt = undefined;
       entry.lastActivity = Date.now();
 
       if (previousState !== 'closed') {
@@ -441,7 +473,7 @@ export class CircuitBreaker {
       successes: 0,
       failureTimestamps: [],
       successTimestamps: [],
-      probeInFlight: false,
+      probeStartedAt: undefined,
       lastActivity: Date.now(),
       config,
     };
@@ -491,7 +523,7 @@ export class CircuitBreaker {
     entry.lastActivity = Date.now();
     // Any state change clears the half-open probe slot; canProceed re-claims it
     // when it admits the next probe.
-    entry.probeInFlight = false;
+    entry.probeStartedAt = undefined;
 
     const event: CircuitBreakerEvent = {
       source,

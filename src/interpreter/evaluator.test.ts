@@ -225,6 +225,105 @@ describe('evaluate', () => {
     });
   });
 
+  // Regression coverage for #248: comparisons used to coerce every operand
+  // through Number(), so any non-numeric value became NaN and every ordering
+  // comparison returned false. That silently broke `where .updated_at > lastSync`.
+  describe('ordering comparisons (dates, strings, booleans)', () => {
+    const ctx = createContext();
+    const cmp = (left: unknown, right: unknown, operator: string): boolean =>
+      evaluate(
+        {
+          type: 'BinaryExpression',
+          operator,
+          left: { type: 'Literal', value: left, dataType: 'string' },
+          right: { type: 'Literal', value: right, dataType: 'string' },
+        } as Expression,
+        ctx
+      ) as boolean;
+
+    it('compares ISO-8601 date strings chronologically', () => {
+      expect(cmp('2026-01-02T00:00:00Z', '2026-01-01T00:00:00Z', '>')).toBe(true);
+      expect(cmp('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', '>')).toBe(false);
+      expect(cmp('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', '<')).toBe(true);
+      expect(cmp('2026-01-01', '2026-01-01', '>=')).toBe(true);
+      expect(cmp('2026-01-01', '2026-01-01', '<=')).toBe(true);
+    });
+
+    it('orders bare dates against timestamps by instant, not by byte', () => {
+      // Lexicographically '2026-01-02' > '2026-01-01T...'; chronologically too,
+      // but the failure mode is a same-day timestamp vs bare date.
+      expect(cmp('2026-01-01T12:00:00Z', '2026-01-01', '>')).toBe(true);
+    });
+
+    it('compares plain strings lexicographically', () => {
+      expect(cmp('banana', 'apple', '>')).toBe(true);
+      expect(cmp('banana', 'apple', '<')).toBe(false);
+      expect(cmp('apple', 'banana', '<')).toBe(true);
+      expect(cmp('apple', 'apple', '>=')).toBe(true);
+    });
+
+    it('compares numbers numerically', () => {
+      const num = (l: number, r: number, op: string): boolean =>
+        evaluate(
+          {
+            type: 'BinaryExpression',
+            operator: op,
+            left: { type: 'Literal', value: l, dataType: 'number' },
+            right: { type: 'Literal', value: r, dataType: 'number' },
+          } as Expression,
+          ctx
+        ) as boolean;
+      expect(num(2, 10, '<')).toBe(true);
+      expect(num(10, 2, '>')).toBe(true);
+    });
+
+    it('satisfies trichotomy: exactly one of <, ==, > holds for like-typed values', () => {
+      const pairs: [unknown, unknown, 'string' | 'number'][] = [
+        ['2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', 'string'],
+        ['apple', 'banana', 'string'],
+        ['apple', 'apple', 'string'],
+        [3, 5, 'number'],
+        [5, 5, 'number'],
+      ];
+      for (const [a, b, dataType] of pairs) {
+        const bin = (op: string): boolean =>
+          evaluate(
+            {
+              type: 'BinaryExpression',
+              operator: op,
+              left: { type: 'Literal', value: a, dataType },
+              right: { type: 'Literal', value: b, dataType },
+            } as Expression,
+            ctx
+          ) as boolean;
+        const holds = [bin('<'), bin('=='), bin('>')].filter(Boolean).length;
+        expect(holds).toBe(1);
+      }
+    });
+
+    it('excludes (returns false) when either operand is absent', () => {
+      const expr = (op: string): Expression =>
+        ({
+          type: 'BinaryExpression',
+          operator: op,
+          left: { type: 'Identifier', name: 'missing' },
+          right: { type: 'Literal', value: '2026-01-01', dataType: 'string' },
+        }) as Expression;
+      expect(evaluate(expr('>'), ctx, {})).toBe(false);
+      expect(evaluate(expr('<='), ctx, {})).toBe(false);
+    });
+
+    it('throws on a genuine type mismatch instead of matching nothing silently', () => {
+      const expr: Expression = {
+        type: 'BinaryExpression',
+        operator: '>',
+        left: { type: 'Literal', value: 5, dataType: 'number' },
+        right: { type: 'Literal', value: 'apple', dataType: 'string' },
+      } as Expression;
+      expect(() => evaluate(expr, ctx)).toThrow(/Cannot compare/);
+    });
+  });
+
   describe('logical expressions', () => {
     it('evaluates and (true && true)', () => {
       const ctx = createContext();

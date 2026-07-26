@@ -27,6 +27,7 @@ export {
   type ExecutionResult,
   type ExecutionError,
   type ExecutorConfig,
+  type AuthConfig,
   type ExecutionContext,
   type ProgressCallbacks,
   type ExecutionStartEvent,

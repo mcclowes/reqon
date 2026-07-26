@@ -356,6 +356,15 @@ export interface PaginationConfig {
   param: string; // Query param name: "page", "offset", "cursor"
   pageSize: number;
   cursorPath?: string; // For cursor pagination: where to find next cursor in response
+  /**
+   * Cap on pages fetched in one run before pagination stops as *truncated*
+   * (memory/runaway safety). Overrides the runtime default. When this cap fires
+   * the result is flagged truncated so a sync checkpoint will not advance past
+   * the records that were never fetched.
+   */
+  maxPages?: number;
+  /** Cap on total items accumulated in one run before stopping as truncated. */
+  maxItems?: number;
 }
 
 export interface RetryConfig {

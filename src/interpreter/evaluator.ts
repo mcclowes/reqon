@@ -212,13 +212,13 @@ export function evaluate(
         case '!=':
           return left !== right;
         case '<':
-          return compareNumbers(left, right, '<');
+          return compareValues(left, right, '<');
         case '>':
-          return compareNumbers(left, right, '>');
+          return compareValues(left, right, '>');
         case '<=':
-          return compareNumbers(left, right, '<=');
+          return compareValues(left, right, '<=');
         case '>=':
-          return compareNumbers(left, right, '>=');
+          return compareValues(left, right, '>=');
         case 'in': {
           // Membership: element in collection. Arrays test by value, strings
           // test substring, objects test own-key presence.
@@ -481,37 +481,98 @@ function toNumber(value: unknown, operator: string): number {
   });
 }
 
-/** Coerce for comparison, yielding NaN (not a throw) for nullish/non-numeric. */
-function toComparable(value: unknown): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'boolean') return value ? 1 : 0;
-  if (typeof value === 'string') return Number(value);
-  return NaN;
+/**
+ * Recognises the ISO-8601 date shapes an HTTP API actually emits: a bare date
+ * (`2026-01-01`) or a timestamp (`2026-01-01T00:00:00.123Z`, with an optional
+ * space separator and numeric or `Z` offset). Deliberately strict — `Number()`
+ * and `Date.parse()` both accept far too much, which is how #248 slipped in.
+ */
+const ISO_8601 = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+/** Parse an ISO-8601 string to epoch ms, or null if it isn't one. */
+function parseIsoDate(value: string): number | null {
+  if (!ISO_8601.test(value)) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /**
- * Arithmetic comparison for `where`/`match`/`validate` guards. A missing or
- * non-numeric operand makes the comparison false (the record is excluded) rather
- * than throwing — real API data routinely omits fields, and one missing field
- * shouldn't abort the whole stage.
+ * Ordering for `where`/`match`/`validate` guards (`<`, `>`, `<=`, `>=`).
+ *
+ * Operands are compared by their actual type rather than coerced through
+ * `Number()`: numbers numerically, booleans as 0/1, ISO-8601 date strings
+ * chronologically, and all other strings lexicographically. This is what makes
+ * the core incremental-sync idiom `where .updated_at > lastSync` work — a date
+ * string is present and perfectly comparable, `Number()` just turned it to NaN.
+ *
+ * Two operands that can't be ordered are handled deliberately:
+ *   - a genuinely absent operand (`null`/`undefined`, or a `NaN` number) makes
+ *     the comparison false, excluding the record. Real API data omits fields,
+ *     and one absence shouldn't abort a stage.
+ *   - a real type mismatch (e.g. number vs object, or number vs a non-numeric
+ *     string) throws, because it's a bug in the mission the author can fix, not
+ *     data to silently skip.
  */
-function compareNumbers(left: unknown, right: unknown, operator: string): boolean {
-  const leftNum = toComparable(left);
-  const rightNum = toComparable(right);
-  if (Number.isNaN(leftNum) || Number.isNaN(rightNum)) return false;
+function compareValues(left: unknown, right: unknown, operator: string): boolean {
+  // Absent operand: excluded, not an error. Covers null, undefined, and NaN
+  // (which no ordering relation holds for anyway).
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return false;
+  }
+  if (
+    (typeof left === 'number' && Number.isNaN(left)) ||
+    (typeof right === 'number' && Number.isNaN(right))
+  ) {
+    return false;
+  }
 
+  const order = orderOf(left, right, operator);
   switch (operator) {
     case '<':
-      return leftNum < rightNum;
+      return order < 0;
     case '>':
-      return leftNum > rightNum;
+      return order > 0;
     case '<=':
-      return leftNum <= rightNum;
+      return order <= 0;
     case '>=':
-      return leftNum >= rightNum;
+      return order >= 0;
     default:
       return false;
   }
+}
+
+/** -1 / 0 / 1 ordering of two like-typed values, or throw on a type mismatch. */
+function orderOf(left: unknown, right: unknown, operator: string): number {
+  const cmp = (a: number, b: number): number => (a < b ? -1 : a > b ? 1 : 0);
+
+  if (typeof left === 'number' && typeof right === 'number') {
+    return cmp(left, right);
+  }
+  if (typeof left === 'boolean' && typeof right === 'boolean') {
+    return cmp(left ? 1 : 0, right ? 1 : 0);
+  }
+  if (typeof left === 'string' && typeof right === 'string') {
+    // Both ISO-8601 → compare as instants so `2026-01-02` > `2026-01-01T00:00Z`
+    // orders correctly instead of by byte. Otherwise plain lexicographic.
+    const l = parseIsoDate(left);
+    const r = parseIsoDate(right);
+    if (l !== null && r !== null) return cmp(l, r);
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+
+  throw new EvaluatorError(
+    `Cannot compare ${describeType(left)} with ${describeType(right)} using '${operator}'. ` +
+      `Ordering comparisons require both operands to be the same type ` +
+      `(number, boolean, or string); cast one side first.`,
+    { expression: operator }
+  );
+}
+
+/** Human-readable type label for comparison error messages. */
+function describeType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
 }
 
 /** Type check functions map - more efficient than switch statement */

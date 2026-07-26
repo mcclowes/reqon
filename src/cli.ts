@@ -28,6 +28,7 @@ import {
   type StructuredLogger,
   type LogLevel,
   type ProgressSnapshot,
+  type AuthConfig,
 } from './index.js';
 import type { ScheduleEvent } from './scheduler/index.js';
 import { ReqonError } from './errors/index.js';
@@ -324,10 +325,7 @@ Control Server:
     await runDaemon(filePath, {
       verbose,
       dryRun,
-      auth: auth as Record<
-        string,
-        { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }
-      >,
+      auth: auth as Record<string, AuthConfig>,
       once,
     });
     return;
@@ -380,10 +378,7 @@ Control Server:
       logger: obs.logger,
       eventEmitter: obs.eventEmitter,
       developmentMode: devMode,
-      auth: auth as Record<
-        string,
-        { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }
-      >,
+      auth: auth as Record<string, AuthConfig>,
       webhookServer,
       debugController,
       controlServer,
@@ -462,7 +457,7 @@ Control Server:
 interface DaemonOptions {
   verbose: boolean;
   dryRun: boolean;
-  auth?: Record<string, { type: 'bearer' | 'oauth2'; token?: string; accessToken?: string }>;
+  auth?: Record<string, AuthConfig>;
   once: boolean;
 }
 

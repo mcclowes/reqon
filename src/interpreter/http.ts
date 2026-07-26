@@ -72,9 +72,26 @@ export interface RetryInfo {
   waitMs: number;
 }
 
+/**
+ * The header(s) and/or query param(s) a provider adds to authenticate a request.
+ * Lets schemes other than `Authorization: Bearer` (Basic, an API key in a custom
+ * header or a query param) participate without the client hardcoding one shape.
+ */
+export interface AuthContribution {
+  headers?: Record<string, string>;
+  query?: Record<string, string>;
+}
+
 export interface AuthProvider {
   getToken(): Promise<string>;
   refreshToken?(): Promise<string>;
+  /**
+   * Full auth contribution for a request. Implement this for any scheme that is
+   * not `Authorization: Bearer <getToken()>` — Basic auth, or an API key in a
+   * custom header or query param. When absent, the client falls back to sending
+   * `Authorization: Bearer <getToken()>`.
+   */
+  applyAuth?(): Promise<AuthContribution>;
 }
 
 export interface HttpRequest {
@@ -138,12 +155,17 @@ export class HttpClient {
   }
 
   async request<T = unknown>(req: HttpRequest, retry?: RetryConfig): Promise<HttpResponse<T>> {
-    const url = this.buildUrl(req.path, req.query);
+    // Resolve auth once up front: header contributions go into the request
+    // headers, query contributions (e.g. an API key in a query param) into the
+    // URL. Bearer/OAuth2 contribute a header; Basic and API-key providers may
+    // contribute either.
+    const auth = await this.resolveAuthContribution();
+    const url = this.buildUrl(req.path, this.mergeQuery(req.query, auth?.query));
     const requestHeaders = { ...req.headers };
     if (req.idempotencyKey) {
       requestHeaders['Idempotency-Key'] = req.idempotencyKey;
     }
-    const headers = await this.buildHeaders(requestHeaders);
+    const headers = this.buildHeaders(requestHeaders, auth);
 
     const fetchOptions: RequestInit = {
       method: req.method,
@@ -285,9 +307,10 @@ export class HttpClient {
         ) {
           hasRefreshed = true;
           await this.config.auth.refreshToken();
-          // Rebuild headers with new token (preserving the idempotency key)
-          const newHeaders = await this.buildHeaders(requestHeaders);
-          fetchOptions.headers = newHeaders;
+          // Rebuild headers with the refreshed token (preserving the idempotency
+          // key). Only header-based schemes refresh, so the URL query is stable.
+          const refreshedAuth = await this.resolveAuthContribution();
+          fetchOptions.headers = this.buildHeaders(requestHeaders, refreshedAuth);
           continue;
         }
 
@@ -471,9 +494,35 @@ export class HttpClient {
     return url;
   }
 
-  private async buildHeaders(
-    requestHeaders?: Record<string, string>
-  ): Promise<Record<string, string>> {
+  /**
+   * Resolve the configured auth provider's contribution for a request, or
+   * undefined when the source is unauthenticated. A provider that implements
+   * `applyAuth` controls its own header/query shape (Basic, API key); otherwise
+   * the default is `Authorization: Bearer <getToken()>`.
+   */
+  private async resolveAuthContribution(): Promise<AuthContribution | undefined> {
+    const auth = this.config.auth;
+    if (!auth) return undefined;
+    if (auth.applyAuth) {
+      return auth.applyAuth();
+    }
+    const token = await auth.getToken();
+    return { headers: { Authorization: `Bearer ${token}` } };
+  }
+
+  /** Merge base query params with auth-provided ones (auth wins on conflict). */
+  private mergeQuery(
+    base?: Record<string, string>,
+    auth?: Record<string, string>
+  ): Record<string, string> | undefined {
+    if (!auth || Object.keys(auth).length === 0) return base;
+    return { ...base, ...auth };
+  }
+
+  private buildHeaders(
+    requestHeaders?: Record<string, string>,
+    auth?: AuthContribution
+  ): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
@@ -481,9 +530,8 @@ export class HttpClient {
       ...requestHeaders,
     };
 
-    if (this.config.auth) {
-      const token = await this.config.auth.getToken();
-      headers['Authorization'] = `Bearer ${token}`;
+    if (auth?.headers) {
+      Object.assign(headers, auth.headers);
     }
 
     return headers;
@@ -527,6 +575,53 @@ export class BearerAuthProvider implements AuthProvider {
 
   async getToken(): Promise<string> {
     return this.token;
+  }
+}
+
+/**
+ * HTTP Basic auth: sends `Authorization: Basic base64(username:password)`.
+ * Before #200 a `basic` source was silently sent unauthenticated.
+ */
+export class BasicAuthProvider implements AuthProvider {
+  private readonly encoded: string;
+
+  constructor(username: string, password: string) {
+    this.encoded = Buffer.from(`${username}:${password}`).toString('base64');
+  }
+
+  async getToken(): Promise<string> {
+    return this.encoded;
+  }
+
+  async applyAuth(): Promise<AuthContribution> {
+    return { headers: { Authorization: `Basic ${this.encoded}` } };
+  }
+}
+
+/**
+ * API-key auth: sends the key in a header (default `X-API-Key`) or, when
+ * `location: 'query'`, as a query parameter. Before #200 an `api_key` source
+ * was silently sent unauthenticated.
+ */
+export class ApiKeyAuthProvider implements AuthProvider {
+  private readonly key: string;
+  private readonly paramName: string;
+  private readonly location: 'header' | 'query';
+
+  constructor(key: string, options: { name?: string; location?: 'header' | 'query' } = {}) {
+    this.key = key;
+    this.location = options.location ?? 'header';
+    this.paramName = options.name ?? (this.location === 'query' ? 'api_key' : 'X-API-Key');
+  }
+
+  async getToken(): Promise<string> {
+    return this.key;
+  }
+
+  async applyAuth(): Promise<AuthContribution> {
+    return this.location === 'query'
+      ? { query: { [this.paramName]: this.key } }
+      : { headers: { [this.paramName]: this.key } };
   }
 }
 

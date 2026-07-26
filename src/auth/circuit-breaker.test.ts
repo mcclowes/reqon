@@ -192,6 +192,46 @@ describe('CircuitBreaker', () => {
       breaker.recordSuccess('TestAPI'); // probe 2 succeeds (2 of 2) => closed
       expect(breaker.getStatus('TestAPI').state).toBe('closed');
     });
+
+    // Regression coverage for #247: an uncounted (4xx) failure during a probe
+    // used to hit recordFailure's early return without releasing the probe slot,
+    // leaving the circuit stuck in half-open forever.
+    it('releases the probe slot when a probe fails with an uncounted status', async () => {
+      breaker.configure('TestAPI', { failureThreshold: 1, resetTimeout: 1 });
+      breaker.recordFailure('TestAPI', undefined, 500);
+      expect(breaker.getStatus('TestAPI').state).toBe('open');
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(breaker.canProceed('TestAPI')).toBe(true); // takes the probe slot
+      expect(breaker.getStatus('TestAPI').state).toBe('half_open');
+
+      // 403 is not a counted failure status, so it must not re-open the circuit,
+      // but it must release the probe slot rather than wedging half-open.
+      breaker.recordFailure('TestAPI', undefined, 403);
+      expect(breaker.getStatus('TestAPI').state).toBe('half_open');
+
+      // The next request is admitted as a fresh probe instead of being stuck.
+      expect(breaker.canProceed('TestAPI')).toBe(true);
+    });
+
+    it('self-heals a lost probe release after probeTimeout', async () => {
+      breaker.configure('TestAPI', {
+        failureThreshold: 1,
+        resetTimeout: 1,
+        probeTimeout: 20,
+      });
+      breaker.recordFailure('TestAPI', undefined, 500);
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(breaker.canProceed('TestAPI')).toBe(true); // probe admitted
+      // Simulate a probe whose outcome is never reported (request threw before
+      // recordSuccess/recordFailure): the slot stays claimed.
+      expect(breaker.canProceed('TestAPI')).toBe(false);
+
+      // After probeTimeout the stale slot expires and a new probe is admitted.
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(breaker.canProceed('TestAPI')).toBe(true);
+    });
   });
 
   describe('memory hygiene (read paths do not insert)', () => {

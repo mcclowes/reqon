@@ -6,8 +6,7 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { parse as parseUrl } from 'node:url';
-import { timingSafeEqual } from 'node:crypto';
+import { safeEqual } from '../utils/crypto-safe.js';
 import type { ExecutionState, LiveProgress } from '../execution/index.js';
 import type {
   ControlServerConfig,
@@ -151,8 +150,11 @@ export class ControlServer {
    * Handle incoming HTTP request
    */
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = parseUrl(req.url ?? '/', true);
-    const path = url.pathname ?? '/';
+    // WHATWG URL, not the deprecated url.parse() (DEP0169 warns it has security
+    // implications for which CVEs are not issued). req.url is path-only, so it is
+    // resolved against a dummy origin to extract the pathname.
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const path = url.pathname;
     const method = req.method ?? 'GET';
 
     // No wildcard CORS. Same-origin reads only; we never reflect ACAO so a
@@ -226,26 +228,11 @@ export class ControlServer {
     }
     const header = req.headers.authorization;
     const expected = `Bearer ${this.config.authToken}`;
-    if (typeof header !== 'string' || !this.safeEqual(header, expected)) {
+    if (typeof header !== 'string' || !safeEqual(header, expected)) {
       this.sendJson(res, 401, { error: 'Unauthorized' });
       return false;
     }
     return true;
-  }
-
-  /**
-   * Constant-time string comparison. Avoids the timing oracle of `a !== b`,
-   * which short-circuits on the first differing byte and can leak the token
-   * prefix. Length is compared first (and non-constant-time), which only
-   * reveals the token length — not its contents.
-   */
-  private safeEqual(a: string, b: string): boolean {
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) {
-      return false;
-    }
-    return timingSafeEqual(bufA, bufB);
   }
 
   /**
