@@ -933,6 +933,18 @@ describe('interpolatePath', () => {
 
     expect(result).toBe('/users/');
   });
+
+  it('falls back to a context variable for a dotted path the current item lacks', () => {
+    const ctx = createContext();
+    setVariable(ctx, 'org', { id: 'acme' });
+    // `current` has no `org`; the root segment must resolve to the `org`
+    // context variable and read its `.id`, not look up `id` as a standalone var.
+    const current = { id: 'item-X' };
+
+    const result = interpolatePath('/orgs/{org.id}/users', ctx, current);
+
+    expect(result).toBe('/orgs/acme/users');
+  });
 });
 
 describe('context variable resolution', () => {

@@ -27,4 +27,18 @@ describe('deepMerge', () => {
     expect(deepMerge({ a: 1 }, { a: { x: 1 } })).toEqual({ a: { x: 1 } });
     expect(deepMerge({ a: { x: 1 } }, { a: 5 })).toEqual({ a: 5 });
   });
+
+  it('preserves a literal "__proto__" data key without mangling the prototype', () => {
+    // JSON.parse yields an own enumerable "__proto__" property; a plain
+    // out[key] = value assignment would hit the prototype setter and drop it.
+    const source = JSON.parse('{"__proto__": {"role": "admin"}, "id": 1}');
+    const out = deepMerge({ id: 0 }, source);
+    expect(Object.prototype.hasOwnProperty.call(out, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(out, '__proto__')?.value).toEqual({ role: 'admin' });
+    expect(out.id).toBe(1);
+    // The merged object's prototype chain is untouched (no pollution).
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    const bare: Record<string, unknown> = {};
+    expect(bare.role).toBeUndefined();
+  });
 });

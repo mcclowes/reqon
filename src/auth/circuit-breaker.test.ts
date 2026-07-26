@@ -347,6 +347,59 @@ describe('CircuitBreaker', () => {
 
       expect(breaker.getStatus('TestAPI').state).toBe('closed');
     });
+
+    it('honors lane-configured countNetworkErrors on lane-keyed failures', () => {
+      // Config is stored under the bare source name, but http.ts keys the
+      // breaker per egress lane (`source@host:port`). recordFailure must fall
+      // back through the lane source when resolving config, or it would use the
+      // default (countNetworkErrors: true) and open despite the config.
+      breaker.configure('TestAPI', { failureThreshold: 1, countNetworkErrors: false });
+
+      breaker.recordFailure('TestAPI@10.0.0.1:443', undefined, undefined, true);
+
+      expect(breaker.getStatus('TestAPI@10.0.0.1:443').state).toBe('closed');
+    });
+
+    it('honors lane-configured failureStatusCodes on lane-keyed failures', () => {
+      breaker.configure('TestAPI', { failureThreshold: 1, failureStatusCodes: [429] });
+
+      // 500 is not in the lane's custom list, so it must not open the circuit.
+      breaker.recordFailure('TestAPI@10.0.0.1:443', undefined, 500);
+      expect(breaker.getStatus('TestAPI@10.0.0.1:443').state).toBe('closed');
+
+      // 429 is, so it opens.
+      breaker.recordFailure('TestAPI@10.0.0.1:443', undefined, 429);
+      expect(breaker.getStatus('TestAPI@10.0.0.1:443').state).toBe('open');
+    });
+  });
+
+  describe('half-open probe slot release', () => {
+    it('releases the probe slot when a half-open probe fails un-counted', async () => {
+      // With countNetworkErrors off, a network error during the half-open probe
+      // is not counted. It must still free the single probe slot, or the circuit
+      // stays half-open forever and never admits another probe.
+      breaker.configure('TestAPI', {
+        failureThreshold: 1,
+        resetTimeout: 30,
+        successThreshold: 1,
+        countNetworkErrors: false,
+      });
+
+      breaker.recordFailure('TestAPI', undefined, 500); // open
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      expect(breaker.canProceed('TestAPI')).toBe(true); // admits the probe (half-open)
+      expect(breaker.getStatus('TestAPI').state).toBe('half_open');
+
+      // Probe fails with an un-counted network error.
+      breaker.recordFailure('TestAPI', undefined, undefined, true);
+
+      // The slot is released: a subsequent request is admitted as the next probe
+      // (rather than being denied forever), and can then close the circuit.
+      expect(breaker.canProceed('TestAPI')).toBe(true);
+      breaker.recordSuccess('TestAPI');
+      expect(breaker.getStatus('TestAPI').state).toBe('closed');
+    });
   });
 
   describe('callbacks', () => {

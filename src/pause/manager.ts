@@ -73,8 +73,9 @@ export class PauseManager {
     // Build resume trigger states
     const resumeTriggers: PauseResumeTriggerState[] = [];
 
-    // Always include timeout by default
-    const triggers = options.resumeTriggers ?? [{ type: 'timeout' }];
+    // Always include timeout by default. Copy the caller's array before pushing
+    // so a reused (or frozen) input array isn't mutated in place.
+    const triggers = [...(options.resumeTriggers ?? [{ type: 'timeout' }])];
     const hasTimeout = triggers.some((t) => t.type === 'timeout');
     if (!hasTimeout) {
       triggers.push({ type: 'timeout' });
