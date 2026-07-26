@@ -284,10 +284,18 @@ export class SourceManager {
       minimumRequests: source.config.circuitBreaker.minimumRequests,
     });
 
+    // Report the mode actually in effect. Rate mode leaves failureThreshold
+    // unset, so printing its default reads as an absolute threshold of 5 - the
+    // exact setting `failureRate` exists to replace at high request volumes.
+    const { failureRate, minimumRequests, failureThreshold, resetTimeout } =
+      source.config.circuitBreaker;
+    const trip =
+      failureRate !== undefined
+        ? `failureRate=${failureRate}, minimumRequests=${minimumRequests ?? 10}`
+        : `failureThreshold=${failureThreshold ?? 5}`;
+
     this.log(
-      `Circuit breaker config for ${source.name}: ` +
-        `failureThreshold=${source.config.circuitBreaker.failureThreshold ?? 5}, ` +
-        `resetTimeout=${source.config.circuitBreaker.resetTimeout ?? 30}s`
+      `Circuit breaker config for ${source.name}: ${trip}, resetTimeout=${resetTimeout ?? 30}s`
     );
   }
 
