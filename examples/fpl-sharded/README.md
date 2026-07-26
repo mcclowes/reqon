@@ -52,6 +52,42 @@ statuses falls through when none apply, so a 200 carries on without needing a
 `_` arm. Anything that still fails is queued to `failures` by `onError` rather
 than killing a run that is most of the way through.
 
+## Modeling the rate limit
+
+`fallbackRpm` paces at a flat rate. That is safe but blunt: it either leaves the
+server's burst allowance unused, or, set too high, drains it and eats 429s. Most
+servers - FPL included, via OpenResty - enforce a **token bucket**: a full
+bucket absorbs a burst, then sustained traffic above the refill rate is
+throttled. Being resilient to that (retry, back off) is not the same as staying
+under it.
+
+If you know the bucket, declare it and reqon paces under it locally - using the
+burst, holding the sustained rate, without tripping the limit:
+
+```
+rateLimit: {
+  strategy: throttle,
+  model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
+}
+```
+
+- `capacity` — how many requests a full bucket absorbs at once (the burst).
+- `refill` — tokens the bucket regains per second (the sustained rate).
+- `safety` — pace at this fraction of the modeled rate *and* burst for headroom
+  against clock skew (optional, default 1.0).
+
+reqon simulates the bucket with the same GCRA scheduler a rate limiter uses, per
+egress lane, and releases a request only when the modeled bucket has a token.
+Against a mock enforcing capacity 50 / refill 100 per second, a naive fixed
+200/s took 452 × 429 out of 1000; the model took **zero**, while still using the
+burst.
+
+The model is only as good as its numbers. Calibrate `capacity` and `refill` to
+the server: measure the burst (fire until the first 429), then the sustained
+refill (ramp a steady rate until 429s begin). For FPL the burst is comfortably
+into the thousands from one IP; the refill needs that steady-state measurement.
+Until you have it, the conservative `fallbackRpm` is the safe default.
+
 ## Running it
 
 No configuration required. It runs direct from your own IP, into a file store:

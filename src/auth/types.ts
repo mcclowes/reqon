@@ -88,6 +88,21 @@ export type RateLimitStrategy = 'pause' | 'throttle' | 'fail';
 /**
  * Rate limit configuration
  */
+/**
+ * A declarative model of the server's own rate limiter, so the client can pace
+ * under it rather than discover it via 429s. Currently a token bucket (the
+ * shape most servers, including OpenResty's limiter, actually use).
+ */
+export interface RateLimitModel {
+  type: 'tokenBucket';
+  /** Tokens a full bucket holds - the burst the server tolerates. */
+  capacity: number;
+  /** Tokens the bucket regains per second - the sustained rate. */
+  refill: number;
+  /** Pace at `safety * refill` for headroom (range (0, 1], default 1). */
+  safety?: number;
+}
+
 export interface RateLimitConfig {
   /** Strategy when rate limited (default: 'pause') */
   strategy?: RateLimitStrategy;
@@ -97,6 +112,12 @@ export interface RateLimitConfig {
   notifyAt?: number;
   /** Fallback rate limit if no headers (requests per minute) */
   fallbackRpm?: number;
+  /**
+   * Model of the server's limiter. When set, throttle pacing simulates this
+   * bucket locally instead of pacing at a flat `fallbackRpm`, so a run can use
+   * the server's burst allowance and still hold the sustained rate.
+   */
+  model?: RateLimitModel;
 }
 
 /**

@@ -77,6 +77,16 @@ export interface RateLimitSourceConfig {
   strategy?: 'pause' | 'throttle' | 'fail'; // Default: 'pause'
   maxWait?: number; // Max seconds to wait (default: 300)
   fallbackRpm?: number; // Fallback requests per minute if no headers
+  /** Model of the server's limiter, to pace under it rather than react to 429s. */
+  model?: RateLimitModelConfig;
+}
+
+// model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
+export interface RateLimitModelConfig {
+  type: 'tokenBucket';
+  capacity: number; // burst tolerance (tokens a full bucket holds)
+  refill: number; // sustained rate (tokens per second)
+  safety?: number; // pace at safety * refill for headroom (default 1.0)
 }
 
 export interface AuthConfig {
