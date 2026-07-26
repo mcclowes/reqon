@@ -61,6 +61,33 @@ describe('fpl-sharded example', () => {
 });
 
 /**
+ * The bulk pull generates its own ids with range() instead of reading a shard
+ * file, so there's no orchestrator and no 500k-line input to hand-write.
+ */
+describe('fpl-sharded first-500k bulk example', () => {
+  const dir = join(import.meta.dirname, '..', 'examples', 'fpl-sharded');
+  const parse = (file: string) =>
+    new ReqonParser(new ReqonLexer(readFileSync(join(dir, file), 'utf8')).tokenize()).parse();
+
+  it('parses the bulk mission', () => {
+    expect(() => parse('first-500k.vague')).not.toThrow();
+  });
+
+  it('iterates a numeric range in-mission, not a store', () => {
+    const mission = parse('first-500k.vague').statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
+    const loop = mission.actions[0].steps.find((s): s is ForStep => s.type === 'ForStep');
+
+    expect(loop?.collection.type).toBe('CallExpression');
+    // range(1, 500001) -> the first 500,000 managers.
+    const call = loop?.collection as { callee: string; arguments: Array<{ value: number }> };
+    expect(call.callee).toBe('range');
+    expect(call.arguments[1].value).toBe(500001);
+    expect(loop?.concurrency).toBe(192);
+  });
+});
+
+/**
  * These examples are the reference showcases for the features that close the
  * README feature-index gap. Each assertion keeps the example demonstrating the
  * advertised syntax (not just parsing), so the docs and the parser can't drift
