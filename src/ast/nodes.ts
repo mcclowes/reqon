@@ -93,6 +93,23 @@ export interface StoreDefinition {
   name: string;
   storeType: 'nosql' | 'sql' | 'memory' | 'file' | 'postgrest';
   target: string; // collection/table name
+  /** Optional write batching for high-throughput fan-out (see BatchConfig). */
+  batch?: BatchConfig;
+}
+
+// store x: postgrest("t") { batch: 500 }
+// store x: postgrest("t") { batch: { size: 500, maxDelay: 200, durability: relaxed } }
+export interface BatchConfig {
+  /** Flush once this many buffered writes accumulate. */
+  size: number;
+  /** Also flush a partial buffer this long (ms) after the first buffered write. */
+  maxDelay?: number;
+  /**
+   * `strict` (default): a write is durable before its loop iteration completes.
+   * `relaxed`: writes return immediately and flush in the background - faster,
+   * but a crash loses whatever is still buffered.
+   */
+  durability?: 'strict' | 'relaxed';
 }
 
 // Schedule configuration for missions

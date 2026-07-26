@@ -58,10 +58,16 @@ mission FplManagerHistory {
   store shard: file("fpl_shard")
 
   // A file store keeps this runnable on one machine. For a real fleet swap in
-  //   store managers: postgrest("fpl_manager_history")
+  //   store managers: postgrest("fpl_manager_history") { batch: 500 }
   // and every worker upserts into one table. Shards are disjoint, so there's no
   // last-writer-wins race between machines.
-  store managers: file("fpl_manager_history")
+  //
+  // `batch` buffers writes and flushes them in bulk, so a high-fan-out loop
+  // makes one store write per batch instead of one per record - the difference
+  // between one DB round-trip per manager and one per 500. `durability: strict`
+  // (the default) keeps each write durable before its iteration completes; use
+  // `relaxed` to trade crash-safety of the in-flight buffer for more speed.
+  store managers: file("fpl_manager_history") { batch: 500 }
 
   // Items that exhaust their retries land here instead of failing the run, so a
   // long shard finishes and the stragglers can be swept afterwards.
