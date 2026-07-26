@@ -433,16 +433,17 @@ export function evaluateToString(
  */
 export function interpolatePath(path: string, ctx: ExecutionContext, current?: unknown): string {
   return path.replace(/\{([^}]+)\}/g, (_, expr) => {
-    // Simple variable interpolation
-    const parts = expr.split('.');
-    let value: unknown = current;
+    // Resolve the root segment first, then walk the rest as pure member access
+    // (matching QualifiedName evaluation). Resolving each segment independently
+    // would, when `current` lacks the first segment, mis-resolve a later segment
+    // as a standalone context variable — e.g. `{org.id}` looking up `id` instead
+    // of falling back to the `org` variable and reading its `.id`.
+    const [head, ...rest] = expr.split('.');
+    let value: unknown =
+      isRecord(current) && head in current ? current[head] : getVariable(ctx, head);
 
-    for (const part of parts) {
-      if (isRecord(value)) {
-        value = value[part];
-      } else {
-        value = getVariable(ctx, part);
-      }
+    for (const part of rest) {
+      value = isRecord(value) ? value[part] : undefined;
     }
 
     // URL-encode each interpolated value so a path param can't inject path

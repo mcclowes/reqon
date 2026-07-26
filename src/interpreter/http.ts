@@ -148,7 +148,9 @@ export class HttpClient {
     const fetchOptions: RequestInit = {
       method: req.method,
       headers,
-      body: req.body ? JSON.stringify(req.body) : undefined,
+      // Serialize any defined body. A truthiness check would silently drop a
+      // legitimate falsy payload (0, false, ""); only null/undefined mean "no body".
+      body: req.body != null ? JSON.stringify(req.body) : undefined,
     };
 
     // Auto-retry only idempotent verbs, or any verb carrying an idempotency key.

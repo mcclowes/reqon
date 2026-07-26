@@ -133,8 +133,8 @@ export class FetchHandler {
           sinceQuery,
           sinceHeaders
         );
-        data = result;
-        pagesFetched = Array.isArray(result) ? undefined : 1; // Will be set by executePaginated
+        data = result.items;
+        pagesFetched = result.pages;
       } else {
         const body = step.body ? evaluate(step.body, this.deps.ctx) : undefined;
         const response = await client.request(
@@ -194,8 +194,12 @@ export class FetchHandler {
         message.includes('network') ||
         message.includes('rate limit') ||
         message.includes('429') ||
+        // Match http.ts, which retries every 5xx: reporting a retried 500/504 as
+        // non-retryable would make the fetch.error event contradict what happened.
+        message.includes('500') ||
+        message.includes('502') ||
         message.includes('503') ||
-        message.includes('502')
+        message.includes('504')
       );
     }
     return false;
@@ -379,7 +383,7 @@ export class FetchHandler {
     operationId?: string,
     sinceQuery: Record<string, string> = {},
     sinceHeaders: Record<string, string> = {}
-  ): Promise<unknown[]> {
+  ): Promise<{ items: unknown[]; pages: number }> {
     const allResults: unknown[] = [];
     const paginate = step.paginate!;
     const strategy = createPaginationStrategy(paginate);
@@ -395,7 +399,7 @@ export class FetchHandler {
     if (step.backfill && backfill?.resume) {
       if (backfill.resume.done) {
         this.deps.log('Backfill already complete; nothing to fetch.');
-        return [];
+        return { items: [], pages: 0 };
       }
       ctx.page = backfill.resume.page;
       ctx.cursor = backfill.resume.cursor;
@@ -490,7 +494,7 @@ export class FetchHandler {
     }
 
     this.deps.log(`Fetched ${allResults.length} total items`);
-    return allResults;
+    return { items: allResults, pages: ctx.page };
   }
 
   private countRecords(data: unknown): number | undefined {
