@@ -292,8 +292,10 @@ The shard file lives at `.reqon-data/fpl_shard.json`, keyed by id:
 }
 ```
 
-Reqon has no `range()` builtin, so the id list is an input. Whatever starts your
-workers writes each shard file before the run.
+A shard is an input file, so whatever starts your workers writes each one before
+the run. That's what buys you disjoint, arbitrary id sets across a fleet. When
+the ids are just a contiguous block, you don't need the file at all - `range()`
+generates them in-mission, which is what `first-500k.vague` does.
 
 ## Orchestration
 
