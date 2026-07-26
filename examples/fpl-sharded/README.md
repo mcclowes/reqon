@@ -4,7 +4,10 @@ Pulling per-manager data from the Fantasy Premier League API: a public,
 unauthenticated API with no rate limit headers and a low tolerance for hammering
 from one IP.
 
-Two files, and the order matters.
+Three files. `bootstrap.vague` (one request for all the static data),
+`managers.vague` (a sharded worker fed an id list, the building block for a
+fleet), and `first-500k.vague` (the whole job in one mission - fetch the first
+500k managers from one host). Start at the top.
 
 ## Start with bootstrap.vague
 
@@ -57,6 +60,51 @@ retrying five times, and `404 -> skip` drops the item. A match written only on
 statuses falls through when none apply, so a 200 carries on without needing a
 `_` arm. Anything that still fails is queued to `failures` by `onError` rather
 than killing a run that is most of the way through.
+
+## first-500k.vague
+
+`managers.vague` is a worker: hand it a shard, it pulls it. When the id list is
+just "the first N managers", you don't need a shard file or an orchestrator at
+all - `first-500k.vague` is the whole job in one mission:
+
+```bash
+FPL_USER_AGENT="you (you@example.com)" reqon examples/fpl-sharded/first-500k.vague --verbose
+```
+
+Three choices make it fast, all reqon, no scripts around it:
+
+- **`range()` generates the ids.** `for id in range(1, 500001)` iterates
+  1..500,000 in-mission - no 500k-line shard file to write first. (`range(end)`
+  or `range(start, end)`, start-inclusive / end-exclusive, capped at 20M so a
+  fat-fingered bound fails loudly instead of eating memory.) Change the bound to
+  pull a different count.
+- **The model is pinned at FPL's measured ceiling.** `capacity: 5000, refill:
+  1800` mirrors what one IP actually tolerates (burst ~5-7k, then ~1,800 req/s);
+  `safety: 0.9` paces just under, and a 429 tightens it automatically. So it runs
+  as fast as one IP politely can, without a 429 storm.
+- **Concurrency is set for a heavy endpoint.** `/entry/{id}/` embeds the
+  manager's leagues, so it's a ~100ms round-trip - at concurrency 48 the socket
+  count caps the run at ~440 req/s, well under the model. `concurrency 192` fills
+  the latency pipe so the *model* is the governor (it caps the rate regardless).
+- **The store writes once, not 500k times.** `batch: { size: 600000, maxDelay:
+  ..., durability: relaxed }` buffers the whole run in memory and flushes on close
+  as a single file write. A file store rewrites the entire file per flush, so a
+  per-record or small batch would be O(n²) IO - the store, not the fetch, would
+  be the bottleneck. The trade is memory (hundreds of MB for 500k) and no
+  durability until the end; for a durable or much larger pull, point `managers`
+  at `postgrest(...)` with a `size: 500` relaxed batch instead.
+
+**Measured:** the identical pipeline pulled 8,000 real manager records at
+**~2,400 req/s, zero failures** (burst-inflated, since 8k barely exceeds the
+bucket). At the model's steady ~1,600 req/s the full 500k lands in **~5 minutes
+from a single IP**. Add a proxy pool (the `proxy:` block, unset by default) and
+the per-IP budgets fan that rate across egress IPs - a couple dozen IPs is the
+~20k req/s that clears 12M in ten minutes (see
+[How fast can this actually go?](#how-fast-can-this-actually-go)).
+
+It stays polite by default: no proxies, one host, paced under the measured limit.
+500k requests is still 500k requests, so run it when you actually need the data,
+not to watch the number go up.
 
 ## Modeling the rate limit
 

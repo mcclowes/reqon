@@ -1,0 +1,128 @@
+// Fetch the first 500,000 FPL managers as fast as one IP politely can.
+//
+// Unlike managers.vague (a sharded worker fed an id list), this is the whole job
+// in one mission: no external shard file, no orchestrator. It leans on three
+// things measured against the live API - a modeled rate limit, high loop
+// concurrency, and a store that writes once instead of per-record - to run the
+// pull in a handful of minutes from a single host.
+//
+//   FPL_USER_AGENT="you (you@example.com)" reqon examples/fpl-sharded/first-500k.vague --verbose
+//
+// To pull a different count, change the range bound below. To go faster than one
+// IP allows (~1,800 req/s), add a proxy pool (see managers.vague) and the model's
+// per-proxy budgets fan the rate out across egress IPs.
+
+mission FplFirst500kManagers {
+
+  source FPL {
+    auth: none,
+    base: "https://fantasy.premierleague.com/api",
+
+    headers: {
+      "User-Agent": env("FPL_USER_AGENT")
+    },
+
+    // Optional egress pool. All unset -> runs direct from this host (the default
+    // this example is tuned for). Set them to fan the rate across IPs; the model
+    // below keys its budget per proxy, so each IP gets the full allowance.
+    proxy: [
+      env("FPL_PROXY_1"),
+      env("FPL_PROXY_2"),
+      env("FPL_PROXY_3"),
+      env("FPL_PROXY_4")
+    ],
+
+    // Modeled at FPL's *measured* single-IP ceiling: it absorbs a burst of
+    // ~5,000-7,000, then sustains ~1,800 req/s before throttling in earnest.
+    // capacity/refill mirror that; safety 0.9 paces just under it. A 429 (FPL
+    // sends no Retry-After) tightens this lane automatically, so the numbers are
+    // a ceiling to aim at, not one to land exactly.
+    rateLimit: {
+      strategy: throttle,
+      maxWait: 300,
+      model: { type: tokenBucket, capacity: 5000, refill: 1800, safety: 0.9 }
+    },
+
+    // Tolerant breaker: at ~1,600 req/s a short 429 burst during calibration is
+    // normal and shouldn't trip the circuit. failureRate opens only on a
+    // sustained bad patch, not a handful of blips.
+    circuitBreaker: {
+      failureRate: 0.5,
+      minimumRequests: 200,
+      resetTimeout: 30,
+      failureWindow: 30
+    }
+  }
+
+  // One write, not 500,000. `batch` buffers the whole run in memory (relaxed =
+  // writes never block the fan-out) and flushes once on close - the file store
+  // rewrites the entire file per flush, so a per-record or small batch would be
+  // O(n^2) IO. The trade is memory (~hundreds of MB for 500k) and no durability
+  // until the end; for a durable or much larger pull, swap in
+  //   store managers: postgrest("fpl_first_500k") { batch: { size: 500, durability: relaxed } }
+  // which flushes each 500-row batch as one array POST.
+  store managers: file("fpl_first_500k") {
+    batch: { size: 600000, maxDelay: 3600000, durability: relaxed }
+  }
+
+  // Stragglers that exhaust their retries land here instead of failing the run.
+  store failures: file("fpl_first_500k_failures")
+
+  // The manager record from /entry/{id}/: who they are and their standing.
+  // (Overall points/rank are null out of season and populate once it starts.)
+  schema Manager {
+    id: number,
+    name: string,
+    firstName: string,
+    lastName: string,
+    region: string,
+    startedEvent: number,
+    overallPoints: number,
+    overallRank: number
+  }
+
+  action FetchFirst500k {
+    // range() generates the ids in-mission - no shard file to write first.
+    // /entry/{id}/ is a heavy payload (~100ms round-trip - it embeds the
+    // manager's leagues), so it takes many in-flight requests to reach the
+    // model's ~1,600 req/s pace: at concurrency 48 the socket count, not the
+    // model, is the limit (~440 req/s). 192 fills the latency pipe so the model
+    // is the governor; it caps the rate regardless, so this can't run away.
+    for id in range(1, 500001) concurrency 192 onError queue failures {
+
+      get "/entry/{id}/" {
+        source: FPL,
+        // Low ids include managers that never existed; 404 is data, not a retry.
+        allow: [404],
+        retry: {
+          maxAttempts: 3,
+          backoff: exponential,
+          initialDelay: 1000,
+          maxDelay: 30000
+        }
+      }
+
+      match response {
+        404 -> skip
+      }
+
+      map response -> Manager {
+        id: id,
+        name: .name,
+        firstName: .player_first_name,
+        lastName: .player_last_name,
+        region: .player_region_name,
+        startedEvent: .started_event,
+        overallPoints: .summary_overall_points,
+        overallRank: .summary_overall_rank
+      }
+
+      store response -> managers {
+        key: .id,
+        upsert: true
+      }
+    }
+  }
+
+  run FetchFirst500k
+}
