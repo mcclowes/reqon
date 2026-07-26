@@ -194,7 +194,14 @@ export {
   type LogEntry,
   type LogOutput,
   type Span,
+  type LogLevel,
   type CreateLoggerOptions,
+  type ConsoleTimeMode,
+  // Progress reporting
+  ProgressReporter,
+  formatProgressLine,
+  type ProgressSnapshot,
+  type ProgressReporterOptions,
   // OpenTelemetry
   SpanBuilder,
   OTelEventAdapter,

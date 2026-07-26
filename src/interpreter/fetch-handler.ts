@@ -33,7 +33,7 @@ export interface FetchHandlerDeps {
   missionName?: string;
   executionId?: string;
   dryRun?: boolean;
-  log: (message: string) => void;
+  log: (message: string, context?: Record<string, unknown>) => void;
   /** Optional event emitter for observability */
   emit?: <T>(type: EventType, payload: T) => void;
   /**
@@ -108,7 +108,7 @@ export class FetchHandler {
       hasSince: !!step.since,
     });
 
-    const _fetchStartTime = Date.now(); // Reserved for fetch duration tracking
+    const fetchStartTime = Date.now();
 
     if (this.deps.dryRun) {
       const mockData = this.generateDryRunMockData(resolved.sourceName, resolved.operationId);
@@ -155,6 +155,8 @@ export class FetchHandler {
         statusCode = response.status ?? 200;
       }
 
+      const ms = Date.now() - fetchStartTime;
+
       // Emit fetch.complete event
       this.deps.emit?.('fetch.complete', {
         source: resolved.sourceName,
@@ -162,7 +164,13 @@ export class FetchHandler {
         path: resolved.path,
         statusCode,
         recordCount: this.countRecords(data) ?? 0,
+        ms,
         pagesFetched,
+      });
+      this.deps.log(`Fetched ${resolved.method} ${resolved.path}`, {
+        status: statusCode,
+        ms,
+        path: resolved.path,
       });
     } catch (error) {
       // Emit fetch.error event

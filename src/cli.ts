@@ -16,13 +16,112 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { fromPath, Scheduler, loadMission } from './index.js';
+import {
+  fromPath,
+  Scheduler,
+  loadMission,
+  createEmitter,
+  createStructuredLogger,
+  ProgressReporter,
+  formatProgressLine,
+  type EventEmitter,
+  type StructuredLogger,
+  type LogLevel,
+  type ProgressSnapshot,
+} from './index.js';
 import type { ScheduleEvent } from './scheduler/index.js';
 import { ReqonError } from './errors/index.js';
 import { loadEnv, loadCredentials } from './auth/credentials.js';
 import { WebhookServer } from './webhook/index.js';
 import type { DebugController } from './debug/index.js';
 import { ControlServer } from './control/index.js';
+
+/** Valid values for `--log-level`, quietest last. */
+const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+
+/** Read the value following a flag, e.g. `--log-level info` -> "info". */
+function flagValue(args: string[], flag: string): string | undefined {
+  const i = args.indexOf(flag);
+  return i !== -1 && args[i + 1] ? args[i + 1] : undefined;
+}
+
+interface Observability {
+  /** Passed to the executor as its logger (undefined = quiet default). */
+  logger?: StructuredLogger;
+  /** Passed to the executor so events flow to the progress reporter. */
+  eventEmitter?: EventEmitter;
+  /** Whether the executor's rate-limit/circuit narration should be installed. */
+  verbose: boolean;
+  /** Print the final progress line and detach subscriptions. */
+  finish(): void;
+}
+
+/**
+ * Resolve `--log-level` / `--verbose` / `--log-format` into a logger and, when
+ * the level is info-or-lower, a {@link ProgressReporter} that folds the event
+ * stream into a single throttled progress line.
+ *
+ * - `--verbose` is an alias for `--log-level info`.
+ * - At `info`, per-item narration (which sits at `debug`) is hidden and the
+ *   progress line shows; at `debug` you get both.
+ * - `--log-format json` swaps the human console output and the progress line
+ *   for JSON lines.
+ */
+function setupObservability(args: string[], missionPath: string): Observability {
+  const explicitLevel = flagValue(args, '--log-level');
+  if (explicitLevel && !LOG_LEVELS.includes(explicitLevel as LogLevel)) {
+    throw new Error(
+      `invalid --log-level "${explicitLevel}" (expected one of: ${LOG_LEVELS.join(', ')})`
+    );
+  }
+
+  const level: LogLevel | undefined =
+    (explicitLevel as LogLevel | undefined) ?? (args.includes('--verbose') ? 'info' : undefined);
+
+  const format = flagValue(args, '--log-format') ?? 'text';
+  if (format !== 'text' && format !== 'json') {
+    throw new Error(`invalid --log-format "${format}" (expected "text" or "json")`);
+  }
+
+  // No level requested: stay quiet (only the run summary), like before.
+  if (!level) {
+    return { verbose: false, finish: () => {} };
+  }
+
+  const logger = createStructuredLogger({
+    prefix: 'Reqon',
+    level,
+    console: format === 'text',
+    jsonLines: format === 'json',
+    time: 'elapsed',
+  });
+
+  // The progress line only makes sense at info or debug; at warn/error stay silent.
+  const wantProgress = LOG_LEVELS.indexOf(level) <= LOG_LEVELS.indexOf('info');
+  if (!wantProgress) {
+    return { logger, verbose: true, finish: () => {} };
+  }
+
+  const emitter = createEmitter('cli', missionPath);
+  const render =
+    format === 'json'
+      ? (s: ProgressSnapshot) => console.log(JSON.stringify({ type: 'progress', ...s }))
+      : (s: ProgressSnapshot) => console.log(formatProgressLine(s));
+  const reporter = new ProgressReporter(emitter, { onSnapshot: render });
+
+  let finished = false;
+  return {
+    logger,
+    eventEmitter: emitter,
+    verbose: true,
+    finish: () => {
+      if (finished) return;
+      finished = true;
+      reporter.finish();
+      reporter.stop();
+    },
+  };
+}
 
 /**
  * Load and resolve an --auth credentials file, turning low-level fs/JSON
@@ -109,7 +208,10 @@ Usage:
 
 Options:
   --dry-run            Run without making actual HTTP requests
-  --verbose            Enable verbose logging
+  --verbose            Alias for --log-level info (shows a live progress line)
+  --log-level <level>  Log verbosity: debug, info, warn, error (default: quiet)
+                       info shows a throttled progress line; debug adds per-item narration
+  --log-format <fmt>   Log output format: text (default) or json (JSON Lines)
   --dev                Development mode: let sql/nosql stores fall back to local JSON files
   --auth <file>        JSON file with auth credentials (supports env var interpolation)
   --env <file>         Path to .env file (default: .env in current directory)
@@ -267,10 +369,16 @@ Control Server:
     console.log('Type "help" at the debug prompt for more commands.\n');
   }
 
+  // Resolve --log-level / --verbose / --log-format into a logger and (at
+  // info-or-lower) a progress reporter fed by the mission's event stream.
+  const obs = setupObservability(args, filePath);
+
   try {
     const result = await fromPath(filePath, {
       dryRun,
-      verbose,
+      verbose: obs.verbose,
+      logger: obs.logger,
+      eventEmitter: obs.eventEmitter,
       developmentMode: devMode,
       auth: auth as Record<
         string,
@@ -281,6 +389,10 @@ Control Server:
       controlServer,
       resumeFrom,
     });
+
+    // Print the closing progress line before the run summary (the finally block
+    // is a no-op safety net thanks to finish()'s idempotency).
+    obs.finish();
 
     // Check if execution was paused
     const isPaused = result.state?.status === 'paused';
@@ -330,6 +442,8 @@ Control Server:
     }
     process.exit(1);
   } finally {
+    // Emit the final progress line and detach the reporter.
+    obs.finish();
     // Stop webhook server if it was started
     if (webhookServer) {
       await webhookServer.stop();

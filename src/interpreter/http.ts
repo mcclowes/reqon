@@ -52,6 +52,24 @@ export interface HttpClientConfig {
    * IP's 429s or failures don't throttle or trip the rest.
    */
   proxyPool?: ProxyPool;
+  /**
+   * Notified before each retry backoff, so observers can surface a retry count.
+   * Retries happen inside this loop, invisible to the caller otherwise.
+   */
+  onRetry?: (info: RetryInfo) => void;
+}
+
+/** A single retry attempt about to be made after a backoff. */
+export interface RetryInfo {
+  source?: string;
+  path: string;
+  /** The attempt that just failed (1-based); the retry is `attempt + 1`. */
+  attempt: number;
+  maxAttempts: number;
+  /** Why the attempt is being retried: an HTTP status or a network reason. */
+  reason: string;
+  /** Backoff before the next attempt, in ms. */
+  waitMs: number;
 }
 
 export interface AuthProvider {
@@ -94,6 +112,29 @@ export class HttpClient {
 
   constructor(config: HttpClientConfig) {
     this.config = config;
+  }
+
+  /** Notify the retry observer (if any) before a backoff. Never throws. */
+  private notifyRetry(
+    req: HttpRequest,
+    attempt: number,
+    maxAttempts: number,
+    reason: string,
+    waitMs: number
+  ): void {
+    if (!this.config.onRetry) return;
+    try {
+      this.config.onRetry({
+        source: this.config.sourceName,
+        path: req.path,
+        attempt,
+        maxAttempts,
+        reason,
+        waitMs,
+      });
+    } catch {
+      // Observability must never break a request.
+    }
   }
 
   async request<T = unknown>(req: HttpRequest, retry?: RetryConfig): Promise<HttpResponse<T>> {
@@ -213,6 +254,7 @@ export class HttpClient {
           const delay =
             parseRetryAfterMs(response.headers.get('Retry-After'), maxDelay) ??
             this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+          this.notifyRetry(req, attempt, maxAttempts, '429', delay);
           await sleep(delay);
           continue;
         }
@@ -226,6 +268,7 @@ export class HttpClient {
 
           if (retriable && attempt < maxAttempts) {
             const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+            this.notifyRetry(req, attempt, maxAttempts, `${response.status}`, delay);
             await sleep(delay);
             continue;
           }
@@ -300,6 +343,7 @@ export class HttpClient {
 
         if (attempt < maxAttempts) {
           const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+          this.notifyRetry(req, attempt, maxAttempts, lastError.message || 'network error', delay);
           await sleep(delay);
         }
       }

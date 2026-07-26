@@ -69,7 +69,7 @@ import {
   QueueSignal,
 } from './step-handlers/index.js';
 import type { WebhookServer } from '../webhook/index.js';
-import type { EventEmitter, StepType, StructuredLogger } from '../observability/index.js';
+import type { EventEmitter, StepType, StructuredLogger, LogLevel } from '../observability/index.js';
 import { createStructuredLogger } from '../observability/index.js';
 import type {
   DebugController,
@@ -387,13 +387,15 @@ export class MissionExecutor {
     this.eventEmitter = config.eventEmitter;
     this.executionLog = config.executionLog;
 
-    // Initialize logger if verbose or provided
+    // Initialize logger if verbose or provided. `verbose` alone maps to the
+    // info level (the progress line); per-item narration lives at debug, which
+    // callers opt into with an explicit debug-level logger.
     if (config.logger) {
       this.logger = config.logger;
     } else if (config.verbose) {
       this.logger = createStructuredLogger({
         prefix: 'Reqon',
-        level: 'debug',
+        level: 'info',
         context: {},
       });
     }
@@ -406,6 +408,10 @@ export class MissionExecutor {
         proxyAgentFactory: config.proxyAgentFactory,
         proxyFetchFactory: config.proxyFetchFactory,
         log: (msg) => this.log(msg),
+        // Surface in-client retries as events so the progress line can count them.
+        onRetry: this.eventEmitter
+          ? (info) => this.eventEmitter!.emit('fetch.retry', info)
+          : undefined,
       },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
@@ -1361,7 +1367,8 @@ export class MissionExecutor {
       missionName: this.missionName,
       executionId: this.executionState?.id,
       dryRun: this.config.dryRun,
-      log: (msg) => this.log(msg),
+      // Per-request narration sits at debug, below the info-level progress line.
+      log: (msg, context) => this.log(msg, context, 'debug'),
       emit: this.eventEmitter
         ? (type, payload) => this.eventEmitter!.emit(type, payload)
         : undefined,
@@ -1458,7 +1465,8 @@ export class MissionExecutor {
   ): Promise<void> {
     const handler = new ForHandler({
       ctx,
-      log: (msg) => this.log(msg),
+      // Per-item loop narration sits at debug, below the info-level progress line.
+      log: (msg, context) => this.log(msg, context, 'debug'),
       emit: this.eventEmitter
         ? (type, payload) => this.eventEmitter!.emit(type, payload)
         : undefined,
@@ -1720,9 +1728,9 @@ export class MissionExecutor {
     await handler.execute(step);
   }
 
-  private log(message: string): void {
+  private log(message: string, context?: Record<string, unknown>, level: LogLevel = 'info'): void {
     if (this.logger) {
-      this.logger.info(message);
+      this.logger[level](message, context);
     } else if (this.config.verbose) {
       console.log(`[Reqon] ${message}`);
     }
