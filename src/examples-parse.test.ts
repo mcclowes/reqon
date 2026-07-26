@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ReqonLexer } from './lexer/index.js';
 import { ReqonParser } from './parser/parser.js';
@@ -13,11 +13,31 @@ const parseExample = (...segments: string[]) =>
   ).parse();
 
 /**
+ * Every shipped example is documented as runnable, so a parse failure is a
+ * broken doc. This is the gate that keeps that claim honest — it walks the
+ * directory rather than naming files, so a new example is covered on arrival.
+ */
+describe('every shipped example parses', () => {
+  const exampleFiles = readdirSync(examplesDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .flatMap((d) =>
+      readdirSync(join(examplesDir, d.name))
+        .filter((f) => f.endsWith('.vague') || f.endsWith('.reqon'))
+        .map((f) => [d.name, f] as const)
+    );
+
+  it('finds the examples directory', () => {
+    expect(exampleFiles.length).toBeGreaterThan(20);
+  });
+
+  it.for(exampleFiles)('%s/%s', ([dir, file]) => {
+    expect(() => parseExample(dir, file)).not.toThrow();
+  });
+});
+
+/**
  * The FPL example is the reference for proxy pools and loop concurrency, so it
- * has to stay parseable and keep saying what the docs claim it says.
- *
- * Scoped to this example on purpose: most other shipped examples don't parse
- * today for unrelated reasons (see issue #222).
+ * has to keep saying what the docs claim it says, not merely parse.
  */
 describe('fpl-sharded example', () => {
   const dir = join(import.meta.dirname, '..', 'examples', 'fpl-sharded');

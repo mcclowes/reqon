@@ -145,7 +145,7 @@ source CustomAPI {
 ### Programmatic rotation
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 const token = await fetchNewToken(); // Your logic
 

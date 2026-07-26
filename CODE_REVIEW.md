@@ -2,7 +2,13 @@
 
 _A holistic review of the Reqon DSL runtime (v0.3.0, 45k LOC, 122 source files). Reviewed by a skeptical onboarding engineer. Findings are backed by file:line references; the most consequential ones were reproduced or confirmed at the source._
 
-> **Update — fixes applied.** Most of the critical and high findings below have since been fixed on `fix/code-review-findings`, each with a regression test. See [the disposition table](#fixes-applied) at the end for what landed and what was deliberately deferred. The suite went from 1,155 to 1,226 passing tests, and `npm run typecheck` is green again.
+> **This is a point-in-time snapshot of v0.3.0, not a current bug list.** Line
+> numbers, counts, and every present-tense claim below describe the tree as it
+> stood at review time. Read it for the recurring patterns, not as a to-do list;
+> check the [disposition table](#fixes-applied) and the code before acting on any
+> individual finding.
+
+> **Update — fixes applied.** Most of the critical and high findings below have since been fixed on `fix/code-review-findings`, each with a regression test. See [the disposition table](#fixes-applied) at the end for what landed and what was deliberately deferred. The suite went from 1,155 to 1,226 passing tests, and `npm run typecheck` is green again (re-verified against `main` at v0.4.0).
 
 ---
 
@@ -123,6 +129,11 @@ Three type errors on the committed tree (`src/durability/crash-injection.test.ts
 The reason this slipped through is structural: `npm run build` uses `tsconfig.build.json`, which excludes tests, and the pre-commit hook runs `lint-staged` plus `vitest`, not `tsc`. Vitest compiles with esbuild, which strips types without checking them, so the tests run green while the types are broken. CI _does_ have a typecheck job, which means `main`'s CI is either red and being ignored or hasn't run since the drift. Either way, the type safety net has a hole exactly where the durability guarantee is supposed to be proven.
 
 **Severity: high (process). Fix the test doubles, and add `tsc --noEmit` to the pre-commit hook so the gate matches CI.**
+
+> **Status at v0.4.0:** the type errors are fixed — `npm run typecheck` is green
+> on `main`. The structural gap remains: the pre-commit hook still runs
+> lint-staged plus the test suite and no `tsc`, so a type error is caught by CI
+> rather than locally.
 
 ### H2. Path interpolation isn't URL-encoded — path injection and SSRF-adjacent
 

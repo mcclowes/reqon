@@ -27,10 +27,13 @@ mission SyncData {
 ## Core Constructs
 
 - `mission` - Pipeline container (sources, stores, schemas, actions, schedule)
-- `source` - API: auth (bearer/basic/api_key/oauth2/none), base, headers, rateLimit, proxy
+- `source` - API: auth, base, headers, validateResponses, rateLimit, circuitBreaker, proxy.
+  Auth is bearer/basic/api_key/oauth2/none, but only **bearer and oauth2 are applied at
+  runtime** — basic/api_key parse and then send nothing
 - `proxy: [...]` - Egress proxy pool, rotated per request; limiter/breaker keyed per IP
 - `source Name from "./spec.yaml"` - OAS-based source
-- `store` - Storage: `memory("name")`, `file("path")`, `sql("table")`, `postgrest("table")`
+- `store` - Storage: `memory("name")`, `file("path")`, `postgrest("table")`. `sql()`/`nosql()`
+  have no adapter and throw unless `--dev` falls them back to local JSON
 - `action` - Pipeline step: fetch, map, validate, store, wait
 - `run [A, B] then C` - Parallel then sequential execution
 - `match response { Schema -> ..., _ -> skip }` - Pattern matching

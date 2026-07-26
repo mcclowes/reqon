@@ -26,11 +26,48 @@ source API {
 |--------|-------------|---------|
 | `strategy` | How to handle limits: `pause`, `throttle`, or `fail` (unquoted) | `pause` |
 | `maxWait` | Maximum time to wait, in **seconds**, before giving up | 300 |
+| `notifyAt` | Log a warning after waiting this many **seconds** | 10 |
 | `fallbackRpm` | Requests per minute to assume when the API sends no rate limit headers | 60 |
+| `model` | A model of the server's own limiter, so throttle paces under it. See [Modelling the server's limiter](#modelling-the-servers-limiter) | none |
 
 There's no `requestsPerMinute` option, and there's no `adaptive` flag. The limiter is adaptive by default: it reads rate limit headers from each response and paces itself accordingly. `fallbackRpm` only kicks in when an API sends no headers.
 
 The strategy value is an unquoted identifier (`strategy: pause`), not a string (`strategy: "pause"` is a parse error).
+
+## Modelling the server's limiter
+
+`fallbackRpm` paces at a flat rate, which wastes whatever burst allowance the
+server tolerates. When you know the shape of the server's limiter, describe it
+with `model:` and the throttle strategy simulates that bucket locally — using the
+burst, then holding the sustained rate:
+
+```vague
+source API {
+  auth: none,
+  base: "https://api.example.com",
+  rateLimit: {
+    strategy: throttle,
+    model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
+  }
+}
+```
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `type` | Only `tokenBucket` is supported (unquoted). Anything else is a parse error | — |
+| `capacity` | Tokens a full bucket holds — the burst the server tolerates. Required | — |
+| `refill` | Tokens regained **per second** — the sustained rate. Required | — |
+| `safety` | Pace at `safety * refill` for headroom against clock skew. Range (0, 1] | 1 |
+
+The configured `refill` is treated as a ceiling, not gospel. The model
+self-calibrates: each observed 429 multiplies the lane's send interval (easing
+the pace below the ceiling), and quiet time decays that penalty back up. That
+matters most for **headerless limiters**, where a 429 is the only feedback the
+client ever gets. The slowdown is capped so a burst of rejections can't strand a
+lane.
+
+Model state is tracked per lane, so a source using a [proxy pool](./proxies.md)
+gets a separate bucket per egress IP.
 
 ## Strategies
 

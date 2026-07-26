@@ -184,7 +184,7 @@ This writes a single JSON file containing every store's contents, keyed by store
 ### Programmatically
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 const result = await execute(source);
 
@@ -201,7 +201,7 @@ a configured adapter at runtime through the `stores` option, keyed by the store 
 from the mission:
 
 ```typescript
-import { createStore, fromFile } from 'reqon';
+import { createStore, fromFile } from 'reqon-dsl';
 
 const data = createStore({
   type: 'postgrest',

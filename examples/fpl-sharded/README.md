@@ -299,6 +299,10 @@ A contiguous block of ids is what `range()` is for (see `first-500k.vague`); the
 shard file is how a worker takes an arbitrary set instead - a disjoint slice, a
 resume list, a re-fetch of records that went stale. Whatever starts your workers
 writes each shard file before the run.
+A shard is an input file, so whatever starts your workers writes each one before
+the run. That's what buys you disjoint, arbitrary id sets across a fleet. When
+the ids are just a contiguous block, you don't need the file at all - `range()`
+generates them in-mission, which is what `first-500k.vague` does.
 
 ## Orchestration
 

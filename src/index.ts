@@ -113,6 +113,22 @@ export {
   type LoadResult,
   type LoadOptions,
 } from './loader/index.js';
+
+// OpenAPI spec integration. `ValidationError` is aliased because the errors
+// module already exports a class of that name.
+export {
+  loadOAS,
+  resolveOperation,
+  getResponseSchema,
+  validateResponse,
+  generateMockData,
+  type OASSource,
+  type OASOperation,
+  type OpenAPISpec,
+  type ValidationResult,
+  type ValidationError as OASValidationError,
+  type MockGeneratorOptions,
+} from './oas/index.js';
 export {
   loadEnv,
   loadCredentials,

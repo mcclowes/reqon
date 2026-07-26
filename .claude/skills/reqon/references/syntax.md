@@ -33,30 +33,32 @@ source API {
   headers: { "Accept": "application/json" }
 }
 
-// API key
+// API key — parses, but NO auth is applied at runtime (see note below)
 source API {
   auth: api_key,
   base: "https://api.example.com"
 }
 
-// Basic auth
+// Basic auth — parses, but NO auth is applied at runtime (see note below)
 source API {
   auth: basic,
   base: "https://api.example.com"
 }
 
-// OAuth2
+// OAuth2. Credentials are never inline: they come from a --auth JSON file
+// keyed by source name, or REQON_{SOURCE}_* env vars.
 source API {
   auth: oauth2,
-  base: "https://api.example.com",
-  oauth: {
-    tokenUrl: "https://auth.example.com/token",
-    clientId: env("CLIENT_ID"),
-    clientSecret: env("CLIENT_SECRET"),
-    scopes: ["read", "write"]
-  }
+  base: "https://api.example.com"
 }
 ```
+
+A source block accepts only `auth`, `base`, `headers`, `validateResponses`,
+`rateLimit`, `circuitBreaker`, and `proxy`. There is no inline `oauth:` block.
+
+**Only `bearer` and `oauth2` are wired to an auth provider.** `basic` and
+`api_key` parse without error but attach nothing, so those requests go out
+unauthenticated. If the API accepts the key as a bearer token, use `bearer`.
 
 ### Rate Limiting
 
@@ -65,9 +67,25 @@ source API {
   auth: bearer,
   base: "https://api.example.com",
   rateLimit: {
-    strategy: throttle,   // or fail (bare identifier, not a string)
+    strategy: throttle,   // or pause (default) / fail — bare identifier, not a string
     maxWait: 60,          // seconds
-    fallbackRpm: 60       // requests per minute fallback
+    notifyAt: 10,         // warn after waiting this many seconds
+    fallbackRpm: 60       // requests per minute fallback when no headers
+  }
+}
+```
+
+When you know the server's limiter, model it so throttle uses the burst
+allowance instead of pacing flat. `refill` is tokens per second; the model
+self-calibrates downward on 429s and decays back up when they stop:
+
+```
+source API {
+  auth: none,
+  base: "https://api.example.com",
+  rateLimit: {
+    strategy: throttle,
+    model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
   }
 }
 ```
@@ -105,11 +123,15 @@ Requires the optional peer dependency: `npm install undici`.
 ## Stores
 
 ```
-store items: memory("items")           // In-memory
-store items: file("./data/items.json") // File-based
-store items: sql("items_table")        // SQL database (stubs to file in dev)
-store items: postgrest("items_table")  // PostgREST/Supabase
+store items: memory("items")           // In-memory, lost on exit
+store items: file("./data/items.json") // JSON files under .reqon-data/
+store items: postgrest("items_table")  // PostgREST/Supabase — the production option
 ```
+
+`sql()` and `nosql()` parse but have no database adapter behind them: `sql()`
+works only with a PostgREST backend wired up, `nosql()` has no implementation at
+all, and both throw unless `--dev` opts into the local JSON file fallback.
+Prefer `postgrest()`.
 
 ## Schemas
 

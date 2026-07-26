@@ -10,7 +10,7 @@ This guide helps you install Reqon and run your first data pipeline.
 
 ## Prerequisites
 
-- Node.js 20 or later
+- Node.js 22 or later
 - npm or yarn
 
 ## Installation
@@ -116,7 +116,7 @@ mission MissionName {
   // 1. Define data sources (APIs)
   source SourceName { auth: bearer, base: "https://api.example.com" }
 
-  // 2. Define storage targets (memory, file, postgrest, sql, nosql)
+  // 2. Define storage targets (memory, file, postgrest; sql/nosql need --dev)
   store storeName: memory("name")
 
   // 3. Define schemas (optional, for validation)

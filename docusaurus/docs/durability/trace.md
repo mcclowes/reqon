@@ -112,7 +112,7 @@ Step 2: store response -> data
 ### Loading a trace
 
 ```typescript
-import { TraceReplayer, FileTraceStore } from 'reqon';
+import { TraceReplayer, FileTraceStore } from 'reqon-dsl';
 
 const store = new FileTraceStore('.reqon-data/traces');
 const replayer = new TraceReplayer(store);
@@ -197,7 +197,7 @@ for (const event of timeline) {
 For testing or ephemeral traces:
 
 ```typescript
-import { MemoryTraceStore, TraceRecorder } from 'reqon';
+import { MemoryTraceStore, TraceRecorder } from 'reqon-dsl';
 
 const store = new MemoryTraceStore();
 const recorder = new TraceRecorder({ store, mode: 'full' });
@@ -304,7 +304,7 @@ for (const step of slowSteps.slice(0, 5)) {
 Large data is automatically truncated in traces:
 
 ```typescript
-import { truncateForTrace } from 'reqon';
+import { truncateForTrace } from 'reqon-dsl';
 
 // Arrays > 100 items are truncated
 const largeArray = Array.from({ length: 500 }, (_, i) => i);
@@ -322,7 +322,7 @@ const truncatedStr = truncateForTrace(longString, 100, 1000);
 Circular references are safely handled:
 
 ```typescript
-import { safeClone } from 'reqon';
+import { safeClone } from 'reqon-dsl';
 
 const obj = { name: 'test' };
 obj.self = obj;

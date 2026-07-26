@@ -165,7 +165,7 @@ interface ExecutorConfig {
 }
 ```
 
-There are further advanced keys (`metadata`, `executionStore`, `syncStore`, `traceStore`, `pauseStore`, `pauseManager`, `eventEmitter`, `logger`, `debugController`, `rateLimitCallbacks`, `circuitBreakerCallbacks`, `backfillMaxItemsPerRun`); see `ExecutorConfig` in `src/interpreter/executor.ts` for the full list.
+There are further advanced keys (`metadata`, `executionStore`, `syncStore`, `traceStore`, `pauseStore`, `pauseManager`, `eventEmitter`, `logger`, `debugController`, `rateLimitCallbacks`, `circuitBreakerCallbacks`, `backfillMaxItemsPerRun`, `proxyAgentFactory`, `proxyFetchFactory`); see `ExecutorConfig` in `src/interpreter/executor.ts` for the full list.
 
 ### AuthConfig
 

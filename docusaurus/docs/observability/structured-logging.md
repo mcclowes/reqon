@@ -9,7 +9,7 @@ Reqon's structured logging system provides context-rich logs with hierarchical s
 ## Creating a logger
 
 ```typescript
-import { createStructuredLogger } from 'reqon';
+import { createStructuredLogger } from 'reqon-dsl';
 
 const logger = createStructuredLogger({
   prefix: 'MyApp',     // Log prefix
@@ -117,7 +117,7 @@ missionSpan.end();
 Human-readable console output:
 
 ```typescript
-import { ConsoleOutput } from 'reqon';
+import { ConsoleOutput } from 'reqon-dsl';
 
 const output = new ConsoleOutput({
   prefix: 'Reqon',
@@ -132,7 +132,7 @@ logger.addOutput(output);
 JSON lines format for log aggregation:
 
 ```typescript
-import { JsonLinesOutput } from 'reqon';
+import { JsonLinesOutput } from 'reqon-dsl';
 import { createWriteStream } from 'fs';
 
 const stream = createWriteStream('logs.jsonl');
@@ -151,7 +151,7 @@ Output format:
 For testing and inspection:
 
 ```typescript
-import { BufferOutput } from 'reqon';
+import { BufferOutput } from 'reqon-dsl';
 
 const buffer = new BufferOutput();
 logger.addOutput(buffer);
@@ -167,7 +167,7 @@ buffer.clear();
 To forward log entries to an event emitter, pass the emitter when you create the logger. It wires up the bridge for you:
 
 ```typescript
-import { createStructuredLogger, createEmitter } from 'reqon';
+import { createStructuredLogger, createEmitter } from 'reqon-dsl';
 
 const emitter = createEmitter('my-run', 'SyncCustomers');
 
@@ -185,7 +185,7 @@ import {
   createStructuredLogger,
   ConsoleOutput,
   JsonLinesOutput
-} from 'reqon';
+} from 'reqon-dsl';
 
 const logger = createStructuredLogger({
   console: false,  // Disable default console
@@ -276,7 +276,7 @@ if (duration > 5000) {
 ## Integration with execution
 
 ```typescript
-import { execute, createStructuredLogger, createEmitter } from 'reqon';
+import { execute, createStructuredLogger, createEmitter } from 'reqon-dsl';
 
 const emitter = createEmitter('my-run', 'SyncCustomers');
 const logger = createStructuredLogger({
