@@ -117,4 +117,3 @@ These extension points don't exist. Avoid building against them:
 - **Custom auth providers** — there's no `registerAuthProvider`. The built-in providers are bearer and OAuth2 (see [authentication](../authentication/overview)).
 - **Custom pagination strategies** — there's no `registerPaginationStrategy`; the strategies are `offset`, `page`, and `cursor`.
 - **A plugin/hook system** — there's no `Reqon` class, `reqon.use(...)`, or `reqon.hooks.*`. Use store/observability injection instead.
-</content>

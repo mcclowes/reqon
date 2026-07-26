@@ -239,4 +239,3 @@ if (shouldSample) {
   emitter.onAll(otel.handler);
 }
 ```
-</content>

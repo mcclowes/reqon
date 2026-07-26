@@ -156,4 +156,3 @@ Confirm all of these:
 - You're using `call Source.operationId` (not a plain `get`/`post`).
 - The operation defines a `200` JSON response schema.
 - You're running with `--verbose` so the warnings are visible.
-</content>
