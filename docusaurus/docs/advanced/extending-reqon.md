@@ -11,7 +11,7 @@ Reqon's extension model is dependency injection, not a plugin registry. You impl
 The most common extension point. Implement the `StoreAdapter` interface and pass your instances in the `stores` config, keyed by store name:
 
 ```typescript
-import { execute, type StoreAdapter, type StoreFilter } from 'reqon';
+import { execute, type StoreAdapter, type StoreFilter } from 'reqon-dsl';
 
 class MyStoreAdapter implements StoreAdapter {
   async get(key: string) { /* ... */ return null; }
@@ -37,7 +37,7 @@ When a store name in the config matches a `store` declared in the mission, your 
 The execution store, sync store, trace store, and pause store are all injectable the same way:
 
 ```typescript
-import { execute, MemoryExecutionStore, MemorySyncStore, MemoryTraceStore, MemoryPauseStore } from 'reqon';
+import { execute, MemoryExecutionStore, MemorySyncStore, MemoryTraceStore, MemoryPauseStore } from 'reqon-dsl';
 
 await execute(source, {
   executionStore: new MemoryExecutionStore(),
@@ -54,7 +54,7 @@ Each has a `File*` and a `Memory*` implementation out of the box, and a correspo
 Hook into execution by subscribing to the event emitter or by adding a custom log output. See [observability](../observability/overview) for the full event catalog.
 
 ```typescript
-import { execute, ObservabilityEmitter, type LogOutput, type LogEntry } from 'reqon';
+import { execute, ObservabilityEmitter, type LogOutput, type LogEntry } from 'reqon-dsl';
 
 // Custom log output
 class MyOutput implements LogOutput {
@@ -73,7 +73,7 @@ Reqon extends [Vague](https://github.com/mcclowes/vague) (the underlying DSL lay
 Reqon registers its plugin automatically when you import the package. You can also register it explicitly:
 
 ```typescript
-import { registerReqonPlugin } from 'reqon';
+import { registerReqonPlugin } from 'reqon-dsl';
 
 registerReqonPlugin();
 ```
@@ -81,7 +81,7 @@ registerReqonPlugin();
 ### Inspecting the plugin
 
 ```typescript
-import { reqonPlugin } from 'reqon';
+import { reqonPlugin } from 'reqon-dsl';
 
 console.log(reqonPlugin.name);  // 'reqon'
 ```
@@ -91,7 +91,7 @@ console.log(reqonPlugin.name);  // 'reqon'
 For full control, parse and execute directly with `MissionExecutor`:
 
 ```typescript
-import { parse, MissionExecutor } from 'reqon';
+import { parse, MissionExecutor } from 'reqon-dsl';
 
 const program = parse(source);
 

@@ -95,7 +95,7 @@ When a run pauses or fails, the CLI prints the execution ID and the exact resume
 State is read through an execution store, not standalone helper functions:
 
 ```typescript
-import { FileExecutionStore } from 'reqon';
+import { FileExecutionStore } from 'reqon-dsl';
 
 const store = new FileExecutionStore('.reqon-data/executions');
 
@@ -127,7 +127,7 @@ curl http://localhost:3001/status
 There's no built-in cleanup command. Remove old records directly, or via the store:
 
 ```typescript
-import { FileExecutionStore } from 'reqon';
+import { FileExecutionStore } from 'reqon-dsl';
 
 const store = new FileExecutionStore('.reqon-data/executions');
 await store.delete('exec_abc123');
@@ -142,7 +142,7 @@ Old files can also be deleted from `.reqon-data/executions/` directly.
 Pass `progress` callbacks to observe a run in real time:
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 const result = await execute(source, {
   progress: {
@@ -163,7 +163,7 @@ For fine-grained, per-step monitoring, use the [observability event system](../o
 State is only written when you opt in:
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 const result = await execute(source, {
   persistState: true,   // write execution records under .reqon-data/executions/
@@ -176,7 +176,7 @@ const result = await execute(source, {
 Provide your own `executionStore` to persist state somewhere other than the filesystem. Implement the `ExecutionStore` interface (`save`, `load`, `listByMission`, `listRecent`, `delete`, `findLatest`, `findResumable`):
 
 ```typescript
-import { execute, type ExecutionStore } from 'reqon';
+import { execute, type ExecutionStore } from 'reqon-dsl';
 
 const myStore: ExecutionStore = {
   async save(state) { /* persist to a database */ },

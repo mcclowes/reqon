@@ -92,7 +92,7 @@ Recognized fields are `TYPE`, `TOKEN`, `ACCESS_TOKEN`, `REFRESH_TOKEN`, `TOKEN_E
 ### Programmatic
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 await execute(source, {
   auth: {

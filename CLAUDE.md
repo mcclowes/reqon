@@ -2,6 +2,8 @@
 
 A declarative DSL framework for fetch, map, validate pipelines - built on [Vague](https://github.com/mcclowes/vague).
 
+Published to npm as `reqon-dsl`; the CLI binaries are `reqon` and `reqon-mcp`. Requires Node.js >= 22.
+
 File extensions: `.vague` and `.reqon` (both supported; the loader tries `.vague` then `.reqon`)
 
 ## Architecture
@@ -14,7 +16,8 @@ File extensions: `.vague` and `.reqon` (both supported; the loader tries `.vague
 ```
 src/
 ├── ast/           # Extended AST nodes (missions, actions, steps)
-├── auth/          # Rate limiting, circuit breaker, and auth providers (bearer, oauth2, basic, api_key)
+├── auth/          # Rate limiting (incl. a self-calibrating model for headerless limiters),
+│                  # circuit breaker, credential loading, token store, and auth providers
 ├── benchmark/     # Performance benchmarks (lexer, parser, evaluator, store, e2e)
 ├── config/        # Runtime configuration and constants
 ├── control/       # Control server for pause/resume, status queries, heartbeats
@@ -44,10 +47,13 @@ src/
 ├── parser/        # Parser for mission/action/fetch/store syntax
 ├── pause/         # Resource-free long pauses (state, store, manager)
 ├── scheduler/     # Cron/interval scheduling for missions
-├── stores/        # Store adapters (memory, file, postgrest; sql/nosql stub to file)
+├── stores/        # Store adapters (memory, file, postgrest) + a batching wrapper.
+│                  # sql/nosql have no real backend: they throw unless --dev opts
+│                  # into the local JSON file fallback.
 ├── sync/          # Incremental sync checkpointing
 ├── trace/         # Time-travel debugging (recorder, replayer, snapshots)
-├── utils/         # Shared utilities (sleep, path traversal, logger, file)
+├── utils/         # Shared utilities (async, path traversal, logger, atomic file
+│                  # writes, deep merge, secret redaction, long timeouts)
 ├── webhook/       # Webhook server for async callbacks (wait step)
 ├── index.ts       # Main exports
 ├── plugin.ts      # Vague plugin integration
@@ -62,18 +68,28 @@ npm run dev        # Watch mode compilation
 npm run typecheck  # Type-check without emitting
 npm run test       # Run tests in watch mode
 npm run test:run   # Run tests once
+npm run test:crash # Crash-injection durability suite (src/durability/)
+npm run test:pg    # Postgres execution-log tests (needs a Postgres)
 npm run lint       # ESLint over src/
 npm run format     # Prettier write over src/
 npm run bench      # Run performance benchmarks
 ```
 
+CI gates on `typecheck`, `lint`, `test:run`, `test:crash`, and `test:pg`. The
+pre-commit hook runs lint-staged (eslint + prettier) and the full test suite, but
+not `typecheck` - vitest strips types without checking them, so run `typecheck`
+yourself before pushing.
+
 ## DSL Syntax
 
 Key constructs:
 - `mission` - Pipeline definition
-- `source` - API source with auth (oauth2, bearer, basic, api_key, none), or from OAS spec
+- `source` - API source with auth (oauth2, bearer, basic, api_key, none), or from OAS spec.
+  Only `bearer` and `oauth2` are wired to a provider; `basic` and `api_key` parse but
+  attach nothing, so those requests go out unauthenticated (see
+  `SourceManager.createAuthProvider`)
 - `proxy: [...]` - Egress proxy pool on a source, rotated per request attempt; rate limit and circuit breaker state are keyed per proxy (needs optional peer dep `undici`)
-- `store` - Storage target (memory, file, sql, nosql, postgrest)
+- `store` - Storage target (memory, file, postgrest; sql/nosql need `--dev` to fall back to files)
 - `action` - Discrete pipeline step
 - `fetch` - HTTP request (get/post/put/patch/delete) with optional pagination/retry
 - `call Source.operationId` - OAS-based fetch using operationId
@@ -87,14 +103,19 @@ Key constructs:
 - `schedule` - Mission scheduling (every N units, cron, or at datetime)
 - `checkpoint` - Durable execution mode (afterStep, onFailure)
 - `trace` - Time-travel debugging mode (full, minimal)
-- `pause` - Resource-free long pauses with resume triggers (timeout, webhook)
+- `pause` - Resource-free long pauses with resume triggers (timeout, webhook). Triggers are
+  recorded, not dispatched: nothing calls `PauseManager.startMonitoring()`/`handleWebhook()`
+  in the shipped runtime, so a paused run resumes when you re-run with `--resume <execId>`
 
 ## Code Conventions
 
 - TypeScript with strict mode
 - Vitest for testing
 - Test files alongside implementation (`*.test.ts`)
-- Vague dependency via local file link (`file:../vague`)
+- Vague is a published npm dependency (`vague-lang`), not a local file link
+- Optional peer deps, dynamically imported behind a "install this" error:
+  `better-sqlite3` (SQLite execution log), `pg` (Postgres execution log),
+  `undici` (egress proxy pools)
 
 ## Key Decisions
 

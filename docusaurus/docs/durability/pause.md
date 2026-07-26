@@ -6,6 +6,15 @@ sidebar_position: 4
 
 Pause steps enable resource-free long pauses in mission execution, allowing workflows to wait for hours, days, or weeks without holding resources.
 
+:::warning You drive the resume
+A pause records its deadline and resume triggers, then stops the run. The shipped
+runtime does **not** poll for expired pauses or route inbound webhooks into paused
+runs — nothing calls `PauseManager.startMonitoring()` or `PauseManager.handleWebhook()`
+for you. A paused run resumes when you re-run it with `--resume <executionId>`, or
+when you drive [`PauseManager`](#programmatic-api) yourself. Read `resumeOn:` as
+recorded intent, not as an automatic dispatcher.
+:::
+
 ## Basic usage
 
 ```vague
@@ -72,7 +81,7 @@ pause {
 }
 ```
 
-The webhook URL is `{webhook-base-url}/approved`. The pause resumes when any POST request hits this endpoint.
+With a webhook server configured, Reqon registers a listener at `{webhook-base-url}/approved` and records the trigger on the pause. A POST to that endpoint does not by itself resume the run — see the warning above; call `PauseManager.handleWebhook()` from your own handler, or re-run with `--resume`.
 
 ### Multiple triggers
 
@@ -128,18 +137,20 @@ When a pause step executes:
 
 1. Current execution state is captured (variables, response, position)
 2. State is persisted to the pause store
-3. Resume triggers are registered (timeout timer, webhook listener)
+3. Resume triggers are recorded; a webhook listener is registered if a webhook server is configured
 4. Execution halts with a `PauseSignal`
 5. All resources are released
 
 ### Resume process
 
-When a resume trigger fires:
+When a resume is driven (`--resume <executionId>`, `execute(…, { resumeFrom })`, or a `PauseManager` call):
 
-1. Pause state is loaded from store
+1. Pause state is loaded from the store (or folded out of the execution log)
 2. Execution context is restored
 3. Execution continues from the step after the pause
 4. Pause state is cleaned up
+
+Nothing fires this on a timer. There is no background process watching deadlines.
 
 ## Use cases
 
@@ -269,7 +280,7 @@ mission DataPipelineWithReview {
 ### PauseManager
 
 ```typescript
-import { PauseManager, MemoryPauseStore } from 'reqon';
+import { PauseManager, MemoryPauseStore } from 'reqon-dsl';
 
 const store = new MemoryPauseStore();
 const manager = new PauseManager({ store });
@@ -330,12 +341,12 @@ A pause that hasn't been triggered yet leaves the execution in the `paused` stat
 reqon mission.vague --resume exec_abc123
 ```
 
-There's no `reqon pauses` subcommand. To inspect or resume individual pauses, use the `PauseManager` API shown above, or let the timeout or webhook trigger fire on its own.
+There's no `reqon pauses` subcommand, and no trigger fires on its own. To inspect or resume individual pauses, use the `PauseManager` API shown above — including `startMonitoring()` if you want deadline polling.
 
 ## Best practices
 
 1. **Set reasonable durations** - Don't pause for longer than necessary
-2. **Use webhooks for interactive workflows** - Faster response than polling
+2. **Own the resume path** - Decide up front what re-runs the mission: a `PauseManager` you drive, or an external scheduler calling `--resume`
 3. **Combine with checkpoint** - For full durability across pauses
 4. **Monitor active pauses** - Set up alerts for long-running pauses
 5. **Clean up completed pauses** - Remove old pause state periodically

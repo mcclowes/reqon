@@ -493,3 +493,4 @@ The repository ships a set of complete, runnable example projects in the [`examp
 | [crud-operations](https://github.com/mcclowes/reqon/tree/main/examples/crud-operations) | Full CRUD lifecycle with PUT, PATCH, and DELETE |
 | [file-export](https://github.com/mcclowes/reqon/tree/main/examples/file-export) | Exports, reports, and backups with the `file()` store |
 | [mock-server-demo](https://github.com/mcclowes/reqon/tree/main/examples/mock-server-demo) | Running a mission against a local mock server |
+| [fpl-sharded](https://github.com/mcclowes/reqon/tree/main/examples/fpl-sharded) | Sharded bulk fetch across egress proxies with `concurrency` on for loops |

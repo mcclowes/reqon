@@ -131,7 +131,7 @@ action FetchOrder {
 The validator is also exported for direct use:
 
 ```typescript
-import { validateResponse } from 'reqon';
+import { validateResponse } from 'reqon-dsl';
 
 const result = validateResponse(data, schema);
 if (!result.valid) {
