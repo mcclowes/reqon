@@ -5,9 +5,9 @@ unauthenticated API with no rate limit headers and a low tolerance for hammering
 from one IP.
 
 Three files. `bootstrap.vague` (one request for all the static data),
-`managers.vague` (a sharded worker fed an id list, the building block for a
-fleet), and `first-500k.vague` (the whole job in one mission - fetch the first
-500k managers from one host). Start at the top.
+`first-500k.vague` (the whole job in one mission - fetch the first 500k managers
+from one host), and `managers.vague` (the fleet-ready sibling - the first 100k
+with an egress pool and crash-resume). Start at the top.
 
 ## Start with bootstrap.vague
 
@@ -25,44 +25,39 @@ the work is millions of small requests rather than one big one.
 
 ## managers.vague
 
-Pulls the same endpoint and schema as `first-500k.vague` - `/entry/{id}/`, into
-a `Manager` record - but takes its ids from a shard file instead of generating
-them, which is what lets a fleet split the work. It shows the three pieces that
-make a sharded fan-out work.
+Same endpoint, schema, model and store tuning as `first-500k.vague`, pulling the
+first **100,000** managers - but built to scale out and survive a restart. It's
+the fleet-ready sibling: everything `first-500k.vague` does, plus an egress pool
+and crash-resume. Run it the same way:
+
+```bash
+FPL_USER_AGENT="you (you@example.com)" reqon examples/fpl-sharded/managers.vague --verbose
+```
 
 **Egress pool.** `proxy: [...]` on the source rotates requests round-robin
 across proxies, per request attempt. A 429 on one IP retries from another. Rate
 limit and circuit breaker state are keyed per proxy, so each IP gets its own
-budget and one failing proxy opens only its own circuit.
+budget and one failing proxy opens only its own circuit. Unset by default, so it
+runs direct; set the env vars and one worker fans its rate across four IPs. At
+that point raise `concurrency` toward `pool-size × 192` to fill every budget.
 
-**Loop concurrency.** `for entry in shard concurrency 8` runs eight iterations
-in flight. Without it a worker issues one request at a time and can't use the
-egress it has. Iterations already get their own scope, so `response` and the
-loop variable stay isolated.
+**Crash-resume.** `checkpoint: onFailure` (mission level) persists execution
+state on failure so a died run resumes rather than restarting from id 1. Upserts
+are idempotent, so a resumed run reconciles safely. `onFailure` keeps the hot
+path fast — it doesn't checkpoint all 100k iterations, only on a break (use
+`afterStep` if you need per-iteration durability and can spend the writes).
 
-**Sharding by input.** Each worker reads its own `fpl_shard` file and upserts
-into one store. Shards are disjoint, so workers never contend.
+**Arbitrary id sets.** The ids come from `range(1, 100001)` here. To pull a
+non-contiguous set instead — a fleet slice, a re-fetch of stale records — feed a
+shard file (`store shard: file("fpl_shard")` + `for entry in shard`); the
+commented block in the file shows the swap. Shards are disjoint, so a fleet
+never contends on the shared store.
 
-**Batched writes (for the networked store).** `batch` buffers records and
-flushes them in bulk, turning 500 row-at-a-time round-trips into one array POST.
-That's a real win against **PostgREST** in a fleet; against a file store it buys
-little (each flush rewrites the whole file), which is why the runnable default
-here is a plain `file(...)`. And it has a sharp edge worth stating plainly:
-`durability: strict` (the default) holds each write until its batch flushes, so
-if the batch `size` exceeds the loop's `concurrency` the batch never fills by
-size and every flush waits on the 100ms timer - which *caps* throughput at
-roughly `concurrency x 10/s`. `durability: relaxed` resolves each write
-immediately so the fan-out runs at full speed and the batch fills in the
-background, at the cost of crash-safety for the in-flight buffer. See
-[Throughput, measured](#throughput-measured) for the numbers. For a fleet:
-`postgrest("fpl_managers") { batch: { size: 500, durability: relaxed } }`.
-
-**Surviving a bad item.** A shard drawn from a stale id list contains managers
-that no longer exist. `allow: [404]` returns that status as data instead of
-retrying five times, and `404 -> skip` drops the item. A match written only on
-statuses falls through when none apply, so a 200 carries on without needing a
-`_` arm. Anything that still fails is queued to `failures` by `onError` rather
-than killing a run that is most of the way through.
+**Same speed as first-500k.** Model at the measured ceiling, `concurrency 192`
+for the heavy endpoint, and a whole-run relaxed batch so the file store writes
+once — see the `first-500k.vague` notes below for why each matters. Measured on a
+5,000-manager slice: **~2,300 req/s, zero failures**; the first 100k lands in
+about a minute from one IP.
 
 ## first-500k.vague
 

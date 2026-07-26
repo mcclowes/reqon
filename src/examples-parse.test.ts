@@ -59,24 +59,36 @@ describe('fpl-sharded example', () => {
     expect(mission.sources[0].config.proxy).toHaveLength(4);
   });
 
-  it('fans the manager loop out concurrently', () => {
+  it('fans the manager loop out at the heavy-endpoint concurrency', () => {
     const mission = parse('managers.vague').statements[0];
     if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
     const loop = mission.actions[0].steps.find((s): s is ForStep => s.type === 'ForStep');
 
-    expect(loop?.concurrency).toBe(8);
+    // /entry/{id}/ is ~100ms; 192 in flight is what reaches the model's pace.
+    expect(loop?.concurrency).toBe(192);
   });
 
-  it('paces under a token-bucket model, not a flat rate', () => {
+  it('generates the first 100k ids in-mission with range()', () => {
+    const mission = parse('managers.vague').statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
+    const loop = mission.actions[0].steps.find((s): s is ForStep => s.type === 'ForStep');
+
+    expect(loop?.collection.type).toBe('CallExpression');
+    const call = loop?.collection as { callee: string; arguments: Array<{ value: number }> };
+    expect(call.callee).toBe('range');
+    expect(call.arguments[1].value).toBe(100001);
+  });
+
+  it('paces under the measured token-bucket ceiling and resumes on failure', () => {
     const mission = parse('managers.vague').statements[0];
     if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
 
-    // FPL is headerless, so the run relies on modeling its limiter and letting
-    // 429 feedback self-calibrate the pace. A flat fallbackRpm can't learn.
+    // FPL is headerless, so the run models its limiter at the measured ceiling
+    // and lets 429 feedback self-calibrate; checkpoint makes a crash resumable.
     const model = mission.sources[0].config.rateLimit?.model;
     expect(model?.type).toBe('tokenBucket');
-    expect(model?.capacity).toBeGreaterThan(0);
-    expect(model?.refill).toBeGreaterThan(0);
+    expect(model?.refill).toBe(1800);
+    expect(mission.checkpoint?.mode).toBe('on-failure');
   });
 });
 
