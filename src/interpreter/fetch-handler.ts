@@ -358,7 +358,7 @@ export class FetchHandler {
   private idempotencyKeyFor(method: string, path: string, body: unknown): string | undefined {
     if (!this.deps.idempotency || method === 'GET') return undefined;
     const { executionId, stepId } = this.deps.idempotency;
-    const signature = `${executionId} ${stepId} ${method} ${path} ${JSON.stringify(body ?? null)}`;
+    const signature = `${executionId}\0${stepId}\0${method}\0${path}\0${JSON.stringify(body ?? null)}`;
     return createHash('sha256').update(signature).digest('hex').slice(0, 32);
   }
 
