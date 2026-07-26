@@ -193,6 +193,35 @@ describe('StoreHandler', () => {
 
       expect(deps.log).toHaveBeenCalledWith('Stored 5 items to testStore');
     });
+
+    it('does not write any fallback records when one array item has no key', async () => {
+      const setSpy = vi.fn(store.set.bind(store));
+      const limitedStore = {
+        get: store.get.bind(store),
+        set: setSpy,
+        update: store.update.bind(store),
+        delete: store.delete.bind(store),
+        list: store.list.bind(store),
+        count: store.count.bind(store),
+        clear: store.clear.bind(store),
+      };
+      deps.ctx.stores.set('testStore', limitedStore);
+
+      deps.ctx.response = [{ id: '1', name: 'Alice' }, { name: 'Missing id' }];
+
+      const step: StoreStep = {
+        type: 'StoreStep',
+        target: 'testStore',
+        source: { type: 'Identifier', name: 'response' } as Expression,
+        options: {},
+      };
+
+      await expect(new StoreHandler(deps).execute(step)).rejects.toThrow(/key/i);
+
+      expect(setSpy).not.toHaveBeenCalled();
+      expect(await store.count()).toBe(0);
+      expect(await store.get('1')).toBeNull();
+    });
   });
 
   describe('upsert mode', () => {

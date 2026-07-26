@@ -74,29 +74,23 @@ export class StoreHandler implements StepHandler<StoreStep> {
   private async storeMany(step: StoreStep, store: StoreAdapter, items: unknown[]): Promise<void> {
     const merge = this.shouldMerge(step);
     const operation = merge ? 'upsert' : 'set';
+    const records: Array<{ key: string; value: Record<string, unknown> }> = [];
+
+    for (const item of items) {
+      const record = item as Record<string, unknown>;
+      const key = this.getRecordKey(step, record);
+      records.push({ key, value: record });
+    }
 
     // Check if we can use bulk operations
-    const canBulkSet = store.bulkSet && !merge;
-    const canBulkUpsert = store.bulkUpsert && merge;
-
-    if (canBulkSet || canBulkUpsert) {
-      const records: Array<{ key: string; value: Record<string, unknown> }> = [];
-      for (const item of items) {
-        const record = item as Record<string, unknown>;
-        const key = this.getRecordKey(step, record);
-        records.push({ key, value: record });
-      }
-
-      if (canBulkUpsert) {
-        await store.bulkUpsert!(records);
-      } else {
-        await store.bulkSet!(records);
-      }
+    if (merge && store.bulkUpsert) {
+      await store.bulkUpsert(records);
+    } else if (!merge && store.bulkSet) {
+      await store.bulkSet(records);
     } else {
       // Fall back to individual operations for stores without bulk methods
-      for (const item of items) {
-        const record = item as Record<string, unknown>;
-        await this.storeRecord(step, store, record);
+      for (const { key, value } of records) {
+        await this.storeRecord(step, store, key, value);
       }
     }
 
@@ -114,7 +108,7 @@ export class StoreHandler implements StepHandler<StoreStep> {
     const key = this.getRecordKey(step, record);
     const operation = this.shouldMerge(step) ? 'upsert' : 'set';
 
-    await this.storeRecord(step, store, record);
+    await this.storeRecord(step, store, key, record);
     this.deps.log(`Stored item to ${step.target}`);
     this.emitStoreEvent(step, operation, 1, key);
   }
@@ -127,10 +121,9 @@ export class StoreHandler implements StepHandler<StoreStep> {
   private async storeRecord(
     step: StoreStep,
     store: StoreAdapter,
+    key: string,
     record: Record<string, unknown>
   ): Promise<void> {
-    const key = this.getRecordKey(step, record);
-
     // Never mutate the caller's record or persist a storage-internal flag.
     if (this.shouldMerge(step)) {
       await store.update(key, record);
