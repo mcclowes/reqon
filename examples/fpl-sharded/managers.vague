@@ -70,17 +70,27 @@ mission FplManagerHistory {
   // sequence.
   store shard: file("fpl_shard")
 
-  // A file store keeps this runnable on one machine. For a real fleet swap in
-  //   store managers: postgrest("fpl_manager_history") { batch: 500 }
-  // and every worker upserts into one table. Shards are disjoint, so there's no
-  // last-writer-wins race between machines.
-  //
-  // `batch` buffers writes and flushes them in bulk, so a high-fan-out loop
-  // makes one store write per batch instead of one per record - the difference
-  // between one DB round-trip per manager and one per 500. `durability: strict`
-  // (the default) keeps each write durable before its iteration completes; use
-  // `relaxed` to trade crash-safety of the in-flight buffer for more speed.
-  store managers: file("fpl_manager_history") { batch: 500 }
+  // A file store keeps this runnable on one machine, one write per manager.
+  // Plain is the right default here: a file store rewrites the whole file per
+  // flush, so batching buys little, and a strict batch sized above the loop's
+  // concurrency is actively *slower* (see below).
+  store managers: file("fpl_manager_history")
+
+  // For a real fleet, swap in a shared table and batch the writes:
+  //   store managers: postgrest("fpl_manager_history") { batch: { size: 500, durability: relaxed } }
+  // Every worker upserts into one table; shards are disjoint, so there's no
+  // last-writer-wins race. There `batch` collapses 500 row-at-a-time round-trips
+  // into one array POST - a real win over the network. But mind two things:
+  //   - `durability: relaxed` lets each write resolve immediately, so the
+  //     fan-out runs at full speed and the batch fills by size in the
+  //     background. `strict` (the default) holds each write until its batch
+  //     flushes; if the batch size exceeds the loop's concurrency it never fills
+  //     by size and every flush waits on the 100ms timer - capping throughput at
+  //     ~concurrency x 10/s. (Measured against a zero-latency mock at
+  //     concurrency 8: strict batch-500 ~70 writes/s, relaxed ~16k/s.)
+  //   - relaxed trades crash-safety of the in-flight buffer (up to `size`
+  //     records) for that speed. This run is resumable and upserts are
+  //     idempotent, so a lost slice is just re-fetched - a good trade here.
 
   // Items that exhaust their retries land here instead of failing the run, so a
   // long shard finishes and the stragglers can be swept afterwards.

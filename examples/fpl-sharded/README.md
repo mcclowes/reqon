@@ -37,13 +37,19 @@ loop variable stay isolated.
 **Sharding by input.** Each worker reads its own `fpl_shard` file and upserts
 into one store. Shards are disjoint, so workers never contend.
 
-**Batched writes.** `{ batch: 500 }` on the store buffers records and flushes
-them in bulk, so a high-fan-out loop makes one store write per batch instead of
-one per record - one DB round-trip per 500 managers rather than per manager,
-which is what lets the store keep pace with the fetch. `durability: strict` (the
-default) keeps each record durable before its loop iteration completes; `relaxed`
-trades crash-safety of the in-flight buffer for more speed. Written as
-`{ batch: { size: 500, maxDelay: 200, durability: relaxed } }` for the full form.
+**Batched writes (for the networked store).** `batch` buffers records and
+flushes them in bulk, turning 500 row-at-a-time round-trips into one array POST.
+That's a real win against **PostgREST** in a fleet; against a file store it buys
+little (each flush rewrites the whole file), which is why the runnable default
+here is a plain `file(...)`. And it has a sharp edge worth stating plainly:
+`durability: strict` (the default) holds each write until its batch flushes, so
+if the batch `size` exceeds the loop's `concurrency` the batch never fills by
+size and every flush waits on the 100ms timer - which *caps* throughput at
+roughly `concurrency x 10/s`. `durability: relaxed` resolves each write
+immediately so the fan-out runs at full speed and the batch fills in the
+background, at the cost of crash-safety for the in-flight buffer. See
+[Throughput, measured](#throughput-measured) for the numbers. For a fleet:
+`postgrest("fpl_manager_history") { batch: { size: 500, durability: relaxed } }`.
 
 **Surviving a bad item.** A shard drawn from a stale id list contains managers
 that no longer exist. `allow: [404]` returns that status as data instead of
@@ -106,8 +112,9 @@ requests. Ten minutes is 600 seconds, i.e. a sustained **~20,000 requests/second
 in aggregate**. That number is worth stating plainly because it sets the shape
 of the whole operation:
 
-- The bottleneck is not reqon. One worker process drives thousands of
-  requests/second, and batched writes keep the store from becoming the ceiling.
+- The bottleneck is not reqon. One worker process drives well over ten thousand
+  requests/second through the full fetch → map → store pipeline (measured below),
+  which is orders of magnitude more than any single IP will be allowed to send.
 - The bottleneck is FPL's **sustained per-IP rate**. A burst of several thousand
   per IP is fine; sustained load above the refill rate is where 429s begin, and
   that refill is realistically low (single-to-low-double-digit req/s per IP for
@@ -126,6 +133,37 @@ default to the polite, single-host, direct-egress version. Treat 12M-in-10-min
 as the design target the architecture must survive, not as a throughput to point
 at FPL. The overnight, incremental, cached pull below gets you the same data
 without being a denial-of-service in a trench coat.
+
+### Throughput, measured
+
+Numbers for the pipeline itself - the real CLI running `managers.vague`-shaped
+missions against a **zero-latency local mock** (loopback, no rate limit), so this
+is the code's ceiling, not what you'd see over the wire. 5,000 requests:
+
+| concurrency | store                          | req/s   |
+| ----------- | ------------------------------ | ------- |
+| 8           | memory                         | ~16,000 |
+| 8           | file, `batch` **relaxed**      | ~16,900 |
+| 8           | file, plain (this example)     | ~740    |
+| 8           | file, `batch: 500` **strict**  | ~72     |
+| 512         | file, plain                    | ~13,000 |
+| 512         | file, `batch: 500` strict      | ~13,900 |
+
+Two things to read off this:
+
+- **The pipeline ceiling is ~16k req/s per process**, reached with an in-memory
+  store or a relaxed-durability batch. It is never the constraint against a
+  rate-limited API.
+- **`batch: 500` in strict mode at low concurrency is a trap** - 72 req/s, 10×
+  *slower* than no batching. The batch (500) never fills at concurrency 8, so
+  every flush waits the 100ms timer. Match the batch size to your concurrency, or
+  use `durability: relaxed`, and batching helps instead of hurting. This is why
+  the runnable example uses a plain file store.
+
+Over the real network none of these is the limit anyway: effective throughput is
+`concurrency / round-trip-latency`, and then FPL's per-IP rate sits below that.
+The store numbers matter only so you don't hobble a worker with a batch config
+that's slower than no batch at all.
 
 ## Running it
 
@@ -163,11 +201,18 @@ npm install undici
 
 ### As a fleet
 
-Swap the file store for the shared table so every worker upserts into one place:
+Swap the file store for the shared table so every worker upserts into one place,
+and batch the writes so each flush is one array POST rather than 500 round-trips:
 
 ```
-store managers: postgrest("fpl_manager_history")
+store managers: postgrest("fpl_manager_history") { batch: { size: 500, durability: relaxed } }
 ```
+
+`relaxed` matters here: with the default `strict` and a batch larger than the
+loop's concurrency, every flush waits the 100ms timer (see
+[Throughput, measured](#throughput-measured)). Relaxed lets the fan-out run at
+full speed and the batch fill by size; the trade is crash-safety of the in-flight
+buffer, which a resumable, idempotent-upsert run can afford.
 
 The shard file lives at `.reqon-data/fpl_shard.json`, keyed by id:
 
