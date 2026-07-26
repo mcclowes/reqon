@@ -46,6 +46,18 @@ describe('fpl-sharded example', () => {
 
     expect(loop?.concurrency).toBe(8);
   });
+
+  it('paces under a token-bucket model, not a flat rate', () => {
+    const mission = parse('managers.vague').statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
+
+    // FPL is headerless, so the run relies on modeling its limiter and letting
+    // 429 feedback self-calibrate the pace. A flat fallbackRpm can't learn.
+    const model = mission.sources[0].config.rateLimit?.model;
+    expect(model?.type).toBe('tokenBucket');
+    expect(model?.capacity).toBeGreaterThan(0);
+    expect(model?.refill).toBeGreaterThan(0);
+  });
 });
 
 /**

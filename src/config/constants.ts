@@ -58,6 +58,12 @@ export const RATE_LIMIT_DEFAULTS = {
   CLEANUP_CHECK_INTERVAL: 100,
   /** Maximum entries before forced cleanup */
   MAX_ENTRIES_BEFORE_CLEANUP: 1000,
+  /**
+   * Floor cool-off (ms) applied to a lane on a 429 that carries no Retry-After.
+   * Without it a headerless 429 produces no backoff and the lane keeps
+   * hammering. A configured model raises this to its own tightened wait.
+   */
+  REJECT_COOLOFF_MS: 1000,
 } as const;
 
 // ============================================

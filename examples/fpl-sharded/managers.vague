@@ -33,29 +33,26 @@ mission FplManagerHistory {
       env("FPL_PROXY_4")
     ],
 
-    // FPL sends no rate limit headers, so the fallback is what actually governs
-    // pacing. This is per proxy: 30rpm x 4 proxies = 120rpm for the worker.
-    // Start conservative and raise it only if you see no 429s.
+    // FPL sends no rate-limit headers - its OpenResty limiter has no Retry-After
+    // - so pacing is entirely the client's job, and a 429 is the only feedback
+    // it gets. The `model` mirrors that limiter locally: `capacity` requests
+    // burst through, then it settles to `refill`/second, keyed per proxy.
     //
-    // `fallbackRpm` paces at a flat rate, which either wastes the server's burst
-    // allowance or, set too high, drains it and eats 429s. FPL runs a token-
-    // bucket limiter (OpenResty): a full bucket absorbs a burst, then sustained
-    // traffic above the refill rate is throttled. If you know that bucket you
-    // can model it and pace exactly under it - burst included, no 429s:
+    // The numbers are a *ceiling guess*, not a measured truth. On a 429 reqon
+    // tightens the lane below the guess and holds there; when the 429s stop it
+    // eases back up. So an imperfect guess self-corrects instead of melting down
+    // - which is what makes a headerless limiter survivable. (A flat `fallbackRpm`
+    // is the simpler alternative, but it can't learn from a 429.)
     //
-    //   rateLimit: {
-    //     strategy: throttle,
-    //     model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
-    //   }
-    //
-    // Calibrate capacity and refill to the server. Probing suggests FPL absorbs
-    // a burst of several thousand from one IP; the sustained refill rate needs a
-    // steady-state measurement (ramp until 429s begin). Until you have it, the
-    // conservative fallbackRpm below is the safe default.
+    // These are deliberately conservative - burst 20, then ~5/s per proxy - so
+    // the example stays polite from one host. For a real fleet raise them toward
+    // FPL's true ceiling (probing suggests a burst of several thousand per IP;
+    // the sustained refill needs a steady-state measurement). You don't have to
+    // land it exactly: overshoot and the 429 feedback pulls the pace back.
     rateLimit: {
       strategy: throttle,
       maxWait: 300,
-      fallbackRpm: 30
+      model: { type: tokenBucket, capacity: 20, refill: 5, safety: 0.9 }
     },
 
     // A proxy that starts failing drops out on its own rather than poisoning

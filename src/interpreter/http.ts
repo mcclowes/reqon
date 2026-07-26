@@ -179,8 +179,11 @@ export class HttpClient {
         if (this.config.rateLimiter && requestLane) {
           const rateLimitInfo = parseRateLimitHeaders(responseHeaders);
 
-          // Add retry-after from 429 responses
+          // Flag every 429 so the limiter backs off and calibrates its model,
+          // even when the server sends no Retry-After (FPL's OpenResty bucket
+          // doesn't). The header, when present, refines the wait.
           if (response.status === 429) {
+            rateLimitInfo.rejected = true;
             const ms = parseRetryAfterMs(response.headers.get('Retry-After'), maxDelay);
             if (ms !== undefined) {
               rateLimitInfo.retryAfter = Math.ceil(ms / 1000);

@@ -407,6 +407,25 @@ export class AdaptiveRateLimiter implements RateLimiter {
       this.pacing.set(source, Math.max(this.pacing.get(source) ?? 0, until.getTime()));
     }
 
+    // A 429 is direct feedback that the configured pace is too high for this
+    // lane. Tighten the model so it eases below the server's true rate, then
+    // ensure the lane is backed off by *something*:
+    //  - a Retry-After (handled above) is the server's own instruction;
+    //  - a configured model paces the lane itself, via the penalize just done;
+    //  - otherwise a headerless 429 would produce no backoff at all, so apply a
+    //    floor cool-off - the only thing stopping the lane from hammering the
+    //    rate that just failed.
+    if (info.rejected) {
+      const model = this.getModel(source);
+      model?.penalize(source, now.getTime());
+
+      if (info.retryAfter === undefined && !model) {
+        const until = new Date(now.getTime() + RATE_LIMIT_DEFAULTS.REJECT_COOLOFF_MS);
+        this.laneBackoff.set(source, until);
+        this.pacing.set(source, Math.max(this.pacing.get(source) ?? 0, until.getTime()));
+      }
+    }
+
     state.lastRequestAt = now;
 
     this.state.set(key, state);
@@ -417,10 +436,11 @@ export class AdaptiveRateLimiter implements RateLimiter {
     //
     // Proactive pacing (when a source declares a `model`) is handled by the
     // token-bucket reservation in reserveSlot, which accounts for issued-but-
-    // unreturned requests by advancing the schedule synchronously. This header
-    // path stays as the reactive safety net: a 429 still backs the lane off even
-    // if the model underestimated. A natural next step is to let an observed 429
-    // tighten the model's effective rate (auto-calibration).
+    // unreturned requests by advancing the schedule synchronously. The reactive
+    // path above is the safety net: a 429 backs the lane off (via Retry-After or
+    // the floor cool-off) and, when a model is configured, `penalize` tightens
+    // its effective rate so the pace self-calibrates below the server's true
+    // limit rather than repeatedly rediscovering it via 429s.
     this.responsesSinceCleanup++;
     if (this.responsesSinceCleanup >= RATE_LIMIT_DEFAULTS.CLEANUP_CHECK_INTERVAL) {
       this.responsesSinceCleanup = 0;

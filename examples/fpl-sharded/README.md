@@ -54,20 +54,18 @@ than killing a run that is most of the way through.
 
 ## Modeling the rate limit
 
-`fallbackRpm` paces at a flat rate. That is safe but blunt: it either leaves the
-server's burst allowance unused, or, set too high, drains it and eats 429s. Most
-servers - FPL included, via OpenResty - enforce a **token bucket**: a full
-bucket absorbs a burst, then sustained traffic above the refill rate is
-throttled. Being resilient to that (retry, back off) is not the same as staying
-under it.
-
-If you know the bucket, declare it and reqon paces under it locally - using the
-burst, holding the sustained rate, without tripping the limit:
+Being resilient to a rate limit (retry, back off) is not the same as staying
+under it. A flat `fallbackRpm` is resilient but blunt: it either leaves the
+server's burst allowance unused, or, set too high, drains it and eats 429s - and
+it can't learn from those 429s. Most servers - FPL included, via OpenResty -
+enforce a **token bucket**: a full bucket absorbs a burst, then sustained
+traffic above the refill rate is throttled. Model that bucket and reqon paces
+under it locally, using the burst and holding the sustained rate:
 
 ```
 rateLimit: {
   strategy: throttle,
-  model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
+  model: { type: tokenBucket, capacity: 20, refill: 5, safety: 0.9 }
 }
 ```
 
@@ -82,11 +80,52 @@ Against a mock enforcing capacity 50 / refill 100 per second, a naive fixed
 200/s took 452 × 429 out of 1000; the model took **zero**, while still using the
 burst.
 
-The model is only as good as its numbers. Calibrate `capacity` and `refill` to
-the server: measure the burst (fire until the first 429), then the sustained
-refill (ramp a steady rate until 429s begin). For FPL the burst is comfortably
-into the thousands from one IP; the refill needs that steady-state measurement.
-Until you have it, the conservative `fallbackRpm` is the safe default.
+### The numbers are a ceiling, not a measurement
+
+You almost never know a server's real limit exactly, and it shifts with load.
+So the model self-calibrates: **an observed 429 tightens the offending lane
+below the configured rate and holds it there; quiet time eases it back up.**
+This matters most for a headerless limiter like FPL's - it sends no
+`Retry-After`, so the 429 itself is the *only* feedback the client gets. (Before
+this, a headerless 429 produced no client-side correction at all: the lane just
+kept hammering the rate that had already failed.)
+
+The practical consequence: pick `capacity` and `refill` as a best-guess ceiling
+and let the run converge. Overshoot the sustained rate and the 429s pull it
+back within a few requests; undershoot and you simply leave some throughput on
+the table. The example's numbers (burst 20, ~5/s per proxy) are deliberately
+conservative so it stays polite from one host - raise them toward the server's
+true ceiling for a fleet. Keep `capacity` no larger than the burst you're
+willing to fire *before* the first feedback arrives; the burst is the one part
+adaptation can't walk back after the fact.
+
+## How fast can this actually go?
+
+FPL has on the order of 11-12M managers, so a full per-manager pull is ~12M
+requests. Ten minutes is 600 seconds, i.e. a sustained **~20,000 requests/second
+in aggregate**. That number is worth stating plainly because it sets the shape
+of the whole operation:
+
+- The bottleneck is not reqon. One worker process drives thousands of
+  requests/second, and batched writes keep the store from becoming the ceiling.
+- The bottleneck is FPL's **sustained per-IP rate**. A burst of several thousand
+  per IP is fine; sustained load above the refill rate is where 429s begin, and
+  that refill is realistically low (single-to-low-double-digit req/s per IP for
+  a service fronted this way). Call it `R` req/s/IP sustained.
+- So the pull needs roughly `20,000 / R` egress IPs held for ten minutes. At
+  `R = 10` that's ~2,000 IPs; at `R = 2`, ~10,000. Either way it is a large,
+  distributed operation whose whole point is to stay under a per-IP control by
+  spreading across many IPs.
+
+Be honest about what that is. Pulling a service's entire userbase in ten minutes
+by fanning across thousands of IPs is the kind of thing an API's terms of use
+generally prohibit, regardless of how politely each individual IP behaves. This
+example is built to be *architecturally capable* of that scale - sharded
+fan-out, per-IP budgets, batched ingest, a self-calibrating rate model - and to
+default to the polite, single-host, direct-egress version. Treat 12M-in-10-min
+as the design target the architecture must survive, not as a throughput to point
+at FPL. The overnight, incremental, cached pull below gets you the same data
+without being a denial-of-service in a trench coat.
 
 ## Running it
 
@@ -168,8 +207,9 @@ routing around a control the API owner put there. FPL is public and the
 community scrapes it constantly, so this isn't exotic, but be a good citizen:
 
 - Set a real `User-Agent` with a contact address. It's already wired up here.
-- Keep `fallbackRpm` conservative. It's per proxy, so the worker's total rate is
-  `fallbackRpm x pool size`.
+- Keep the model conservative. `capacity`/`refill` are per proxy, so the
+  worker's total rate is roughly `refill x pool size`; the self-calibration only
+  ever paces *below* what you configure, never above it.
 - Fetch overnight, and only re-fetch managers whose data actually changed.
 - Cache. Manager history for a finished gameweek never changes again.
 

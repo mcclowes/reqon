@@ -78,6 +78,13 @@ export interface RateLimitInfo {
   resetAt?: Date;
   /** Retry after N seconds (from 429 response) */
   retryAfter?: number;
+  /**
+   * The server rejected this request for rate reasons (HTTP 429), independent
+   * of whether it sent a Retry-After. Headerless limiters (e.g. OpenResty) send
+   * no Retry-After, so this flag is the only 429 feedback the client gets - it
+   * drives lane backoff and model auto-calibration.
+   */
+  rejected?: boolean;
 }
 
 /**
