@@ -19,6 +19,7 @@ export { applyStoreFilter } from './types.js';
 export { MemoryStore } from './memory.js';
 export { FileStore, type FileStoreOptions } from './file.js';
 export { PostgRESTStore, PostgRESTError, type PostgRESTOptions } from './postgrest.js';
+export { BatchingStore, type BatchOptions } from './batching.js';
 export {
   createStore,
   resolveStoreType,

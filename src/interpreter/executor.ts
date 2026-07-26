@@ -559,6 +559,10 @@ export class MissionExecutor {
         await this.logEvent({ type: 'mission.failed', error: (error as Error).message });
       }
     } finally {
+      // Flush stores first so a batching (or batch-mode file) store writes its
+      // final partial batch before we tear anything down. A strict-durability
+      // failure here rejects, surfacing rather than silently dropping records.
+      await this.storeManager.closeStores(this.ctx);
       // Release proxy sockets however the run ended. A daemon executing
       // scheduled missions would otherwise accumulate one agent pool per run.
       await this.sourceManager.closeProxyPools();

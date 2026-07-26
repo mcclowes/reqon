@@ -37,6 +37,14 @@ loop variable stay isolated.
 **Sharding by input.** Each worker reads its own `fpl_shard` file and upserts
 into one store. Shards are disjoint, so workers never contend.
 
+**Batched writes.** `{ batch: 500 }` on the store buffers records and flushes
+them in bulk, so a high-fan-out loop makes one store write per batch instead of
+one per record - one DB round-trip per 500 managers rather than per manager,
+which is what lets the store keep pace with the fetch. `durability: strict` (the
+default) keeps each record durable before its loop iteration completes; `relaxed`
+trades crash-safety of the in-flight buffer for more speed. Written as
+`{ batch: { size: 500, maxDelay: 200, durability: relaxed } }` for the full form.
+
 **Surviving a bad item.** A shard drawn from a stale id list contains managers
 that no longer exist. `allow: [404]` returns that status as data instead of
 retrying five times, and `404 -> skip` drops the item. A match written only on
