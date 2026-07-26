@@ -113,26 +113,33 @@ in aggregate**. That number is worth stating plainly because it sets the shape
 of the whole operation:
 
 - The bottleneck is not reqon. One worker process drives well over ten thousand
-  requests/second through the full fetch → map → store pipeline (measured below),
-  which is orders of magnitude more than any single IP will be allowed to send.
-- The bottleneck is FPL's **sustained per-IP rate**. A burst of several thousand
-  per IP is fine; sustained load above the refill rate is where 429s begin, and
-  that refill is realistically low (single-to-low-double-digit req/s per IP for
-  a service fronted this way). Call it `R` req/s/IP sustained.
-- So the pull needs roughly `20,000 / R` egress IPs held for ten minutes. At
-  `R = 10` that's ~2,000 IPs; at `R = 2`, ~10,000. Either way it is a large,
-  distributed operation whose whole point is to stay under a per-IP control by
-  spreading across many IPs.
+  requests/second through the full fetch → map → store pipeline (mock numbers
+  below), and ~2,200 req/s against live FPL from a single IP (measured below).
+- The gate is FPL's **per-IP rate**, and it's higher than you'd guess. Measured
+  from one IP: FPL absorbs a **burst of ~5,000-7,000 requests** before the first
+  429, then sustains **~1,800-2,000 req/s** with only a ~10-15% 429 trickle. Call
+  the sustained figure `R`; here `R ≈ 1,800`.
+- So the pull needs roughly `20,000 / R` egress IPs held for ten minutes - about
+  **a dozen IPs**, paced to maybe ~20-25 to keep a clean margin below the limit.
+  Not the thousands an earlier, pessimistic guess implied.
 
-Be honest about what that is. Pulling a service's entire userbase in ten minutes
-by fanning across thousands of IPs is the kind of thing an API's terms of use
-generally prohibit, regardless of how politely each individual IP behaves. This
-example is built to be *architecturally capable* of that scale - sharded
-fan-out, per-IP budgets, batched ingest, a self-calibrating rate model - and to
-default to the polite, single-host, direct-egress version. Treat 12M-in-10-min
-as the design target the architecture must survive, not as a throughput to point
-at FPL. The overnight, incremental, cached pull below gets you the same data
-without being a denial-of-service in a trench coat.
+So 12M-in-10-min is genuinely feasible, on a couple dozen IPs rather than a
+data-center. That does not make it *polite*: it is still pulling a service's
+entire userbase as fast as its limiter allows, which its terms of use generally
+frown on however few IPs you spread it over. This example is built to be capable
+of that scale - sharded fan-out, per-IP budgets, batched ingest, a
+self-calibrating rate model - and to default to the polite, single-host,
+direct-egress version. Treat 12M-in-10-min as the design target the architecture
+must survive, not as a throughput to point at FPL. The overnight, incremental,
+cached pull below gets you the same data without hammering anyone.
+
+> Measured live from one IP on 2026-07-26, via reqon's own `HttpClient` (no
+> client throttle, no retry, 429s counted as data): 2 ramp + 3 sustained runs,
+> ~400 induced 429s total. FPL sends no rate-limit headers, so these are
+> black-box observations - the burst depth and refill vary run to run and with
+> FPL's load, and can change without notice. Treat `R ≈ 1,800/s/IP` as an
+> order-of-magnitude fact (hundreds-to-thousands, not single digits), not a
+> constant to hard-code.
 
 ### Throughput, measured
 
@@ -164,6 +171,20 @@ Over the real network none of these is the limit anyway: effective throughput is
 `concurrency / round-trip-latency`, and then FPL's per-IP rate sits below that.
 The store numbers matter only so you don't hobble a worker with a batch config
 that's slower than no batch at all.
+
+And against **live FPL** from one IP (reqon's own `HttpClient`, ~21-30ms
+round-trip, no client throttle):
+
+| what                              | measured                                        |
+| --------------------------------- | ----------------------------------------------- |
+| burst before first 429            | ~5,000-7,000 requests                           |
+| sustained accept rate             | ~1,800-2,000 req/s (≈10-15% 429 above that)     |
+| reqon's achieved rate @ conc 48   | ~2,200 req/s (concurrency-bound, not FPL-bound) |
+
+The achieved rate rose with concurrency until it met FPL's limiter at roughly
+the same place - so from one IP, one worker at a few dozen in-flight requests
+saturates what FPL will give it. More per IP just buys 429s; more throughput
+means more IPs.
 
 ## Running it
 

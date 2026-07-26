@@ -45,10 +45,11 @@ mission FplManagerHistory {
     // is the simpler alternative, but it can't learn from a 429.)
     //
     // These are deliberately conservative - burst 20, then ~5/s per proxy - so
-    // the example stays polite from one host. For a real fleet raise them toward
-    // FPL's true ceiling (probing suggests a burst of several thousand per IP;
-    // the sustained refill needs a steady-state measurement). You don't have to
-    // land it exactly: overshoot and the 429 feedback pulls the pace back.
+    // the example stays polite from one host. FPL's true ceiling is far higher:
+    // measured from one IP it absorbs a burst of ~5,000-7,000 then sustains
+    // ~1,800/s before throttling in earnest. Raise capacity/refill toward that
+    // for a real fleet; you don't have to land it exactly, since overshoot makes
+    // the 429 feedback pull the pace back.
     rateLimit: {
       strategy: throttle,
       maxWait: 300,
