@@ -126,13 +126,14 @@ The fix is one place: a `consumePropertyName()` that accepts any keyword token's
 
 Three type errors on the committed tree (`src/durability/crash-injection.test.ts:38,119`, `src/sync/log-store.test.ts:61`). Commit `5975252` (66 minutes before this review) grew the `ExecutionLogStore` interface with `listCheckpoints`/`listPauses` but didn't update the crash-injection test double, so the durability proof suite no longer type-checks.
 
-The reason this slipped through is structural: `npm run build` uses `tsconfig.build.json`, which excludes tests, and the pre-commit hook runs `lint-staged`, not `tsc`. Vitest compiles with esbuild, which strips types without checking them, so the tests run green while the types are broken. CI _does_ have a typecheck job, which means `main`'s CI is either red and being ignored or hasn't run since the drift. Either way, the type safety net has a hole exactly where the durability guarantee is supposed to be proven.
+The reason this slipped through is structural: `npm run build` uses `tsconfig.build.json`, which excludes tests, and the pre-commit hook runs `lint-staged` plus `vitest`, not `tsc`. Vitest compiles with esbuild, which strips types without checking them, so the tests run green while the types are broken. CI _does_ have a typecheck job, which means `main`'s CI is either red and being ignored or hasn't run since the drift. Either way, the type safety net has a hole exactly where the durability guarantee is supposed to be proven.
 
 **Severity: high (process). Fix the test doubles, and add `tsc --noEmit` to the pre-commit hook so the gate matches CI.**
 
 > **Status at v0.4.0:** the type errors are fixed — `npm run typecheck` is green
 > on `main`. The structural gap remains: the pre-commit hook still runs
-> lint-staged only, so `typecheck` is caught by CI rather than locally.
+> lint-staged plus the test suite and no `tsc`, so a type error is caught by CI
+> rather than locally.
 
 ### H2. Path interpolation isn't URL-encoded — path injection and SSRF-adjacent
 

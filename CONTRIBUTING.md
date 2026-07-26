@@ -59,8 +59,9 @@ proxy pools).
 | `npm run bench` | Performance benchmarks |
 
 CI gates on `typecheck`, `lint`, `test:run`, `test:crash`, and `test:pg`. The
-pre-commit hook runs lint-staged (eslint + prettier) only, so run `npm run
-typecheck` yourself before pushing.
+pre-commit hook runs lint-staged (eslint + prettier) and the full test suite, but
+not `typecheck` - vitest compiles with esbuild, which strips types without
+checking them. Run `npm run typecheck` yourself before pushing.
 
 ### Project Structure
 
