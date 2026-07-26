@@ -136,10 +136,11 @@ mission DataExport {
       }
     }
 
-    // Store export metadata
+    // Store export metadata. (A record_count would need a store-wide length(),
+    // which isn't supported — a store isn't array-valued in an expression — so
+    // the count is derived from the exported rows downstream.)
     store {
       export_type: "orders",
-      record_count: length(orders),
       generated_at: now(),
       format: "json"
     } -> orders_export {
@@ -172,9 +173,9 @@ mission DataExport {
       }
     }
 
-    // Overall summary across all products
+    // Overall summary across all products. (A product count would need a
+    // store-wide length(), which isn't supported, so it's omitted here.)
     store {
-      total_products: length(products),
       report_generated: now()
     } -> inventory_report {
       key: "_summary"
@@ -212,11 +213,12 @@ mission DataExport {
       }
     }
 
-    // Export summary
+    // Export a metadata row. Store-wide aggregates (a revenue total, a row
+    // count) can't be computed inline — a store isn't array-valued in an
+    // expression, so sum()/length() over it don't work — so totals are left to
+    // whatever reads the exported rows.
     store {
       export_type: "customers",
-      total_orders: length(orders),
-      total_revenue: sum(orders.total),
       generated_at: now()
     } -> customer_export {
       key: "_metadata"
@@ -246,12 +248,11 @@ mission DataExport {
       }
     }
 
-    // Top-level daily totals
+    // Top-level daily metadata. As above, store-wide totals (order count,
+    // revenue) aren't expressible inline, so downstream tooling aggregates the
+    // per-order rows written above.
     store {
       date: today,
-      total_orders: length(orders),
-      total_revenue: sum(orders.total),
-      total_products: length(products),
       generated_at: now()
     } -> daily_summary {
       key: "_summary"
@@ -263,20 +264,28 @@ mission DataExport {
   // ============================================================
 
   action CreateBackup {
-    // Backup all data to file store
-    store {
-      backup_type: "full",
-      timestamp: now(),
-      data: {
-        orders: orders,
-        products: products
-      },
-      record_counts: {
-        orders: length(orders),
-        products: length(products)
+    // Back up each store by copying its records into the backup store. A whole
+    // store can't be embedded as a single field (`data: orders` yields nothing —
+    // a store isn't a value in an expression), so we iterate and copy row by row,
+    // carrying every field through with the spread operator.
+    for order in orders {
+      store {
+        ...order,
+        backup_type: "order",
+        backed_up_at: now()
+      } -> backup {
+        key: "order_" + order.id
       }
-    } -> backup {
-      key: "backup_" + now()
+    }
+
+    for product in products {
+      store {
+        ...product,
+        backup_type: "product",
+        backed_up_at: now()
+      } -> backup {
+        key: "product_" + product.sku
+      }
     }
   }
 

@@ -1,14 +1,16 @@
 // Sync Shopify Orders (with incremental sync)
 
 action SyncShopifyOrders {
-  // Get last sync timestamp for incremental sync
+  // `since: lastSync` handles incremental sync: it reads this action's saved
+  // checkpoint, injects it as the `updated_at_min` query param, and advances
+  // the checkpoint on success. No manual checkpoint store needed.
   get "/orders.json" {
     source: Shopify,
     body: {
       "status": "any",
-      "updated_at_min": sync_state.get("shopify_orders_last_sync"),
       "limit": 250
     },
+    since: lastSync { param: "updated_at_min", format: iso },
     paginate: cursor(page_info, 250, "link.next"),
     until: response.orders.length == 0,
     retry: {
@@ -49,8 +51,5 @@ action SyncShopifyOrders {
     },
 
     store response -> orders { key: .order_id, upsert: true }
-  },
-
-  // Update checkpoint
-  store { "shopify_orders_last_sync": now() } -> sync_state { key: "shopify_orders_last_sync" }
+  }
 }

@@ -345,14 +345,55 @@ export function evaluate(
           for (let i = 0; i < count; i++) out[i] = start + i;
           return out;
         }
+        case 'abs':
+          return Math.abs(toNumber(args[0], 'abs'));
         case 'round':
           return Math.round(toNumber(args[0], 'round'));
         case 'floor':
           return Math.floor(toNumber(args[0], 'floor'));
         case 'ceil':
           return Math.ceil(toNumber(args[0], 'ceil'));
+        case 'max':
+        case 'min': {
+          // Variadic numeric max/min: max(a, b, ...). A single array argument is
+          // also accepted, so max([1, 2, 3]) works like max(1, 2, 3).
+          const values = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+          if (values.length === 0) {
+            throw new EvaluatorError(`${expr.callee}() requires at least one argument`, {
+              expression: expr.callee,
+            });
+          }
+          const nums = values.map((v) => toNumber(v, expr.callee));
+          return expr.callee === 'max' ? Math.max(...nums) : Math.min(...nums);
+        }
+        case 'concat': {
+          // String concatenation of any number of arguments; null/undefined
+          // render as empty string, matching evaluateToString's coercion.
+          return args.map((v) => String(v ?? '')).join('');
+        }
+        case 'parseNumber': {
+          // Coerce a value (typically a numeric string like "99.99") to a
+          // number. Returns null when it can't be parsed, so a bad field drops
+          // out rather than poisoning arithmetic with NaN.
+          if (args[0] === null || args[0] === undefined) return null;
+          const n = Number(args[0] as number);
+          return Number.isNaN(n) ? null : n;
+        }
+        case 'fromUnix': {
+          // Unix epoch seconds -> ISO-8601 string. Many APIs (Stripe, etc.)
+          // return seconds; this normalises them to the same date format as
+          // sources that already return ISO strings. Returns null if not finite.
+          const secs = Number(args[0] as number);
+          if (!Number.isFinite(secs)) return null;
+          return new Date(secs * 1000).toISOString();
+        }
         case 'now':
           return new Date().toISOString();
+        case 'timestamp':
+          // Epoch milliseconds, for arithmetic. Unlike now() (an ISO string),
+          // timestamp() returns a number so `timestamp() - 86400000` (24h ago)
+          // and other date math work.
+          return Date.now();
         case 'env': {
           // The variable name must be a static string literal. A dynamic argument
           // (e.g. env(response.field)) would let fetched/untrusted data choose

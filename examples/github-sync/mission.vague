@@ -67,6 +67,11 @@ mission SyncGitHub {
     updated_at: date
   }
 
+  // NOTE: schema matching is *structural*, and GitHub returns the same body
+  // shape ({ message, documentation_url }) for rate-limit and not-found errors —
+  // they differ only by HTTP status (403/429 vs 404), which structural matching
+  // doesn't see. So a `match` can't reliably tell these two apart; whichever arm
+  // is listed first wins for this shape. They are named separately for clarity.
   schema RateLimitError {
     message: string,
     documentation_url: string

@@ -5,9 +5,10 @@ action SyncStripePayments {
     source: Stripe,
     body: {
       "limit": 100,
-      "created[gte]": sync_state.get("stripe_payments_last_sync"),
       "expand[]": "data.charges"
     },
+    // Stripe expects a Unix timestamp for created[gte]
+    since: lastSync { param: "created[gte]", format: unix },
     paginate: cursor(starting_after, 100, "data[-1].id"),
     until: response.has_more == false,
     retry: {
@@ -35,7 +36,5 @@ action SyncStripePayments {
     },
 
     store response -> payments { key: .payment_id, upsert: true }
-  },
-
-  store { "stripe_payments_last_sync": now() } -> sync_state { key: "stripe_payments_last_sync" }
+  }
 }

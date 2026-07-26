@@ -211,6 +211,27 @@ Everyday operators for working with fetched data:
 
 See: [data-enrichment](./data-enrichment/)
 
+### Built-in Functions
+Available in expressions (`let`, `map`, `store`, `where`, `match`):
+
+| Group | Functions |
+|-------|-----------|
+| Arrays | `length(a)`, `count(a)`, `sum(a)`, `first(a)`, `last(a)`, `range(end)` / `range(start, end)` |
+| Numbers | `abs(n)`, `round(n)`, `floor(n)`, `ceil(n)`, `max(a, b, …)`, `min(a, b, …)`, `parseNumber(x)` |
+| Strings | `concat(a, b, …)` (also `+` for concatenation) |
+| Time | `now()` (ISO string), `timestamp()` (epoch ms — use for date math), `fromUnix(seconds)` |
+| Env | `env("VAR_NAME")` |
+
+Two gotchas worth knowing:
+
+- **`now()` is a string**, so `now() - 86400000` throws. Use `timestamp()`
+  (epoch milliseconds) for any date arithmetic; keep `now()` for ISO timestamps
+  and keys.
+- **A store is not a value in an expression.** There is no `store[key]` lookup or
+  `exists()`, and `length(store)` / `sum(store.field)` don't work. Read a store
+  only by iterating it with `for x in store where …`, and join across stores by
+  nesting `for` loops.
+
 ### Store Types
 ```vague
 store temp: memory("cache")          # In-memory

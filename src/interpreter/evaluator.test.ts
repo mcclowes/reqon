@@ -671,6 +671,129 @@ describe('evaluate', () => {
       expect(() => evaluate(rangeExpr(0, 20_000_001), createContext())).toThrow(/cap/);
     });
 
+    const numLit = (value: number): Expression => ({
+      type: 'Literal',
+      value,
+      dataType: 'number',
+    });
+    const strLit = (value: string): Expression => ({
+      type: 'Literal',
+      value,
+      dataType: 'string',
+    });
+
+    it('abs returns the magnitude of a number', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'abs',
+        arguments: [numLit(-42)],
+      };
+      expect(evaluate(expr, createContext())).toBe(42);
+    });
+
+    it('max returns the largest of its numeric arguments', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'max',
+        arguments: [numLit(3), numLit(9), numLit(1)],
+      };
+      expect(evaluate(expr, createContext())).toBe(9);
+    });
+
+    it('min returns the smallest of its numeric arguments', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'min',
+        arguments: [numLit(3), numLit(9), numLit(1)],
+      };
+      expect(evaluate(expr, createContext())).toBe(1);
+    });
+
+    it('max accepts a single array argument', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'max',
+        arguments: [
+          {
+            type: 'OrderedSequenceType',
+            elements: [numLit(4), numLit(2), numLit(7)],
+          },
+        ],
+      };
+      expect(evaluate(expr, createContext())).toBe(7);
+    });
+
+    it('max guards a divisor against zero (max(n, 1))', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'max',
+        arguments: [numLit(0), numLit(1)],
+      };
+      expect(evaluate(expr, createContext())).toBe(1);
+    });
+
+    it('concat joins its arguments as strings, coercing numbers', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'concat',
+        arguments: [strLit('order_'), numLit(42), strLit('_done')],
+      };
+      expect(evaluate(expr, createContext())).toBe('order_42_done');
+    });
+
+    it('concat renders null/undefined as empty string', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'concat',
+        arguments: [strLit('a'), { type: 'Literal', value: null, dataType: 'null' }, strLit('b')],
+      };
+      expect(evaluate(expr, createContext())).toBe('ab');
+    });
+
+    it('parseNumber coerces a numeric string to a number', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'parseNumber',
+        arguments: [strLit('99.99')],
+      };
+      expect(evaluate(expr, createContext())).toBe(99.99);
+    });
+
+    it('parseNumber returns null for an unparseable value', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'parseNumber',
+        arguments: [strLit('not-a-number')],
+      };
+      expect(evaluate(expr, createContext())).toBeNull();
+    });
+
+    it('fromUnix converts epoch seconds to an ISO-8601 string', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'fromUnix',
+        arguments: [numLit(1700000000)],
+      };
+      expect(evaluate(expr, createContext())).toBe('2023-11-14T22:13:20.000Z');
+    });
+
+    it('fromUnix returns null for a non-finite argument', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'fromUnix',
+        arguments: [strLit('nope')],
+      };
+      expect(evaluate(expr, createContext())).toBeNull();
+    });
+
+    it('timestamp returns epoch milliseconds usable in arithmetic', () => {
+      const before = Date.now();
+      const expr: Expression = { type: 'CallExpression', callee: 'timestamp', arguments: [] };
+      const result = evaluate(expr, createContext()) as number;
+      expect(typeof result).toBe('number');
+      expect(result).toBeGreaterThanOrEqual(before);
+    });
+
     it('throws on unknown function', () => {
       const ctx = createContext();
       const expr: Expression = {

@@ -96,30 +96,44 @@ store {
 ```
 
 ### Querying Stores
+The only way to read a store is to iterate it with a `for` loop (optionally
+filtered with `where`):
+
 ```vague
-// Get by key
-let product = products[product_id]
+// Iterate all records
+for product in products { ... }
 
-// Filter
-let active = products where .status == "active"
-
-// Aggregate
-let total = sum(inventory.quantity)
-let count = length(products)
+// Iterate a filtered subset
+for product in products where .status == "active" { ... }
 ```
 
-### Cross-Store Operations
-```vague
-// Join data from multiple stores
-for product in products {
-  let details = product_details[product.id]
-  let inv = inventory where .product_id == product.id
+There is intentionally **no inline store access** in expressions:
 
-  store {
-    product: product,
-    details: details,
-    stock: sum(inv.available)
-  } -> combined { key: product.id }
+```vague
+// NOT supported — a store is not a value in an expression:
+let product = products[product_id]     // key lookup → empty
+let count   = length(products)         // → 0, not the row count
+let total   = sum(inventory.quantity)  // throws: sum() requires an array
+```
+
+`length()`/`sum()` work over arrays (like `response.data` or `.line_items`), not
+over a store. To count or total a store, aggregate the per-record rows with
+downstream tooling, or accumulate during the `for` loop as you write output.
+
+### Cross-Store Operations
+Join by nesting `for` loops — the inner loop filters the second store against the
+current record of the outer loop:
+
+```vague
+// Join products to their inventory rows across two stores
+for product in products {
+  for inv in inventory where .product_id == product.id {
+    store {
+      product_id: product.id,
+      warehouse: inv.warehouse_id,
+      available: inv.available
+    } -> combined { key: product.id + "_" + inv.warehouse_id }
+  }
 }
 ```
 

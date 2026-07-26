@@ -169,10 +169,14 @@ action ProcessWithDLQ {
 
 ## Conditional Processing
 
+Filter iteration on the record's own fields. (A cross-store "not already in the
+fraud queue" check isn't expressible inline — a store can't be read from an
+expression — so carry the flag on the record itself.)
+
 ```
 action ProcessConditionally {
   for payment in pending_payments
-    where not exists(fraud_queue[payment.id]) {
+    where .fraud_checked == true and .fraud_flagged == false {
 
     post "/payments/{payment.id}/capture"
 

@@ -102,9 +102,10 @@ mission PostgRESTSync {
         upsert: true
       }
 
-      // Log sync action
+      // Log sync action. Audit ids are composed from the user id, the action,
+      // and a timestamp so each entry is unique and self-describing.
       store {
-        id: generateId(),
+        id: concat(user.id, "-sync-", timestamp()),
         user_id: user.id,
         action: "sync",
         details: {
@@ -127,7 +128,7 @@ mission PostgRESTSync {
     for user in users where .role != "inactive" {
       // Log active user processing
       store {
-        id: generateId(),
+        id: concat(user.id, "-process_active-", timestamp()),
         user_id: user.id,
         action: "process_active",
         details: {
@@ -163,7 +164,7 @@ mission PostgRESTSync {
 
       // Log the status change
       store {
-        id: generateId(),
+        id: concat(update.user_id, "-status_update-", timestamp()),
         user_id: update.user_id,
         action: "status_update",
         details: {
