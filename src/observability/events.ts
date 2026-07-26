@@ -115,6 +115,8 @@ export interface FetchCompletePayload {
   path: string;
   statusCode: number;
   recordCount: number;
+  /** Wall-clock latency of the request (all pages) in ms, when measured. */
+  ms?: number;
   pagesFetched?: number;
   bytesReceived?: number;
   fromCache?: boolean;

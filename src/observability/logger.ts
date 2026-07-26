@@ -241,14 +241,36 @@ class StructuredLoggerImpl implements StructuredLogger {
 // Output Handlers
 // ============================================================================
 
+/** How ConsoleOutput stamps each line with time. */
+export type ConsoleTimeMode = 'elapsed' | 'iso' | 'none';
+
 /** Console output with human-readable formatting */
 export class ConsoleOutput implements LogOutput {
   private prefix: string;
   private colors: boolean;
+  private timeMode: ConsoleTimeMode;
+  /** Wall-clock origin for elapsed stamps (process start of this output). */
+  private startTime: number;
 
-  constructor(options: { prefix?: string; colors?: boolean } = {}) {
+  constructor(
+    options: { prefix?: string; colors?: boolean; time?: ConsoleTimeMode; startTime?: number } = {}
+  ) {
     this.prefix = options.prefix ?? 'Reqon';
     this.colors = options.colors ?? true;
+    this.timeMode = options.time ?? 'elapsed';
+    this.startTime = options.startTime ?? Date.now();
+  }
+
+  /** `+1234ms` elapsed since start, or the entry's ISO timestamp, or nothing. */
+  private timeStamp(entry: LogEntry): string {
+    switch (this.timeMode) {
+      case 'elapsed':
+        return `+${Date.now() - this.startTime}ms `;
+      case 'iso':
+        return `${entry.timestamp} `;
+      case 'none':
+        return '';
+    }
   }
 
   write(entry: LogEntry): void {
@@ -262,7 +284,7 @@ export class ConsoleOutput implements LogOutput {
     // Format duration if present
     const durationStr = entry.duration !== undefined ? ` (${entry.duration}ms)` : '';
 
-    const message = `${prefix} ${levelStr} ${entry.message}${contextStr}${durationStr}`;
+    const message = `${prefix} ${this.timeStamp(entry)}${levelStr} ${entry.message}${contextStr}${durationStr}`;
 
     switch (entry.level) {
       case 'debug':
@@ -360,6 +382,8 @@ export interface CreateLoggerOptions {
   context?: Record<string, unknown>;
   /** Silent mode (no outputs) */
   silent?: boolean;
+  /** How the console output stamps time on each line (default 'elapsed'). */
+  time?: ConsoleTimeMode;
 }
 
 /**
@@ -370,7 +394,7 @@ export function createStructuredLogger(options: CreateLoggerOptions = {}): Struc
 
   if (!options.silent) {
     if (options.console !== false) {
-      outputs.push(new ConsoleOutput({ prefix: options.prefix }));
+      outputs.push(new ConsoleOutput({ prefix: options.prefix, time: options.time }));
     }
 
     if (options.jsonLines) {

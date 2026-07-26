@@ -12,7 +12,13 @@
 import { resolve } from 'node:path';
 import type { SourceDefinition } from '../ast/nodes.js';
 import type { ExecutionContext } from './context.js';
-import { HttpClient, BearerAuthProvider, OAuth2AuthProvider, type AuthProvider } from './http.js';
+import {
+  HttpClient,
+  BearerAuthProvider,
+  OAuth2AuthProvider,
+  type AuthProvider,
+  type RetryInfo,
+} from './http.js';
 import { loadOAS, type OASSource } from '../oas/index.js';
 import type { RateLimiter } from '../auth/types.js';
 import type { CircuitBreaker } from '../auth/circuit-breaker.js';
@@ -43,6 +49,8 @@ export interface SourceManagerConfig {
    */
   proxyAgentFactory?: ProxyAgentFactory;
   proxyFetchFactory?: () => Promise<typeof globalThis.fetch | undefined>;
+  /** Notified before each HTTP retry backoff (for observability / progress). */
+  onRetry?: (info: RetryInfo) => void;
 }
 
 export interface SourceManagerDeps {
@@ -86,6 +94,7 @@ export class SourceManager {
       circuitBreaker: this.deps.circuitBreaker,
       sourceName: source.name,
       proxyPool,
+      onRetry: this.config.onRetry,
     });
 
     ctx.sources.set(source.name, client);
