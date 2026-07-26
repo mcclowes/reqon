@@ -1,6 +1,10 @@
-// FPL per-manager history - the sharded fan-out.
+// FPL manager records - the sharded fan-out.
 //
 // Demonstrates: proxy pool egress, for-loop concurrency, shard-by-env.
+//
+// Same endpoint and schema as first-500k.vague; the difference is where the ids
+// come from. There they're generated in-mission with range(); here each worker
+// is handed an arbitrary slice, so a fleet can cover ids that aren't contiguous.
 //
 // One worker runs this file. The orchestrator (k8s Job, Fly Machines, a GitHub
 // Actions matrix) starts N of them, each with its own shard file and its own
@@ -8,7 +12,7 @@
 // circuit breaker state is tracked per egress IP, and every worker upserts into
 // the same PostgREST table.
 
-mission FplManagerHistory {
+mission FplShardedManagers {
 
   source FPL {
     auth: none,
@@ -67,18 +71,18 @@ mission FplManagerHistory {
 
   // The orchestrator writes this worker's slice of manager IDs before start,
   // as a JSON object keyed by id: { "12": { "id": 12 }, "97": { "id": 97 } }.
-  // Reqon has no range() builtin, so the ID list is an input, not a generated
-  // sequence.
+  // A contiguous block would be range(); the shard file is what lets a worker
+  // take an arbitrary set - a resume list, a re-fetch of stale records.
   store shard: file("fpl_shard")
 
   // A file store keeps this runnable on one machine, one write per manager.
   // Plain is the right default here: a file store rewrites the whole file per
   // flush, so batching buys little, and a strict batch sized above the loop's
   // concurrency is actively *slower* (see below).
-  store managers: file("fpl_manager_history")
+  store managers: file("fpl_managers")
 
   // For a real fleet, swap in a shared table and batch the writes:
-  //   store managers: postgrest("fpl_manager_history") { batch: { size: 500, durability: relaxed } }
+  //   store managers: postgrest("fpl_managers") { batch: { size: 500, durability: relaxed } }
   // Every worker upserts into one table; shards are disjoint, so there's no
   // last-writer-wins race. There `batch` collapses 500 row-at-a-time round-trips
   // into one array POST - a real win over the network. But mind two things:
@@ -97,20 +101,26 @@ mission FplManagerHistory {
   // long shard finishes and the stragglers can be swept afterwards.
   store failures: file("fpl_manager_failures")
 
-  schema ManagerHistory {
+  // The manager record from /entry/{id}/: who they are and their standing.
+  // (Overall points/rank are null out of season and populate once it starts.)
+  schema Manager {
     id: number,
-    current: array,
-    past: array,
-    chips: array
+    name: string,
+    firstName: string,
+    lastName: string,
+    region: string,
+    startedEvent: number,
+    overallPoints: number,
+    overallRank: number
   }
 
-  action FetchManagerHistory {
+  action FetchManagers {
     // Eight iterations in flight. Roughly pool size x 2: enough to keep every
     // proxy busy while one is waiting on the wire, low enough that the
     // per-proxy throttle is what paces the run, not the socket count.
     for entry in shard concurrency 8 onError queue failures {
 
-      get "/entry/{entry.id}/history/" {
+      get "/entry/{entry.id}/" {
         source: FPL,
         // A shard drawn from a stale id list will contain managers that no
         // longer exist. Allowing 404 returns it as data rather than retrying
@@ -131,13 +141,17 @@ mission FplManagerHistory {
         404 -> skip
       }
 
-      // The history payload carries no manager id, so graft it on from the
-      // loop variable - otherwise there's nothing to key the upsert on.
-      map response -> ManagerHistory {
+      // `id` comes from the loop variable rather than the payload, so the
+      // upsert key is always the shard entry that produced the record.
+      map response -> Manager {
         id: entry.id,
-        current: .current,
-        past: .past,
-        chips: .chips
+        name: .name,
+        firstName: .player_first_name,
+        lastName: .player_last_name,
+        region: .player_region_name,
+        startedEvent: .started_event,
+        overallPoints: .summary_overall_points,
+        overallRank: .summary_overall_rank
       }
 
       store response -> managers {
@@ -147,5 +161,5 @@ mission FplManagerHistory {
     }
   }
 
-  run FetchManagerHistory
+  run FetchManagers
 }

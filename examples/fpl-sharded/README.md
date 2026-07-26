@@ -20,12 +20,15 @@ reqon examples/fpl-sharded/bootstrap.vague --verbose
 ```
 
 Reach for the second file only when you need the per-manager endpoints
-(`/entry/{id}/history/`, `/entry/{id}/event/{gw}/picks/`), where the work is
-millions of small requests rather than one big one.
+(`/entry/{id}/`, `/entry/{id}/history/`, `/entry/{id}/event/{gw}/picks/`), where
+the work is millions of small requests rather than one big one.
 
 ## managers.vague
 
-Shows the three pieces that make a sharded fan-out work.
+Pulls the same endpoint and schema as `first-500k.vague` - `/entry/{id}/`, into
+a `Manager` record - but takes its ids from a shard file instead of generating
+them, which is what lets a fleet split the work. It shows the three pieces that
+make a sharded fan-out work.
 
 **Egress pool.** `proxy: [...]` on the source rotates requests round-robin
 across proxies, per request attempt. A 429 on one IP retries from another. Rate
@@ -52,7 +55,7 @@ roughly `concurrency x 10/s`. `durability: relaxed` resolves each write
 immediately so the fan-out runs at full speed and the batch fills in the
 background, at the cost of crash-safety for the in-flight buffer. See
 [Throughput, measured](#throughput-measured) for the numbers. For a fleet:
-`postgrest("fpl_manager_history") { batch: { size: 500, durability: relaxed } }`.
+`postgrest("fpl_managers") { batch: { size: 500, durability: relaxed } }`.
 
 **Surviving a bad item.** A shard drawn from a stale id list contains managers
 that no longer exist. `allow: [404]` returns that status as data instead of
@@ -274,7 +277,7 @@ Swap the file store for the shared table so every worker upserts into one place,
 and batch the writes so each flush is one array POST rather than 500 round-trips:
 
 ```
-store managers: postgrest("fpl_manager_history") { batch: { size: 500, durability: relaxed } }
+store managers: postgrest("fpl_managers") { batch: { size: 500, durability: relaxed } }
 ```
 
 `relaxed` matters here: with the default `strict` and a batch larger than the
@@ -292,8 +295,10 @@ The shard file lives at `.reqon-data/fpl_shard.json`, keyed by id:
 }
 ```
 
-Reqon has no `range()` builtin, so the id list is an input. Whatever starts your
-workers writes each shard file before the run.
+A contiguous block of ids is what `range()` is for (see `first-500k.vague`); the
+shard file is how a worker takes an arbitrary set instead - a disjoint slice, a
+resume list, a re-fetch of records that went stale. Whatever starts your workers
+writes each shard file before the run.
 
 ## Orchestration
 
@@ -325,6 +330,6 @@ community scrapes it constantly, so this isn't exotic, but be a good citizen:
   worker's total rate is roughly `refill x pool size`; the self-calibration only
   ever paces *below* what you configure, never above it.
 - Fetch overnight, and only re-fetch managers whose data actually changed.
-- Cache. Manager history for a finished gameweek never changes again.
+- Cache. A finished gameweek's results never change again.
 
 The polite version is usually also the cheaper version.
