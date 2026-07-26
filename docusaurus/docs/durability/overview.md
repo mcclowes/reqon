@@ -132,7 +132,7 @@ import {
   PauseManager,
   MemoryTraceStore,
   MemoryPauseStore
-} from 'reqon';
+} from 'reqon-dsl';
 
 // Replay execution traces
 const replayer = new TraceReplayer(traceStore);

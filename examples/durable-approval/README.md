@@ -34,8 +34,11 @@ With a durable execution log configured, the whole pause lives in the log:
    and any webhook payload) to completion. The steps after the pause run on
    whichever process is alive when the webhook arrives.
 
-The timeout-vs-webhook resume is single-shot: whichever fires first wins, exactly
-once.
+Step 3 is yours to trigger. Reqon records the `resumeOn:` triggers but does not
+dispatch them — no timer loop, no webhook-to-paused-run routing. Something
+outside the process (your webhook handler, a cron, a `PauseManager` you drive)
+re-invokes the mission with `resumeFrom`. That's exactly what `demo.ts` does when
+it says "webhook received".
 
 ## Run the demo
 

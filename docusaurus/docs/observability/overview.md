@@ -39,7 +39,7 @@ Reqon provides comprehensive observability features for monitoring and debugging
 ### Basic logging
 
 ```typescript
-import { execute, createStructuredLogger } from 'reqon';
+import { execute, createStructuredLogger } from 'reqon-dsl';
 
 const logger = createStructuredLogger({
   prefix: 'MyApp',
@@ -57,7 +57,7 @@ const result = await execute(source, {
 `createEmitter` takes an execution ID and a mission name. Each handler receives an event whose data lives on `event.payload`:
 
 ```typescript
-import { execute, createEmitter } from 'reqon';
+import { execute, createEmitter } from 'reqon-dsl';
 
 const emitter = createEmitter('my-run', 'SyncCustomers');
 
@@ -79,7 +79,7 @@ const result = await execute(source, {
 `createOTelListener` takes an OTLP config and returns a `handler` you subscribe to the emitter, plus a `flush`:
 
 ```typescript
-import { execute, createEmitter, createOTelListener } from 'reqon';
+import { execute, createEmitter, createOTelListener } from 'reqon-dsl';
 
 const otel = createOTelListener({
   endpoint: 'http://localhost:4318/v1/traces',

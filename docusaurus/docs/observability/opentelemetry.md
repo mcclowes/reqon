@@ -21,7 +21,7 @@ The integration:
 `createOTelListener` takes an OTLP config and returns an `adapter`, a `handler` to subscribe to the event emitter, and a `flush` to send the spans:
 
 ```typescript
-import { execute, createEmitter, createOTelListener } from 'reqon';
+import { execute, createEmitter, createOTelListener } from 'reqon-dsl';
 
 const otel = createOTelListener({
   endpoint: 'http://localhost:4318/v1/traces',
@@ -44,7 +44,7 @@ If you want to manage spans yourself, use `OTLPExporter` directly.
 ### Configuration
 
 ```typescript
-import { OTLPExporter } from 'reqon';
+import { OTLPExporter } from 'reqon-dsl';
 
 const exporter = new OTLPExporter({
   endpoint: 'http://localhost:4318/v1/traces',
@@ -91,7 +91,7 @@ const honeycombExporter = new OTLPExporter({
 `createOTelListener` wraps an `OTelEventAdapter`. You can also drive the adapter yourself. It exposes a single `processEvent` method that builds and closes spans as events arrive:
 
 ```typescript
-import { createEmitter, OTelEventAdapter, OTLPExporter } from 'reqon';
+import { createEmitter, OTelEventAdapter, OTLPExporter } from 'reqon-dsl';
 
 const adapter = new OTelEventAdapter();
 const exporter = new OTLPExporter({
@@ -112,7 +112,7 @@ await exporter.flush();
 For custom instrumentation, `SpanBuilder` tracks spans by ID:
 
 ```typescript
-import { SpanBuilder } from 'reqon';
+import { SpanBuilder } from 'reqon-dsl';
 
 const builder = new SpanBuilder();
 
@@ -204,7 +204,7 @@ const otel = createOTelListener({
 ## Complete example
 
 ```typescript
-import { execute, createEmitter, createOTelListener } from 'reqon';
+import { execute, createEmitter, createOTelListener } from 'reqon-dsl';
 
 const otel = createOTelListener({
   endpoint: process.env.OTEL_ENDPOINT || 'http://localhost:4318/v1/traces',

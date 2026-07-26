@@ -146,7 +146,7 @@ Tokens come from the credentials file or environment variables. When Reqon refre
 You can also pass credentials programmatically:
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 import { getSecureTokens } from './secure-storage';
 
 const tokens = await getSecureTokens('Xero');

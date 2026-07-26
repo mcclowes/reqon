@@ -83,7 +83,7 @@ mission ExportData {
 File stores write to `.reqon-data/` by default. To change the directory, pass `dataDir` when running programmatically:
 
 ```typescript
-import { fromFile } from 'reqon';
+import { fromFile } from 'reqon-dsl';
 
 await fromFile('mission.reqon', { dataDir: './my-data' });
 ```

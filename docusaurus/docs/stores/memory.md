@@ -167,7 +167,7 @@ mission ends, so there's nothing to clean up.
 ## Programmatic access
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 const result = await execute(source);
 

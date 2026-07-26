@@ -200,7 +200,7 @@ export interface ExecutorConfig {
   rateLimitCallbacks?: RateLimitCallbacks;
   // Circuit breaker callbacks (optional)
   circuitBreakerCallbacks?: CircuitBreakerCallbacks;
-  // Development mode - use file stores instead of sql/nosql (default: true)
+  // Development mode - let sql/nosql fall back to file stores (default: false)
   developmentMode?: boolean;
   // Base directory for file stores (default: '.reqon-data')
   dataDir?: string;

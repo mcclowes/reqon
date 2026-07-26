@@ -212,7 +212,7 @@ reqon sync.reqon
 Use a `FileSyncStore`, which exposes `clear(key)` and `clearAll()`:
 
 ```typescript
-import { FileSyncStore } from 'reqon';
+import { FileSyncStore } from 'reqon-dsl';
 
 const sync = new FileSyncStore('MyMission');
 

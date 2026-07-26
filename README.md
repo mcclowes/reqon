@@ -56,8 +56,10 @@ mission SyncXeroInvoices {
 
 ## Installation
 
+Reqon is published as `reqon-dsl`; installing it adds the `reqon` CLI binary. Needs Node.js 22 or later.
+
 ```bash
-npm install reqon
+npm install reqon-dsl
 ```
 
 ## Usage
@@ -73,7 +75,7 @@ reqon sync-invoices.vague --dry-run
 ### Programmatic
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 
 const source = `
   mission Test {
@@ -91,7 +93,7 @@ const result = await execute(source, {
   auth: { API: { type: 'bearer', token: 'your-token' } }
 });
 
-console.log(result.stores.get('items').list());
+console.log(await result.stores.get('items').list());
 ```
 
 ## DSL Reference
@@ -135,10 +137,15 @@ pattern.
 ### Stores
 
 ```vague
-store name: memory("collection")
-store name: sql("table_name")
-store name: nosql("collection")
+store name: memory("collection")     // In-memory, lost on exit
+store name: file("collection")       // JSON files under .reqon-data/
+store name: postgrest("table_name")  // PostgreSQL via PostgREST or Supabase
 ```
+
+`sql()` and `nosql()` parse, but there is no standalone database adapter behind
+them. `sql()` works only if you wire up a PostgREST backend for it; `nosql()` has
+no implementation at all. Both hard-error unless you opt into the local JSON
+fallback with `--dev`. For production storage, use `postgrest`.
 
 ### Actions
 
@@ -245,6 +252,12 @@ mission DurablePipeline {
   run WaitForApproval
 }
 ```
+
+A pause records its deadline and resume triggers, then stops the run. **You drive
+the resume**: re-run with `reqon mission.vague --resume <executionId>` (or
+`execute(source, { executionLog, resumeFrom })`), and the run replays past the
+pause. The shipped runtime does not poll deadlines or dispatch inbound webhooks
+into paused runs on its own — to automate that, drive `PauseManager` yourself.
 
 #### Durability guarantees
 

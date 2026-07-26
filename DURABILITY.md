@@ -139,11 +139,20 @@ await execute(src, { executionLog, resumeFrom: priorExecutionId });
 
 ## Pauses and timers
 
-A `pause` suspends a run without holding resources and resumes on a timeout or a
-webhook. In durable mode the lifecycle is recorded in the log (`pause.created`,
-`pause.resumed`), so the folded state knows a run is paused and on what. Resume
-is **single-shot**: a timeout poll and an inbound webhook racing to resume the
-same pause fire the resume exactly once.
+A `pause` suspends a run without holding resources. In durable mode the lifecycle
+is recorded in the log (`pause.created`, `pause.resumed`), so the folded state
+knows a run is paused and on what.
+
+**The resume is driven by you, not by a background timer.** The runtime records
+the `resumeOn:` triggers but never dispatches them: nothing calls
+`PauseManager.startMonitoring()` or `PauseManager.handleWebhook()` in the shipped
+CLI or executor. A paused run continues when it is re-run with the same log and
+execution id (`--resume <id>` / `execute(…, { resumeFrom })`), at which point the
+replay records `pause.resumed` and carries on past the pause. If you want
+deadline polling or webhook-driven resume, drive `PauseManager` yourself.
+
+`PauseManager`'s own resume is **single-shot**: a timeout poll and an inbound
+webhook racing to resume the same pause fire the resume exactly once.
 
 ## Guarantee → proving test
 
@@ -180,3 +189,6 @@ npm run test:crash
 - **Pause-across-restart**: the pause lifecycle is recorded and pause state is
   persisted by the pause store, but full end-to-end resumption of a long timer
   across a process restart is not yet covered by the crash-injection suite.
+- **No pause dispatcher**: `resumeOn: timeout | webhook` is recorded metadata.
+  Reqon does not run a timer loop or route inbound webhooks into paused runs;
+  something outside the process has to re-invoke the mission with `resumeFrom`.
