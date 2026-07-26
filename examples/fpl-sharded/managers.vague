@@ -33,29 +33,27 @@ mission FplManagerHistory {
       env("FPL_PROXY_4")
     ],
 
-    // FPL sends no rate limit headers, so the fallback is what actually governs
-    // pacing. This is per proxy: 30rpm x 4 proxies = 120rpm for the worker.
-    // Start conservative and raise it only if you see no 429s.
+    // FPL sends no rate-limit headers - its OpenResty limiter has no Retry-After
+    // - so pacing is entirely the client's job, and a 429 is the only feedback
+    // it gets. The `model` mirrors that limiter locally: `capacity` requests
+    // burst through, then it settles to `refill`/second, keyed per proxy.
     //
-    // `fallbackRpm` paces at a flat rate, which either wastes the server's burst
-    // allowance or, set too high, drains it and eats 429s. FPL runs a token-
-    // bucket limiter (OpenResty): a full bucket absorbs a burst, then sustained
-    // traffic above the refill rate is throttled. If you know that bucket you
-    // can model it and pace exactly under it - burst included, no 429s:
+    // The numbers are a *ceiling guess*, not a measured truth. On a 429 reqon
+    // tightens the lane below the guess and holds there; when the 429s stop it
+    // eases back up. So an imperfect guess self-corrects instead of melting down
+    // - which is what makes a headerless limiter survivable. (A flat `fallbackRpm`
+    // is the simpler alternative, but it can't learn from a 429.)
     //
-    //   rateLimit: {
-    //     strategy: throttle,
-    //     model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
-    //   }
-    //
-    // Calibrate capacity and refill to the server. Probing suggests FPL absorbs
-    // a burst of several thousand from one IP; the sustained refill rate needs a
-    // steady-state measurement (ramp until 429s begin). Until you have it, the
-    // conservative fallbackRpm below is the safe default.
+    // These are deliberately conservative - burst 20, then ~5/s per proxy - so
+    // the example stays polite from one host. FPL's true ceiling is far higher:
+    // measured from one IP it absorbs a burst of ~5,000-7,000 then sustains
+    // ~1,800/s before throttling in earnest. Raise capacity/refill toward that
+    // for a real fleet; you don't have to land it exactly, since overshoot makes
+    // the 429 feedback pull the pace back.
     rateLimit: {
       strategy: throttle,
       maxWait: 300,
-      fallbackRpm: 30
+      model: { type: tokenBucket, capacity: 20, refill: 5, safety: 0.9 }
     },
 
     // A proxy that starts failing drops out on its own rather than poisoning
@@ -73,17 +71,27 @@ mission FplManagerHistory {
   // sequence.
   store shard: file("fpl_shard")
 
-  // A file store keeps this runnable on one machine. For a real fleet swap in
-  //   store managers: postgrest("fpl_manager_history") { batch: 500 }
-  // and every worker upserts into one table. Shards are disjoint, so there's no
-  // last-writer-wins race between machines.
-  //
-  // `batch` buffers writes and flushes them in bulk, so a high-fan-out loop
-  // makes one store write per batch instead of one per record - the difference
-  // between one DB round-trip per manager and one per 500. `durability: strict`
-  // (the default) keeps each write durable before its iteration completes; use
-  // `relaxed` to trade crash-safety of the in-flight buffer for more speed.
-  store managers: file("fpl_manager_history") { batch: 500 }
+  // A file store keeps this runnable on one machine, one write per manager.
+  // Plain is the right default here: a file store rewrites the whole file per
+  // flush, so batching buys little, and a strict batch sized above the loop's
+  // concurrency is actively *slower* (see below).
+  store managers: file("fpl_manager_history")
+
+  // For a real fleet, swap in a shared table and batch the writes:
+  //   store managers: postgrest("fpl_manager_history") { batch: { size: 500, durability: relaxed } }
+  // Every worker upserts into one table; shards are disjoint, so there's no
+  // last-writer-wins race. There `batch` collapses 500 row-at-a-time round-trips
+  // into one array POST - a real win over the network. But mind two things:
+  //   - `durability: relaxed` lets each write resolve immediately, so the
+  //     fan-out runs at full speed and the batch fills by size in the
+  //     background. `strict` (the default) holds each write until its batch
+  //     flushes; if the batch size exceeds the loop's concurrency it never fills
+  //     by size and every flush waits on the 100ms timer - capping throughput at
+  //     ~concurrency x 10/s. (Measured against a zero-latency mock at
+  //     concurrency 8: strict batch-500 ~70 writes/s, relaxed ~16k/s.)
+  //   - relaxed trades crash-safety of the in-flight buffer (up to `size`
+  //     records) for that speed. This run is resumable and upserts are
+  //     idempotent, so a lost slice is just re-fetched - a good trade here.
 
   // Items that exhaust their retries land here instead of failing the run, so a
   // long shard finishes and the stragglers can be swept afterwards.
