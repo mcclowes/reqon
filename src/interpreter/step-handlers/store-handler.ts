@@ -27,7 +27,7 @@ export class StoreHandler implements StepHandler<StoreStep> {
       throw new RuntimeError(
         `Cannot store to '${step.target}': ${which} is missing or empty. ` +
           `Provide a 'key:' option that resolves to a stable, non-empty value.`,
-        { line: 1, column: 1 },
+        undefined,
         undefined,
         { stepType: 'store' }
       );
@@ -57,7 +57,7 @@ export class StoreHandler implements StepHandler<StoreStep> {
   async execute(step: StoreStep): Promise<void> {
     const store = this.deps.ctx.stores.get(step.target);
     if (!store) {
-      throw new RuntimeError(`Store not found: ${step.target}`, { line: 1, column: 1 }, undefined, {
+      throw new RuntimeError(`Store not found: ${step.target}`, undefined, undefined, {
         stepType: 'store',
       });
     }
@@ -66,6 +66,22 @@ export class StoreHandler implements StepHandler<StoreStep> {
 
     if (Array.isArray(source)) {
       await this.storeMany(step, store, source);
+    } else if (source === null || source === undefined) {
+      // An empty response body (or an expression that resolved to nothing) is a
+      // no-op, not an error: there is simply nothing to persist. Casting it to a
+      // record and reading `.id` off it would throw a raw TypeError.
+      this.deps.log(`Nothing to store to ${step.target} (source is empty)`);
+    } else if (typeof source !== 'object') {
+      // A bare scalar (string/number/boolean) has no key to store under. Raise
+      // the same deliberate RuntimeError as a missing key rather than a raw
+      // TypeError from reading `.id` off a primitive.
+      throw new RuntimeError(
+        `Cannot store to '${step.target}': expected an object or array, ` +
+          `got ${typeof source}. A store source must be a record (or list of records).`,
+        undefined,
+        undefined,
+        { stepType: 'store' }
+      );
     } else {
       await this.storeOne(step, store, source as Record<string, unknown>);
     }
