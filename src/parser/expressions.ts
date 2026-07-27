@@ -414,7 +414,12 @@ export class ReqonExpressionParser extends ReqonParserBase {
   }
 
   private parseMatchExpression(): Expression {
-    const value = this.parsePrimary();
+    // Parse the subject with the full expression parser so member paths
+    // (`match report.tier { ... }`), subscripts, and calls work here exactly
+    // as they do in the statement form (parseMatchStep). parsePrimary alone
+    // stopped at the bare identifier, leaving the trailing `.field` to be
+    // mismatched against the expected `{`.
+    const value = this.parseExpression();
     this.consume(TokenType.LBRACE, "Expected '{'");
 
     const arms: MatchArm[] = [];
