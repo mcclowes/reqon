@@ -35,5 +35,13 @@ export default defineConfig({
 
     // Environment
     environment: 'node',
+
+    // Pin the timezone so local runs match CI regardless of the machine's
+    // clock. Several tests (e.g. the cron parser suite) build instants in UTC
+    // and assert on local-time getters like getHours(); without this they only
+    // pass at UTC+0 and force contributors to run `TZ=UTC npm run test:run`.
+    env: {
+      TZ: 'UTC',
+    },
   },
 });
