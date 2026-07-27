@@ -1,96 +1,173 @@
 /**
- * DSL fixtures of varying complexity for benchmarking
+ * DSL fixtures of varying complexity for benchmarking.
+ *
+ * These are written in the same syntax the parser actually accepts - the same
+ * dialect every example and parser test uses (`mission Name { ... }`, brace
+ * blocks, `get`/`store ->`, `map x -> Schema { ... }`, guarded `match { }`).
+ * `fixtures.test.ts` parses every one of them so they can't silently rot again.
  */
 
 // Simple: minimal valid DSL
 export const SIMPLE_DSL = `
-mission "simple"
-  source api from "https://api.example.com"
-  store results in memory
+mission Simple {
+  source API {
+    auth: none,
+    base: "https://api.example.com"
+  }
 
-  action fetchData
-    fetch "/data" from api
-    store response in results
+  store results: memory("results")
+
+  action FetchData {
+    get "/data" {
+      source: API
+    }
+
+    store response -> results {
+      key: .id
+    }
+  }
+
+  run FetchData
+}
 `;
 
 // Medium: typical real-world usage with mapping and validation
 export const MEDIUM_DSL = `
-mission "medium-complexity"
-  source api from "https://api.example.com" with
-    auth: bearer "token123"
-    rateLimit: 100
+mission MediumComplexity {
+  source API {
+    auth: bearer,
+    base: "https://api.example.com"
+  }
 
-  store users in memory
-  store orders in memory
+  store users: memory("users")
+  store orders: memory("orders")
 
-  action fetchUsers
-    fetch "/users" from api
-    for user in response.data where user.active == true
-      map user -> {
+  schema User {
+    id: string,
+    name: string,
+    email: string
+  }
+
+  schema Order {
+    orderId: string,
+    total: decimal,
+    status: string
+  }
+
+  action FetchUsers {
+    get "/users" {
+      source: API
+    }
+
+    for user in response.data where .active == true {
+      map user -> User {
         id: user.id,
         name: user.firstName + " " + user.lastName,
         email: user.email
       }
-      validate
-        assume id is string
-        assume name is string
-        assume email is string
-      store mapped in users with key: mapped.id
-    end
 
-  action fetchOrders
-    fetch "/orders" from api with
-      pagination: offset
-      pageSize: 50
-    for order in response
-      map order -> {
+      validate response {
+        assume .id is string,
+        assume .name is string,
+        assume .email is string
+      }
+
+      store response -> users {
+        key: .id
+      }
+    }
+  }
+
+  action FetchOrders {
+    get "/orders" {
+      source: API,
+      paginate: offset(offset, 50)
+    }
+
+    for order in response.data {
+      map order -> Order {
         orderId: order.id,
         total: order.amount * 100,
         status: order.status
       }
-      store mapped in orders with key: mapped.orderId
-    end
 
-  run fetchUsers then fetchOrders
+      store response -> orders {
+        key: .orderId
+      }
+    }
+  }
+
+  run FetchUsers
+    then FetchOrders
+}
 `;
 
 // Complex: multiple sources, conditional logic, nested transformations
 export const COMPLEX_DSL = `
-mission "complex-pipeline"
-  source primaryApi from "https://api.primary.com" with
-    auth: oauth2 {
-      tokenUrl: "https://auth.primary.com/token",
-      clientId: "client123",
-      clientSecret: "secret456",
-      scope: "read write"
-    }
-    timeout: 30000
-    retries: 3
-    backoff: exponential
+mission ComplexPipeline {
+  source PrimaryApi {
+    auth: oauth2,
+    base: "https://api.primary.com",
     circuitBreaker: {
       failureThreshold: 5,
       resetTimeout: 60000
     }
+  }
 
-  source secondaryApi from "https://api.secondary.com" with
-    auth: apiKey {
-      header: "X-API-Key",
-      value: "key789"
+  source SecondaryApi {
+    auth: api_key,
+    base: "https://api.secondary.com",
+    rateLimit: {
+      strategy: "throttle",
+      fallbackRpm: 50
     }
-    rateLimit: 50
+  }
 
-  store products in memory
-  store inventory in memory
-  store combined in memory
-  store errors in memory
+  store products: memory("products")
+  store inventory: memory("inventory")
+  store combined: memory("combined")
+  store errors: memory("errors")
 
-  action fetchProducts
-    fetch "/products" from primaryApi with
-      pagination: cursor
-      pageSize: 100
-      since: lastSync
-    for product in response.items where product.status != "deleted"
-      map product -> {
+  schema Product {
+    sku: string,
+    name: string,
+    price: decimal,
+    currency: string,
+    category: string,
+    tags: array
+  }
+
+  schema InventoryItem {
+    sku: string,
+    quantity: int,
+    warehouse: string,
+    lastUpdated: date
+  }
+
+  schema Combined {
+    sku: string,
+    name: string,
+    price: decimal,
+    quantity: int,
+    warehouse: string,
+    available: boolean,
+    value: decimal
+  }
+
+  action FetchProducts {
+    get "/products" {
+      source: PrimaryApi,
+      paginate: cursor(cursor, 100, "meta.next_cursor"),
+      since: lastSync,
+      retry: {
+        maxAttempts: 3,
+        backoff: exponential,
+        initialDelay: 500
+      }
+    }
+
+    for product in response.items where .status != "deleted" {
+      map product -> Product {
         sku: product.sku,
         name: product.name,
         price: product.price.amount,
@@ -98,36 +175,50 @@ mission "complex-pipeline"
         category: product.category.name,
         tags: product.tags
       }
-      validate
-        assume sku is string
-        assume name is string
-        assume price is number
-        assume price > 0
-      store mapped in products with key: mapped.sku
-    end
 
-  action fetchInventory
-    fetch "/inventory" from secondaryApi with
-      pagination: page
-      pageSize: 200
-    for item in response.data
-      map item -> {
+      validate response {
+        assume .sku is string,
+        assume .name is string,
+        assume .price is number,
+        assume .price > 0
+      }
+
+      store response -> products {
+        key: .sku
+      }
+    }
+  }
+
+  action FetchInventory {
+    get "/inventory" {
+      source: SecondaryApi,
+      paginate: page(page, 200)
+    }
+
+    for item in response.data {
+      map item -> InventoryItem {
         sku: item.productSku,
         quantity: item.onHand,
         warehouse: item.location.warehouse,
         lastUpdated: item.updatedAt
       }
-      validate
-        assume sku is string
-        assume quantity is number
-        assume quantity >= 0
-      store mapped in inventory with key: mapped.sku + "-" + mapped.warehouse
-    end
 
-  action combineData
-    for product in products
-      for inv in inventory where inv.sku == product.sku
-        map { product: product, inventory: inv } -> {
+      validate response {
+        assume .sku is string,
+        assume .quantity is number,
+        assume .quantity >= 0
+      }
+
+      store response -> inventory {
+        key: .sku + "-" + .warehouse
+      }
+    }
+  }
+
+  action CombineData {
+    for product in products {
+      for inv in inventory where .sku == product.sku {
+        map inv -> Combined {
           sku: product.sku,
           name: product.name,
           price: product.price,
@@ -136,152 +227,240 @@ mission "complex-pipeline"
           available: inv.quantity > 0,
           value: product.price * inv.quantity
         }
-        store mapped in combined with key: mapped.sku + "-" + mapped.warehouse
-      end
-    end
 
-  run [fetchProducts, fetchInventory] then combineData
+        store response -> combined {
+          key: product.sku + "-" + inv.warehouse
+        }
+      }
+    }
+  }
+
+  run [FetchProducts, FetchInventory]
+    then CombineData
+}
 `;
 
 // Expression-heavy: for evaluator benchmarking
 export const EXPRESSION_HEAVY_DSL = `
-mission "expressions"
-  source api from "https://api.example.com"
-  store results in memory
+mission Expressions {
+  source API {
+    auth: none,
+    base: "https://api.example.com"
+  }
 
-  action calculate
-    fetch "/data" from api
-    for item in response.items
-      map item -> {
-        // Arithmetic
+  store results: memory("results")
+
+  schema Computed {
+    sum: number,
+    product: number,
+    complex: number,
+    fullName: string,
+    code: string,
+    isValid: boolean,
+    needsReview: boolean,
+    complexCheck: boolean,
+    tier: string,
+    nested1: number,
+    nested2: number,
+    final: number
+  }
+
+  action Calculate {
+    get "/data" {
+      source: API
+    }
+
+    for item in response.items {
+      map item -> Computed {
         sum: item.a + item.b + item.c,
         product: item.x * item.y * item.z,
         complex: (item.a + item.b) * (item.c - item.d) / (item.e + 1),
 
-        // String operations
         fullName: item.firstName + " " + item.middleName + " " + item.lastName,
         code: item.prefix + "-" + item.id + "-" + item.suffix,
 
-        // Boolean logic
         isValid: item.active == true and item.verified == true,
         needsReview: item.score < 50 or item.flagged == true,
         complexCheck: (item.type == "A" or item.type == "B") and item.status != "deleted",
 
-        // Comparisons
-        tier: match item.score
-          when score >= 90 then "platinum"
-          when score >= 70 then "gold"
-          when score >= 50 then "silver"
-          else "bronze"
-        end,
+        tier: match item.score {
+          s where s >= 90 => "platinum",
+          s where s >= 70 => "gold",
+          s where s >= 50 => "silver",
+          _ => "bronze"
+        },
 
-        // Nested access
         nested1: item.level1.level2.level3.value,
         nested2: item.data.items[0].nested.field,
 
-        // Mixed
         final: (item.base * item.multiplier) + item.bonus - item.penalty
       }
-      store mapped in results with key: mapped.code
-    end
+
+      store response -> results {
+        key: item.id
+      }
+    }
+  }
+
+  run Calculate
+}
 `;
 
 // Large: stress test with many actions and stores
 export function generateLargeDSL(actionCount: number = 20): string {
-  const stores = Array.from({ length: actionCount }, (_, i) => `  store store${i} in memory`).join(
-    '\n'
-  );
+  const stores = Array.from(
+    { length: actionCount },
+    (_, i) => `  store store${i}: memory("store${i}")`
+  ).join('\n');
+
+  const schemas = Array.from(
+    { length: actionCount },
+    (_, i) => `  schema Schema${i} {
+    id: string,
+    value${i}: number,
+    computed: number
+  }`
+  ).join('\n\n');
 
   const actions = Array.from(
     { length: actionCount },
-    (_, i) => `
-  action action${i}
-    fetch "/endpoint${i}" from api with
-      pagination: offset
-      pageSize: 100
-    for item in response.data where item.active == true
-      map item -> {
+    (_, i) => `  action Action${i} {
+    get "/endpoint${i}" {
+      source: api,
+      paginate: offset(offset, 100)
+    }
+
+    for item in response.data where .active == true {
+      map item -> Schema${i} {
         id: item.id,
         value${i}: item.value * ${i + 1},
         computed: item.a + item.b + ${i}
       }
-      validate
-        assume id is string
-        assume value${i} is number
-      store mapped in store${i} with key: mapped.id
-    end
-`
-  ).join('\n');
 
-  const runSequence = Array.from({ length: actionCount }, (_, i) => `action${i}`).join(', ');
+      validate response {
+        assume .id is string,
+        assume .value${i} is number
+      }
+
+      store response -> store${i} {
+        key: .id
+      }
+    }
+  }`
+  ).join('\n\n');
+
+  const runSequence = Array.from({ length: actionCount }, (_, i) => `Action${i}`).join(', ');
 
   return `
-mission "large-stress-test"
-  source api from "https://api.example.com" with
-    auth: bearer "token"
-    rateLimit: 1000
+mission LargeStressTest {
+  source api {
+    auth: bearer,
+    base: "https://api.example.com"
+  }
 
 ${stores}
+
+${schemas}
 
 ${actions}
 
   run [${runSequence}]
+}
 `;
 }
 
 // Deeply nested expressions for evaluator stress testing
 export const DEEPLY_NESTED_EXPRESSIONS = `
-mission "nested-expressions"
-  source api from "https://api.example.com"
-  store results in memory
+mission NestedExpressions {
+  source API {
+    auth: none,
+    base: "https://api.example.com"
+  }
 
-  action process
-    fetch "/data" from api
-    for item in response
-      map item -> {
+  store results: memory("results")
+
+  schema Result {
+    result: number
+  }
+
+  action Process {
+    get "/data" {
+      source: API
+    }
+
+    for item in response.items {
+      map item -> Result {
         result: ((((item.a + item.b) * (item.c + item.d)) + ((item.e - item.f) * (item.g - item.h))) * (((item.i + item.j) / (item.k + 1)) - ((item.l * item.m) + (item.n / (item.o + 1)))))
       }
-      store mapped in results
-    end
+
+      store response -> results {
+        key: item.id
+      }
+    }
+  }
+
+  run Process
+}
 `;
 
 // Match-heavy for pattern matching benchmarks
 export const MATCH_HEAVY_DSL = `
-mission "pattern-matching"
-  source api from "https://api.example.com"
-  store results in memory
+mission PatternMatching {
+  source API {
+    auth: none,
+    base: "https://api.example.com"
+  }
 
-  action categorize
-    fetch "/items" from api
-    for item in response
-      map item -> {
+  store results: memory("results")
+
+  schema Categorized {
+    id: string,
+    category: string,
+    priority: string,
+    status: string
+  }
+
+  action Categorize {
+    get "/items" {
+      source: API
+    }
+
+    for item in response.items {
+      map item -> Categorized {
         id: item.id,
-        category: match item.type
-          when "A" then "category-a"
-          when "B" then "category-b"
-          when "C" then "category-c"
-          when "D" then "category-d"
-          when "E" then "category-e"
-          else "other"
-        end,
-        priority: match item.urgency
-          when urgency > 90 then "critical"
-          when urgency > 70 then "high"
-          when urgency > 50 then "medium"
-          when urgency > 30 then "low"
-          else "none"
-        end,
-        status: match item.state
-          when "pending" then "awaiting"
-          when "processing" then "in-progress"
-          when "completed" then "done"
-          when "failed" then "error"
-          when "cancelled" then "stopped"
-          else "unknown"
-        end
+        category: match item.type {
+          "A" => "category-a",
+          "B" => "category-b",
+          "C" => "category-c",
+          "D" => "category-d",
+          "E" => "category-e",
+          _ => "other"
+        },
+        priority: match item.urgency {
+          u where u > 90 => "critical",
+          u where u > 70 => "high",
+          u where u > 50 => "medium",
+          u where u > 30 => "low",
+          _ => "none"
+        },
+        status: match item.state {
+          "pending" => "awaiting",
+          "processing" => "in-progress",
+          "completed" => "done",
+          "failed" => "error",
+          "cancelled" => "stopped",
+          _ => "unknown"
+        }
       }
-      store mapped in results with key: mapped.id
-    end
+
+      store response -> results {
+        key: item.id
+      }
+    }
+  }
+
+  run Categorize
+}
 `;
 
 export const ALL_FIXTURES = {

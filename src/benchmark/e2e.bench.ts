@@ -16,75 +16,119 @@ import {
 } from './fixtures.js';
 
 // DSL for benchmarking with pre-populated stores (no network)
-const STORE_ONLY_DSL = `
-mission "store-processing"
-  store input in memory
-  store output in memory
+export const STORE_ONLY_DSL = `
+mission StoreProcessing {
+  store input: memory("input")
+  store output: memory("output")
 
-  action process
-    for item in input where item.active == true
-      map item -> {
+  schema Processed {
+    id: string,
+    fullName: string,
+    score: number,
+    category: string
+  }
+
+  action Process {
+    for item in input where .active == true {
+      map item -> Processed {
         id: item.id,
         fullName: item.firstName + " " + item.lastName,
         score: item.value * 2,
-        category: match item.tier
-          when "A" then "premium"
-          when "B" then "standard"
-          else "basic"
-        end
+        category: match item.tier {
+          "A" => "premium",
+          "B" => "standard",
+          _ => "basic"
+        }
       }
-      validate
-        assume id is string
-        assume score is number
-      store mapped in output with key: mapped.id
-    end
+
+      validate response {
+        assume .id is string,
+        assume .score is number
+      }
+
+      store response -> output {
+        key: .id
+      }
+    }
+  }
+
+  run Process
+}
 `;
 
-const COMPLEX_STORE_DSL = `
-mission "complex-store-processing"
-  store users in memory
-  store orders in memory
-  store reports in memory
+export const COMPLEX_STORE_DSL = `
+mission ComplexStoreProcessing {
+  store users: memory("users")
+  store orders: memory("orders")
+  store reports: memory("reports")
 
-  action processUsers
-    for user in users where user.active == true
-      map user -> {
+  schema UserReport {
+    userId: string,
+    displayName: string,
+    tier: string,
+    eligible: boolean
+  }
+
+  schema OrderReport {
+    orderId: string,
+    userId: string,
+    total: number,
+    discount: number,
+    status: string
+  }
+
+  action ProcessUsers {
+    for user in users where .active == true {
+      map user -> UserReport {
         userId: user.id,
         displayName: user.firstName + " " + user.lastName,
-        tier: match user.score
-          when score >= 90 then "platinum"
-          when score >= 70 then "gold"
-          when score >= 50 then "silver"
-          else "bronze"
-        end,
+        tier: match user.score {
+          s where s >= 90 => "platinum",
+          s where s >= 70 => "gold",
+          s where s >= 50 => "silver",
+          _ => "bronze"
+        },
         eligible: user.verified == true and user.age >= 18
       }
-      validate
-        assume userId is string
-        assume displayName is string
-      store mapped in reports with key: mapped.userId
-    end
 
-  action processOrders
-    for order in orders
-      for report in reports where report.userId == order.userId
-        map { order: order, report: report } -> {
+      validate response {
+        assume .userId is string,
+        assume .displayName is string
+      }
+
+      store response -> reports {
+        key: .userId
+      }
+    }
+  }
+
+  action ProcessOrders {
+    for order in orders {
+      for report in reports where .userId == order.userId {
+        map order -> OrderReport {
           orderId: order.id,
           userId: order.userId,
           total: order.amount * 100,
-          discount: match report.tier
-            when "platinum" then order.amount * 0.2
-            when "gold" then order.amount * 0.15
-            when "silver" then order.amount * 0.1
-            else order.amount * 0.05
-          end,
+          discount: match report.tier {
+            "platinum" => order.amount * 0.2,
+            "gold" => order.amount * 0.15,
+            "silver" => order.amount * 0.1,
+            _ => order.amount * 0.05
+          },
           status: order.status
         }
-        store mapped in reports with key: mapped.orderId, partial: true
-      end
-    end
 
-  run processUsers then processOrders
+        store response -> reports {
+          key: .orderId,
+          upsert: true
+        }
+      }
+    }
+  }
+
+  run ProcessUsers
+    then ProcessOrders
+}
 `;
 
 // Generate test data for stores
