@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createHmac } from 'node:crypto';
 import { WebhookServer } from './server.js';
 import { MemoryWebhookStore } from './store.js';
 import { MAX_TIMEOUT_MS } from '../utils/long-timeout.js';
@@ -114,6 +115,98 @@ describe('WebhookServer', () => {
       } finally {
         await limited.stop();
       }
+    });
+
+    // #249: a GET (crawler, link-preview bot, scanner) must never count as a
+    // delivered event and resolve a pending wait.
+    it('rejects a GET to a registration path with 405 and does not resolve a wait', async () => {
+      const server = new WebhookServer({ port: 13903, verbose: false }, new MemoryWebhookStore());
+      try {
+        await server.start();
+        const reg = await server.register('exec-405', { path: '/cb', expectedEvents: 1 });
+
+        let resolved = false;
+        const wait = server.waitForEvents(reg.id, 500).then((r) => {
+          resolved = true;
+          return r;
+        });
+
+        const res = await fetch('http://127.0.0.1:13903/cb', { method: 'GET' });
+        expect(res.status).toBe(405);
+        expect(res.headers.get('allow')).toContain('POST');
+
+        // The wait must not have been resolved by the GET.
+        expect(resolved).toBe(false);
+        const result = await wait; // times out (500ms), does not succeed
+        expect(result.success).toBe(false);
+      } finally {
+        await server.stop();
+      }
+    });
+
+    // #249: the secret must not be accepted in a query parameter (leaks via logs).
+    it('does not accept the secret in a query parameter', async () => {
+      const secured = new WebhookServer(
+        { port: 13904, secret: 'hook-secret', verbose: false },
+        new MemoryWebhookStore()
+      );
+      try {
+        await secured.start();
+        await secured.register('exec-q', { path: '/cb', expectedEvents: 1 });
+
+        const viaQuery = await fetch('http://127.0.0.1:13904/cb?token=hook-secret', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        expect(viaQuery.status).toBe(401);
+      } finally {
+        await secured.stop();
+      }
+    });
+
+    // #249: per-payload HMAC verification (Stripe/GitHub/Shopify shape).
+    it('verifies an HMAC-SHA256 signature over the raw body', async () => {
+      const signing = 'sign-me';
+      const server = new WebhookServer(
+        { port: 13905, signingSecret: signing, verbose: false },
+        new MemoryWebhookStore()
+      );
+      try {
+        await server.start();
+        await server.register('exec-hmac', { path: '/cb', expectedEvents: 1 });
+
+        const body = JSON.stringify({ order: 42 });
+        const good = createHmac('sha256', signing).update(body, 'utf8').digest('hex');
+
+        const rejected = await fetch('http://127.0.0.1:13905/cb', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-webhook-signature': 'deadbeef' },
+          body,
+        });
+        expect(rejected.status).toBe(401);
+
+        const accepted = await fetch('http://127.0.0.1:13905/cb', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-webhook-signature': `sha256=${good}`,
+          },
+          body,
+        });
+        expect(accepted.ok).toBe(true);
+      } finally {
+        await server.stop();
+      }
+    });
+
+    // #249: refuse to start unauthenticated off-loopback (matches control server).
+    it('refuses to start off-loopback without a secret or signingSecret', async () => {
+      const exposed = new WebhookServer(
+        { port: 13906, host: '0.0.0.0', verbose: false },
+        new MemoryWebhookStore()
+      );
+      await expect(exposed.start()).rejects.toThrow(/Refusing to start/);
     });
   });
 

@@ -147,6 +147,19 @@ export interface FetchHeartbeatPayload {
   hasMore: boolean;
 }
 
+/**
+ * A paginated fetch stopped early because a safety cap fired, so the result is a
+ * partial view of the source. Emitted so downstream truncation handling (a
+ * skipped sync checkpoint) is visible in observability, not just the debug log.
+ */
+export interface FetchTruncatedPayload {
+  source: string;
+  path: string;
+  reason: 'page-cap' | 'item-cap';
+  pagesFetched: number;
+  itemsFetched: number;
+}
+
 // ============================================================================
 // Data Flow Events
 // ============================================================================
@@ -316,6 +329,7 @@ export type EventType =
   | 'fetch.retry'
   | 'fetch.error'
   | 'fetch.heartbeat'
+  | 'fetch.truncated'
   // Data operations
   | 'data.transform'
   | 'data.validate'

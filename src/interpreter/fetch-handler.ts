@@ -58,6 +58,13 @@ export interface FetchHandlerDeps {
     }) => Promise<void>;
     maxItemsPerRun?: number;
   };
+  /**
+   * Default caps for non-backfill pagination (memory/runaway safety). A per-step
+   * `paginate.maxPages` / `paginate.maxItems` overrides these; both fall back to
+   * the module defaults. When a cap fires the result is flagged truncated.
+   */
+  maxPaginationPages?: number;
+  maxPaginationItems?: number;
 }
 
 export interface FetchResult {
@@ -65,6 +72,20 @@ export interface FetchResult {
   checkpointKey?: string;
   /** Response status, so `match` arms can dispatch on an allowed status. */
   status?: number;
+  /**
+   * Set when pagination stopped early because a safety cap fired, so the fetched
+   * data is a *partial* view of what the source holds. A sync checkpoint MUST
+   * NOT advance past a truncated result: the un-fetched records predate the new
+   * watermark and would never be requested again. See #246.
+   */
+  truncated?: TruncationInfo;
+}
+
+/** Why a paginated fetch stopped early, and how far it got. */
+export interface TruncationInfo {
+  reason: 'page-cap' | 'item-cap';
+  pagesFetched: number;
+  itemsFetched: number;
 }
 
 /**
@@ -119,6 +140,7 @@ export class FetchHandler {
     // Execute with or without pagination
     let data: unknown;
     let pagesFetched: number | undefined;
+    let truncated: TruncationInfo | undefined;
     let statusCode = 200;
 
     try {
@@ -134,6 +156,7 @@ export class FetchHandler {
           sinceHeaders
         );
         data = result.items;
+        truncated = result.truncated;
         pagesFetched = result.pages;
       } else {
         const body = step.body ? evaluate(step.body, this.deps.ctx) : undefined;
@@ -172,6 +195,25 @@ export class FetchHandler {
         ms,
         path: resolved.path,
       });
+
+      // Truncation is a partial-data condition, not an error: surface it in
+      // observability (not just the debug log) so a checkpoint that gets skipped
+      // downstream is explained, and a run that returns fewer records than the
+      // source holds is visible.
+      if (truncated) {
+        this.deps.emit?.('fetch.truncated', {
+          source: resolved.sourceName,
+          path: resolved.path,
+          reason: truncated.reason,
+          pagesFetched: truncated.pagesFetched,
+          itemsFetched: truncated.itemsFetched,
+        });
+        this.deps.log(
+          `Pagination truncated (${truncated.reason}) after ${truncated.pagesFetched} pages / ` +
+            `${truncated.itemsFetched} items — result is partial; sync checkpoint will not advance.`,
+          { path: resolved.path }
+        );
+      }
     } catch (error) {
       // Emit fetch.error event
       this.deps.emit?.('fetch.error', {
@@ -183,7 +225,7 @@ export class FetchHandler {
       throw error;
     }
 
-    return { data, checkpointKey, status: statusCode };
+    return { data, checkpointKey, status: statusCode, truncated };
   }
 
   private isRetryableError(error: unknown): boolean {
@@ -383,7 +425,7 @@ export class FetchHandler {
     operationId?: string,
     sinceQuery: Record<string, string> = {},
     sinceHeaders: Record<string, string> = {}
-  ): Promise<{ items: unknown[]; pages: number }> {
+  ): Promise<{ items: unknown[]; pages: number; truncated?: TruncationInfo }> {
     const allResults: unknown[] = [];
     const paginate = step.paginate!;
     const strategy = createPaginationStrategy(paginate);
@@ -406,13 +448,25 @@ export class FetchHandler {
       this.deps.log(`Resuming backfill from page ${ctx.page + 1}`);
     }
 
-    // Per-run item cap. For a backfill this bounds memory per run: when hit, the
-    // run stops *incomplete* and a later resume continues — so an arbitrarily
-    // large backfill completes across runs without buffering it all at once.
-    const itemCap = backfill?.maxItemsPerRun ?? MAX_PAGINATION_ITEMS;
+    // A cap only means "clean stop-and-resume boundary" when progress is
+    // actually being persisted (durable backfill). Otherwise the run has no
+    // resume, so hitting a cap truncates the result and must be surfaced — never
+    // silently treated as the end of the data (#246).
+    const resumable = !!(step.backfill && backfill?.onPage);
+
+    // Per-run caps. Precedence: explicit per-step option, then the runtime
+    // default, then the module default. For a backfill the item cap also comes
+    // from `maxItemsPerRun` (bounds memory per resumable run).
+    const pageCap = paginate.maxPages ?? this.deps.maxPaginationPages ?? MAX_PAGINATION_PAGES;
+    const itemCap =
+      backfill?.maxItemsPerRun ??
+      paginate.maxItems ??
+      this.deps.maxPaginationItems ??
+      MAX_PAGINATION_ITEMS;
 
     let hasMore = true;
     let stoppedByCap = false;
+    let truncated: TruncationInfo | undefined;
 
     while (hasMore) {
       // Build query with pagination params
@@ -457,17 +511,35 @@ export class FetchHandler {
         hasMore = false;
       }
 
-      // Memory safety: cap total accumulated items, not just page count. For a
-      // backfill this is a clean stop-and-resume boundary, not an end of data.
-      if (allResults.length >= itemCap) {
+      // Safety caps. Checked while there is still more data to fetch, so a
+      // natural end that happens to land exactly on a cap is not misreported as
+      // truncation. A resumable backfill records this as a stop-and-resume
+      // boundary (done:false); a non-resumable run marks the result truncated.
+      if (hasMore && allResults.length >= itemCap) {
         this.deps.log(`Pagination item limit (${itemCap}) reached`);
-        if (hasMore) stoppedByCap = true;
         hasMore = false;
+        if (resumable) stoppedByCap = true;
+        else
+          truncated = {
+            reason: 'item-cap',
+            pagesFetched: ctx.page,
+            itemsFetched: allResults.length,
+          };
+      } else if (hasMore && ctx.page >= pageCap) {
+        this.deps.log(`Pagination page limit (${pageCap}) reached`);
+        hasMore = false;
+        if (resumable) stoppedByCap = true;
+        else
+          truncated = {
+            reason: 'page-cap',
+            pagesFetched: ctx.page,
+            itemsFetched: allResults.length,
+          };
       }
 
       // Record this page's position for a resumable backfill. `done` is the
-      // natural end of pagination — never set when we stopped on the item cap,
-      // so a resume knows to continue rather than treat the backfill as finished.
+      // natural end of pagination — never set when a cap stopped us early, so a
+      // resume continues rather than treating the backfill as finished.
       if (step.backfill && backfill?.onPage) {
         await backfill.onPage({
           page: ctx.page,
@@ -485,16 +557,10 @@ export class FetchHandler {
         itemsFetched: allResults.length,
         hasMore,
       });
-
-      // Safety limit
-      if (ctx.page >= MAX_PAGINATION_PAGES) {
-        this.deps.log(`Warning: pagination limit (${MAX_PAGINATION_PAGES}) reached`);
-        hasMore = false;
-      }
     }
 
     this.deps.log(`Fetched ${allResults.length} total items`);
-    return { items: allResults, pages: ctx.page };
+    return { items: allResults, pages: ctx.page, truncated };
   }
 
   private countRecords(data: unknown): number | undefined {

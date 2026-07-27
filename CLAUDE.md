@@ -85,8 +85,9 @@ yourself before pushing.
 Key constructs:
 - `mission` - Pipeline definition
 - `source` - API source with auth (oauth2, bearer, basic, api_key, none), or from OAS spec.
-  Only `bearer` and `oauth2` are wired to a provider; `basic` and `api_key` parse but
-  attach nothing, so those requests go out unauthenticated (see
+  All four auth types are wired to a provider (`bearer`, `oauth2`, `basic`,
+  `api_key`); an auth type configured without its required credentials throws
+  rather than sending an unauthenticated request (see
   `SourceManager.createAuthProvider`)
 - `proxy: [...]` - Egress proxy pool on a source, rotated per request attempt; rate limit and circuit breaker state are keyed per proxy (needs optional peer dep `undici`)
 - `store` - Storage target (memory, file, postgrest; sql/nosql need `--dev` to fall back to files)

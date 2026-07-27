@@ -86,6 +86,13 @@ export const CIRCUIT_BREAKER_DEFAULTS = {
   FAILURE_STATUS_CODES: [500, 501, 502, 503, 504] as readonly number[],
   /** Whether to count network errors as failures */
   COUNT_NETWORK_ERRORS: true,
+  /**
+   * Time in milliseconds a half-open probe may be outstanding before another
+   * probe is admitted. Bounds the impact of a lost probe release (e.g. a
+   * request that threw before reporting its outcome), so the breaker self-heals
+   * instead of wedging permanently in half-open.
+   */
+  PROBE_TIMEOUT_MS: 30000,
 } as const;
 
 // ============================================

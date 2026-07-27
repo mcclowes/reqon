@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { HttpClient, BearerAuthProvider, OAuth2AuthProvider, parseRetryAfterMs } from './http.js';
+import {
+  HttpClient,
+  BearerAuthProvider,
+  OAuth2AuthProvider,
+  BasicAuthProvider,
+  ApiKeyAuthProvider,
+  parseRetryAfterMs,
+} from './http.js';
 
 describe('parseRetryAfterMs', () => {
   const MAX = 60_000;
@@ -197,6 +204,60 @@ describe('HttpClient', () => {
       await client.request({ method: 'GET', path: '/users' });
 
       expect(capturedHeaders['Authorization']).toBe('Bearer test-token');
+    });
+
+    it('sends HTTP Basic auth from a BasicAuthProvider (#200)', async () => {
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        auth: new BasicAuthProvider('alice', 's3cret'),
+      });
+      let capturedHeaders: Record<string, string> = {};
+      globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      await client.request({ method: 'GET', path: '/users' });
+
+      const expected = `Basic ${Buffer.from('alice:s3cret').toString('base64')}`;
+      expect(capturedHeaders['Authorization']).toBe(expected);
+    });
+
+    it('sends an API key in a header from an ApiKeyAuthProvider (#200)', async () => {
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        auth: new ApiKeyAuthProvider('key-123'),
+      });
+      let capturedHeaders: Record<string, string> = {};
+      globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      await client.request({ method: 'GET', path: '/users' });
+
+      expect(capturedHeaders['X-API-Key']).toBe('key-123');
+    });
+
+    it('sends an API key in a query param when configured (#200)', async () => {
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        auth: new ApiKeyAuthProvider('key-123', { name: 'apikey', location: 'query' }),
+      });
+      let capturedUrl = '';
+      let capturedHeaders: Record<string, string> = {};
+      globalThis.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        capturedUrl = url.toString();
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      await client.request({ method: 'GET', path: '/users', query: { page: '1' } });
+
+      expect(capturedUrl).toContain('apikey=key-123');
+      expect(capturedUrl).toContain('page=1');
+      // A query-param key must not also leak into an Authorization header.
+      expect(capturedHeaders['Authorization']).toBeUndefined();
     });
   });
 
@@ -659,5 +720,38 @@ describe('OAuth2AuthProvider', () => {
     expect(callCount).toBe(2);
 
     globalThis.fetch = originalFetch;
+  });
+});
+
+describe('BasicAuthProvider (#200)', () => {
+  it('base64-encodes username:password into a Basic header', async () => {
+    const provider = new BasicAuthProvider('alice', 'p@ss:word');
+    const contribution = await provider.applyAuth();
+    const expected = Buffer.from('alice:p@ss:word').toString('base64');
+    expect(contribution.headers?.['Authorization']).toBe(`Basic ${expected}`);
+    expect(await provider.getToken()).toBe(expected);
+  });
+});
+
+describe('ApiKeyAuthProvider (#200)', () => {
+  it('defaults to the X-API-Key header', async () => {
+    const provider = new ApiKeyAuthProvider('secret-key');
+    const contribution = await provider.applyAuth();
+    expect(contribution.headers).toEqual({ 'X-API-Key': 'secret-key' });
+    expect(contribution.query).toBeUndefined();
+  });
+
+  it('uses a custom header name', async () => {
+    const provider = new ApiKeyAuthProvider('secret-key', { name: 'Api-Token' });
+    const contribution = await provider.applyAuth();
+    expect(contribution.headers).toEqual({ 'Api-Token': 'secret-key' });
+  });
+
+  it('places the key in a query param when location is query', async () => {
+    const provider = new ApiKeyAuthProvider('secret-key', { location: 'query' });
+    const contribution = await provider.applyAuth();
+    // Default query param name is api_key.
+    expect(contribution.query).toEqual({ api_key: 'secret-key' });
+    expect(contribution.headers).toBeUndefined();
   });
 });

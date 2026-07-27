@@ -16,6 +16,8 @@ import {
   HttpClient,
   BearerAuthProvider,
   OAuth2AuthProvider,
+  BasicAuthProvider,
+  ApiKeyAuthProvider,
   type AuthProvider,
   type RetryInfo,
 } from './http.js';
@@ -26,13 +28,23 @@ import { ProxyPool, type ProxyAgentFactory } from './proxy.js';
 import { evaluate } from './evaluator.js';
 
 export interface AuthConfig {
-  type: 'bearer' | 'oauth2' | 'none';
+  type: 'bearer' | 'oauth2' | 'basic' | 'api_key' | 'none';
   token?: string;
   accessToken?: string;
   refreshToken?: string;
   tokenEndpoint?: string;
   clientId?: string;
   clientSecret?: string;
+  /** API key value (type: api_key) */
+  apiKey?: string;
+  /** Header or query param name carrying the API key (type: api_key) */
+  headerName?: string;
+  /** Where the API key travels (type: api_key). Default: 'header'. */
+  apiKeyLocation?: 'header' | 'query';
+  /** Username (type: basic) */
+  username?: string;
+  /** Password (type: basic) */
+  password?: string;
 }
 
 export interface SourceManagerConfig {
@@ -223,7 +235,43 @@ export class SourceManager {
       });
     }
 
-    return undefined;
+    if (authConfig.type === 'basic') {
+      if (!authConfig.username || authConfig.password === undefined) {
+        throw new Error(
+          `Source '${sourceName}': basic auth requires 'username' and 'password'. ` +
+            `Set REQON_${sourceName.toUpperCase()}_USERNAME and _PASSWORD, or the auth config equivalents.`
+        );
+      }
+      return new BasicAuthProvider(authConfig.username, authConfig.password);
+    }
+
+    if (authConfig.type === 'api_key') {
+      if (!authConfig.apiKey) {
+        throw new Error(
+          `Source '${sourceName}': api_key auth requires 'apiKey'. ` +
+            `Set REQON_${sourceName.toUpperCase()}_API_KEY, or the auth config equivalent.`
+        );
+      }
+      return new ApiKeyAuthProvider(authConfig.apiKey, {
+        name: authConfig.headerName,
+        location: authConfig.apiKeyLocation,
+      });
+    }
+
+    if (authConfig.type === 'none') {
+      return undefined;
+    }
+
+    // A configured-but-unhandled auth type (or one missing its credentials, e.g.
+    // bearer with no token) must fail loudly rather than fall through to an
+    // unauthenticated request — the exact silent-drop #200 was about. `none` and
+    // the fully-populated cases above are the only ways to reach a request
+    // without an Authorization contribution.
+    throw new Error(
+      `Source '${sourceName}': auth type '${authConfig.type}' is configured but its ` +
+        `credentials are missing or the type is unsupported. Refusing to send an ` +
+        `unauthenticated request. Provide the required credentials or set auth to 'none'.`
+    );
   }
 
   private async resolveBaseUrl(source: SourceDefinition): Promise<string> {

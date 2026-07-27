@@ -6,9 +6,9 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { parse as parseUrl } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { setLongTimeout, type LongTimeout } from '../utils/long-timeout.js';
+import { safeEqual, verifyHmacSignature } from '../utils/crypto-safe.js';
 import type {
   WebhookServerConfig,
   WebhookServerCallbacks,
@@ -58,6 +58,9 @@ export class WebhookServer {
       defaultTimeout: config.defaultTimeout ?? WEBHOOK_DEFAULTS.DEFAULT_TIMEOUT_MS,
       verbose: config.verbose ?? false,
       secret: config.secret ?? '',
+      signingSecret: config.signingSecret ?? '',
+      signatureHeader: config.signatureHeader ?? 'x-webhook-signature',
+      allowedMethods: (config.allowedMethods ?? ['POST', 'PUT']).map((m) => m.toUpperCase()),
       maxBodyBytes: config.maxBodyBytes ?? WEBHOOK_DEFAULTS.MAX_BODY_BYTES,
     };
     this.store = store ?? new MemoryWebhookStore();
@@ -70,11 +73,15 @@ export class WebhookServer {
   async start(): Promise<void> {
     if (this.running) return;
 
-    // Warn loudly if exposing an unauthenticated webhook server off-host.
-    if (!this.isLoopback(this.config.host) && !this.config.secret) {
-      console.warn(
-        `[Webhook] WARNING: binding to ${this.config.host} with no secret — ` +
-          `anyone who can reach the port can inject events.`
+    // Hard-refuse to expose an unauthenticated webhook server off-loopback. The
+    // one component reachable from the public internet must be at least as
+    // strict as the localhost-only control server, which also refuses. Bind to
+    // loopback, or set `secret` and/or `signingSecret`.
+    if (!this.isLoopback(this.config.host) && !this.config.secret && !this.config.signingSecret) {
+      throw new Error(
+        `[Webhook] Refusing to start: binding to non-loopback host "${this.config.host}" ` +
+          `with neither a secret nor a signingSecret would let anyone who can reach the port ` +
+          `inject events and resolve pending waits. Set a secret/signingSecret or bind to loopback.`
       );
     }
 
@@ -279,13 +286,29 @@ export class WebhookServer {
    * Handle incoming HTTP request
    */
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const url = parseUrl(req.url ?? '/', true);
-    const path = url.pathname ?? '/';
+    // WHATWG URL, not the deprecated url.parse() (DEP0169: security implications,
+    // no CVEs issued). req.url is path-only, so resolve against a dummy origin.
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    const path = url.pathname;
+    const method = (req.method ?? 'GET').toUpperCase();
 
-    // Health check endpoint
+    // Health check endpoint — safe GET only.
     if (path === '/health' || path === '/_health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
+      return;
+    }
+
+    // Method allowlist. A GET/HEAD (crawler, link-preview bot, scanner, browser
+    // unfurl) must never count as a delivered event and resolve a pending wait,
+    // so only the configured mutating methods proceed. Everything else is 405.
+    if (!this.config.allowedMethods.includes(method)) {
+      res.writeHead(405, {
+        'Content-Type': 'application/json',
+        Allow: this.config.allowedMethods.join(', '),
+      });
+      res.end(JSON.stringify({ error: 'Method not allowed', method }));
+      this.drain(req);
       return;
     }
 
@@ -294,6 +317,7 @@ export class WebhookServer {
     if (!registration) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found', path }));
+      this.drain(req);
       return;
     }
 
@@ -302,13 +326,15 @@ export class WebhookServer {
       res.writeHead(410, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Webhook registration expired' }));
       await this.store.deleteRegistration(registration.id);
+      this.drain(req);
       return;
     }
 
-    // Require the shared secret if one is configured.
-    if (this.config.secret && !this.authorized(req, url.query)) {
+    // Require the shared secret if one is configured (channel authentication).
+    if (this.config.secret && !this.authorized(req)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Unauthorized' }));
+      this.drain(req);
       return;
     }
 
@@ -319,13 +345,30 @@ export class WebhookServer {
       rawBody = await this.readBody(req);
     } catch (error) {
       if ((error as { code?: string }).code === 'BODY_TOO_LARGE') {
-        res.writeHead(413, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Request body too large' }));
+        // Rejecting a request means closing it: once the 413 has flushed,
+        // destroy the socket so a still-uploading oversized body doesn't linger
+        // until the socket timeout. The end callback fires after the flush, so
+        // the client reliably sees the 413 before the connection drops.
+        res.writeHead(413, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({ error: 'Request body too large' }), () => req.destroy());
         return;
       }
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Failed to read request body' }));
+      res.writeHead(400, { 'Content-Type': 'application/json', Connection: 'close' });
+      res.end(JSON.stringify({ error: 'Failed to read request body' }), () => req.destroy());
       return;
+    }
+
+    // Verify the per-payload HMAC signature if a signing secret is configured
+    // (message authentication over the raw body). Done before parsing so the
+    // bytes signed are exactly the bytes received.
+    if (this.config.signingSecret) {
+      const provided = req.headers[this.config.signatureHeader];
+      const signature = Array.isArray(provided) ? (provided[0] ?? '') : (provided ?? '');
+      if (!verifyHmacSignature(this.config.signingSecret, rawBody, signature)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid signature' }));
+        return;
+      }
     }
 
     // Parse request body
@@ -345,32 +388,38 @@ export class WebhookServer {
       body = rawBody;
     }
 
-    // Create event
+    // Create event. `?a=1&a=2` yields a string[] from searchParams; collapse to
+    // the last value so the Record<string, string> type is not a lie.
+    const query: Record<string, string> = {};
+    for (const [key, value] of url.searchParams) {
+      query[key] = value;
+    }
+
     const event: WebhookEvent = {
       id: randomUUID(),
       registrationId: registration.id,
       receivedAt: new Date(),
-      method: req.method ?? 'POST',
+      method,
       headers: this.extractHeaders(req),
       body,
       rawBody,
-      query: url.query as Record<string, string>,
+      query,
     };
 
-    // Save event
+    // Save event, then atomically bump the counter. The atomic increment avoids
+    // the lost-update race of read-here / save-after-await when two deliveries
+    // arrive concurrently (#249).
     await this.store.saveEvent(event);
-    registration.receivedEvents++;
-    await this.store.saveRegistration(registration);
+    const updated = (await this.store.incrementReceivedEvents(registration.id)) ?? registration;
+    const receivedEvents = updated.receivedEvents;
 
-    this.log(
-      `Webhook received: ${path} (${registration.receivedEvents}/${registration.expectedEvents})`
-    );
+    this.log(`Webhook received: ${path} (${receivedEvents}/${registration.expectedEvents})`);
     this.callbacks.onWebhookReceived?.(event);
 
     // Check if all expected events received
-    if (registration.receivedEvents >= registration.expectedEvents) {
+    if (receivedEvents >= registration.expectedEvents) {
       const events = await this.store.getEvents(registration.id);
-      this.callbacks.onRegistrationComplete?.(registration, events);
+      this.callbacks.onRegistrationComplete?.(updated, events);
 
       // Resolve every pending waiter for this registration.
       const waiters = this.pendingWaits.get(registration.id);
@@ -389,7 +438,7 @@ export class WebhookServer {
       JSON.stringify({
         success: true,
         eventId: event.id,
-        received: registration.receivedEvents,
+        received: receivedEvents,
         expected: registration.expectedEvents,
       })
     );
@@ -432,16 +481,24 @@ export class WebhookServer {
   }
 
   /**
-   * Validate the shared secret from Authorization bearer, X-Webhook-Token
-   * header, or a `token` query param.
+   * Discard any remaining request body on an early rejection so the socket can
+   * be reused (or closed) instead of lingering with an unread stream.
    */
-  private authorized(req: IncomingMessage, query: Record<string, unknown>): boolean {
+  private drain(req: IncomingMessage): void {
+    req.resume();
+  }
+
+  /**
+   * Validate the shared secret from the `Authorization: Bearer` or
+   * `X-Webhook-Token` header, in constant time. Headers only — the secret is
+   * never read from a query param, which would leak it into logs and Referers.
+   */
+  private authorized(req: IncomingMessage): boolean {
     const secret = this.config.secret;
     const auth = req.headers.authorization;
-    if (auth === `Bearer ${secret}`) return true;
+    if (typeof auth === 'string' && safeEqual(auth, `Bearer ${secret}`)) return true;
     const tokenHeader = req.headers['x-webhook-token'];
-    if (tokenHeader === secret) return true;
-    if (typeof query.token === 'string' && query.token === secret) return true;
+    if (typeof tokenHeader === 'string' && safeEqual(tokenHeader, secret)) return true;
     return false;
   }
 

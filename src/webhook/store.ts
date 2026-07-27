@@ -15,6 +15,13 @@ import type { WebhookRegistration, WebhookEvent } from './types.js';
 export interface WebhookStore {
   /** Save a webhook registration */
   saveRegistration(registration: WebhookRegistration): Promise<void>;
+  /**
+   * Atomically increment a registration's `receivedEvents` and return the
+   * updated registration (or undefined if it no longer exists). Replaces the
+   * read-modify-write in the request handler, whose `await` between load and
+   * save let two concurrent deliveries lose an increment (#249).
+   */
+  incrementReceivedEvents(id: string): Promise<WebhookRegistration | undefined>;
   /** Get a registration by ID */
   getRegistration(id: string): Promise<WebhookRegistration | undefined>;
   /** Get a registration by path */
@@ -44,6 +51,15 @@ export class MemoryWebhookStore implements WebhookStore {
   async saveRegistration(registration: WebhookRegistration): Promise<void> {
     this.registrations.set(registration.id, registration);
     this.pathIndex.set(registration.path, registration.id);
+  }
+
+  async incrementReceivedEvents(id: string): Promise<WebhookRegistration | undefined> {
+    // Atomic in a single-threaded runtime: the read and write happen with no
+    // intervening await, so concurrent deliveries can't lose an increment.
+    const reg = this.registrations.get(id);
+    if (!reg) return undefined;
+    reg.receivedEvents++;
+    return reg;
   }
 
   async getRegistration(id: string): Promise<WebhookRegistration | undefined> {
@@ -124,6 +140,18 @@ export class FileWebhookStore implements WebhookStore {
     await this.ensureInit();
     const filePath = join(this.registrationsDir, `${registration.id}.json`);
     await writeFile(filePath, JSON.stringify(registration, null, 2));
+  }
+
+  async incrementReceivedEvents(id: string): Promise<WebhookRegistration | undefined> {
+    // Best-effort within a single process: read, bump, persist. True
+    // cross-process atomicity would need file locking, but this at least keeps
+    // the whole read-modify-write in one method rather than split across the
+    // request handler with an await between load and save.
+    const reg = await this.getRegistration(id);
+    if (!reg) return undefined;
+    reg.receivedEvents++;
+    await this.saveRegistration(reg);
+    return reg;
   }
 
   async getRegistration(id: string): Promise<WebhookRegistration | undefined> {

@@ -241,6 +241,19 @@ export interface ExecutorConfig {
    * backfills. Defaults to the handler's built-in cap.
    */
   backfillMaxItemsPerRun?: number;
+  /**
+   * Default cap on pages fetched per (non-backfill) paginated run before
+   * pagination stops as *truncated*. A per-step `paginate.maxPages` overrides
+   * this. Truncation is surfaced (never silently advances a sync checkpoint).
+   * Defaults to the handler's built-in cap (100).
+   */
+  maxPaginationPages?: number;
+  /**
+   * Default cap on total items accumulated per paginated run before stopping as
+   * truncated. A per-step `paginate.maxItems` overrides this. Defaults to the
+   * handler's built-in cap (100_000).
+   */
+  maxPaginationItems?: number;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -1377,6 +1390,10 @@ export class MissionExecutor {
         this.executionLog && this.logExecutionId && stepId
           ? { executionId: this.logExecutionId, stepId }
           : undefined,
+      // Non-backfill pagination caps (memory/runaway safety). A cap firing marks
+      // the result truncated so the sync checkpoint below is skipped.
+      maxPaginationPages: this.config.maxPaginationPages,
+      maxPaginationItems: this.config.maxPaginationItems,
       // Resumable backfill: seed pagination from the log and record each page.
       pagination:
         step.backfill && this.executionLog && this.logExecutionId && stepId
@@ -1405,8 +1422,24 @@ export class MissionExecutor {
     ctx.response = result.data;
     ctx.responseStatus = result.status;
 
+    // A truncated result is a partial view of the source: pagination stopped at
+    // a safety cap with more records unfetched. Advancing the sync watermark now
+    // would step it past those records, which the next incremental run would
+    // never ask for again — permanent, silent data loss (#246). Skip the
+    // checkpoint; the truncation is already surfaced via the fetch.truncated
+    // event. The next run re-fetches from the same watermark.
+    if (result.truncated && result.checkpointKey && this.syncStore) {
+      this.log(
+        `Sync checkpoint '${result.checkpointKey}' NOT advanced: paginated fetch was truncated ` +
+          `(${result.truncated.reason}, ${result.truncated.itemsFetched} items over ` +
+          `${result.truncated.pagesFetched} pages). Raise the pagination cap or use backfill.`,
+        undefined,
+        'warn'
+      );
+    }
+
     // Defer the sync checkpoint until the fetched data is durably stored.
-    if (result.checkpointKey && this.syncStore) {
+    if (!result.truncated && result.checkpointKey && this.syncStore) {
       const key = result.checkpointKey;
       const data = result.data;
       this.scopeFor(ctx).pendingCheckpoints.push(async () => {
