@@ -123,7 +123,7 @@ mission ResilientDataFetch {
         store {
           event: "circuit_open",
           service: "PrimaryAPI",
-          timestamp: now(),
+          timestamp: timestamp(),
           action: "falling_back"
         } -> circuit_events { key: now() }
 
@@ -137,7 +137,7 @@ mission ResilientDataFetch {
           _ where .products != null -> {
             // Track fallback usage
             store {
-              timestamp: now(),
+              timestamp: timestamp(),
               primary_status: "circuit_open",
               fallback_used: "FallbackAPI",
               success: true
@@ -167,7 +167,7 @@ mission ResilientDataFetch {
             match response {
               _ where .data != null -> {
                 store {
-                  timestamp: now(),
+                  timestamp: timestamp(),
                   primary_status: "circuit_open",
                   fallback_used: "CacheAPI",
                   success: true,
@@ -195,7 +195,7 @@ mission ResilientDataFetch {
           // Fallback error (not circuit open)
           _ -> {
             store {
-              timestamp: now(),
+              timestamp: timestamp(),
               primary_status: "circuit_open",
               fallback_used: "FallbackAPI",
               success: false
@@ -237,7 +237,7 @@ mission ResilientDataFetch {
           store {
             event: "health_check_passed",
             service: source_name,
-            timestamp: now(),
+            timestamp: timestamp(),
             circuit_state: "closed"
           } -> circuit_events { key: source_name + "_" + now() }
         },
@@ -247,7 +247,7 @@ mission ResilientDataFetch {
           store {
             event: "circuit_open_detected",
             service: source_name,
-            timestamp: now(),
+            timestamp: timestamp(),
             opened_at: response.openedAt
           } -> circuit_events { key: source_name + "_" + now() }
         },
@@ -257,7 +257,7 @@ mission ResilientDataFetch {
           store {
             event: "health_check_failed",
             service: source_name,
-            timestamp: now()
+            timestamp: timestamp()
           } -> circuit_events { key: source_name + "_" + now() }
         }
       }
@@ -269,7 +269,10 @@ mission ResilientDataFetch {
   // ============================================================
 
   action GenerateResilienceReport {
-    let last_24h = now() - 86400000
+    // timestamp() is epoch milliseconds, so this arithmetic is valid; the
+    // stored `timestamp` fields below use timestamp() too, so the range
+    // filters compare like-for-like. (now() returns an ISO string for display.)
+    let last_24h = timestamp() - 86400000
 
     let circuit_opens = 0
     for event in circuit_events where .event == "circuit_open" and .timestamp > last_24h {

@@ -566,12 +566,18 @@ describe('FetchHandler', () => {
         },
       };
 
+      const emit = vi.fn();
+      deps.emit = emit;
       const handler = new FetchHandler(deps);
       const result = await handler.execute(step);
 
       expect(Array.isArray(result.data)).toBe(true);
       expect((result.data as unknown[]).length).toBe(6);
       expect(callCount).toBe(3);
+
+      // fetch.complete must report the real page count, not undefined.
+      const complete = emit.mock.calls.find((c) => c[0] === 'fetch.complete');
+      expect(complete?.[1]).toMatchObject({ pagesFetched: 3, recordCount: 6 });
     });
 
     it('fetches with page number pagination', async () => {

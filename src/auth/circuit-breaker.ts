@@ -290,8 +290,13 @@ export class CircuitBreaker {
   ): void {
     // Resolve config without forcing an entry — ignored failures (e.g. a 404)
     // must not allocate a permanent circuit for an otherwise-untracked endpoint.
+    // Mirror recordSuccess/getOrCreateEntry and fall back through the lane source
+    // (`api@host:port` -> `api`): http.ts keys the breaker per egress lane while
+    // the mission configures thresholds under the bare source name, so without
+    // this fallback a lane failure would silently use the default config and
+    // ignore a configured failureStatusCodes / countNetworkErrors.
     const existing = this.getEntry(source, endpoint);
-    const config = existing?.config ?? this.getEntry(source)?.config ?? this.defaultConfig;
+    const config = existing?.config ?? this.resolveConfig(source);
 
     // Check if this failure type should be counted
     const isFailureStatus =

@@ -1,66 +1,33 @@
 // Cross-Reference and Validate
+//
+// These checks cross-reference records that DO exist across stores, using a
+// nested `for ... in <store> where ...` join. (Detecting the *absence* of a
+// matching record — e.g. an order with no payment at all — needs an anti-join
+// the DSL can't express inline today, so those checks are omitted rather than
+// written in a way that silently flags every order.)
 
 action ValidateReconciliation {
-  // Check for orders without payments
-  for order in orders where .payment_status == "pending" and .created_at < now() - 259200000 {
-    let payment_exists = any of payments where .order_id == order.order_id,
-
-    match order {
-      _ where payment_exists != true -> {
-        store {
-          id: "disc_" + order.order_id + "_no_payment",
-          order_id: order.order_id,
-          type: "missing_payment",
-          severity: "high",
-          description: "Order older than 3 days has no matching Stripe payment",
-          shopify_value: order.total_amount,
-          stripe_value: null,
-          shipstation_value: null,
-          detected_at: now()
-        } -> discrepancies { key: .id, upsert: true }
-      }
-    }
-  },
-
-  // Check for payment/order amount mismatches
+  // Check for payment/order amount mismatches. `validate ... or { ... }` asserts
+  // the amounts agree and, on failure, runs the fallback block instead of
+  // aborting the mission — here recording a discrepancy and carrying on.
   for order in orders {
     for payment in payments where .order_id == order.order_id {
-      match order {
-        _ where payment.amount < order.total_amount - 0.01 or payment.amount > order.total_amount + 0.01 -> {
-          store {
-            id: "disc_" + order.order_id + "_amount_mismatch",
-            order_id: order.order_id,
-            type: "amount_mismatch",
-            severity: match true {
-              abs(order.total_amount - payment.amount) > 100 => "critical",
-              abs(order.total_amount - payment.amount) > 10 => "high",
-              _ => "medium"
-            },
-            description: "Order total does not match payment total",
-            shopify_value: order.total_amount,
-            stripe_value: payment.amount,
-            shipstation_value: null,
-            detected_at: now()
-          } -> discrepancies { key: .id, upsert: true }
-        }
-      }
-    }
-  },
-
-  // Check for shipped orders without shipment records
-  for order in orders where .fulfillment_status == "shipped" {
-    let shipment_exists = any of shipments where .order_id == order.order_id,
-
-    match order {
-      _ where shipment_exists != true -> {
+      validate payment {
+        assume .amount >= order.total_amount - 0.01
+        assume .amount <= order.total_amount + 0.01
+      } or {
         store {
-          id: "disc_" + order.order_id + "_no_shipment",
+          id: "disc_" + order.order_id + "_amount_mismatch",
           order_id: order.order_id,
-          type: "missing_shipment_record",
-          severity: "medium",
-          description: "Shopify shows fulfilled but no ShipStation shipment found",
-          shopify_value: order.fulfillment_status,
-          stripe_value: null,
+          type: "amount_mismatch",
+          severity: match true {
+            abs(order.total_amount - payment.amount) > 100 => "critical",
+            abs(order.total_amount - payment.amount) > 10 => "high",
+            _ => "medium"
+          },
+          description: "Order total does not match payment total",
+          shopify_value: order.total_amount,
+          stripe_value: payment.amount,
           shipstation_value: null,
           detected_at: now()
         } -> discrepancies { key: .id, upsert: true }

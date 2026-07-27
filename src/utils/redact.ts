@@ -23,17 +23,24 @@ export function isSensitiveKey(key: string): boolean {
  * replaced by {@link REDACTED}. Non-objects are returned unchanged. Cycles are
  * handled, and the input is never mutated.
  */
-export function redactSecrets<T>(value: T, seen: WeakSet<object> = new WeakSet()): T {
+export function redactSecrets<T>(value: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
   if (value === null || typeof value !== 'object') return value;
 
-  if (seen.has(value as object)) return value;
-  seen.add(value as object);
+  // Return the redacted copy already made for this object, not the original.
+  // Using a WeakMap (rather than a WeakSet) means a shared or cyclic reference
+  // resolves to its redacted clone instead of leaking the cleartext input.
+  const cached = seen.get(value as object);
+  if (cached !== undefined) return cached as T;
 
   if (Array.isArray(value)) {
-    return value.map((item) => redactSecrets(item, seen)) as unknown as T;
+    const arr: unknown[] = [];
+    seen.set(value as object, arr); // register before recursing so cycles resolve
+    for (const item of value) arr.push(redactSecrets(item, seen));
+    return arr as unknown as T;
   }
 
   const out: Record<string, unknown> = {};
+  seen.set(value as object, out); // register before recursing so cycles resolve
   for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
     out[key] = isSensitiveKey(key) ? REDACTED : redactSecrets(val, seen);
   }

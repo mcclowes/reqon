@@ -9,7 +9,7 @@ An e-commerce company needs to:
 2. Sync payments from Stripe (source of truth for payments)
 3. Sync shipments from ShipStation (source of truth for fulfillment)
 4. Cross-reference and validate all three data sources
-5. Flag discrepancies (unpaid orders, missing shipments, refund mismatches)
+5. Flag discrepancies (amount mismatches, refund mismatches)
 6. Store reconciled data with audit trail
 7. Handle rate limits, retries, and pagination across all APIs
 8. Run daily with incremental sync
@@ -121,18 +121,24 @@ function transformOrder(order: ShopifyOrder): UnifiedOrder {
 
 ### 4. Validation Rules
 
-**Reqon** (5 lines):
+**Reqon** — a nested `for` join plus `validate ... or` to record a discrepancy
+and carry on instead of aborting:
 ```vague
-validate order {
-  assume payment_exists == true
-} or {
-  store { type: "missing_payment", ... } -> discrepancies { ... }
+for order in orders {
+  for payment in payments where .order_id == order.order_id {
+    validate payment {
+      assume .amount >= order.total_amount - 0.01
+      assume .amount <= order.total_amount + 0.01
+    } or {
+      store { type: "amount_mismatch", ... } -> discrepancies { ... }
+    }
+  }
 }
 ```
 
-**Temporal** (50+ lines):
+**Temporal** (50+ lines) — the same cross-source check, hand-written:
 ```typescript
-export async function validateOrdersHavePayments(
+export async function validateOrderAmounts(
   orders: UnifiedOrder[],
   payments: UnifiedPayment[]
 ): Promise<Discrepancy[]> {
@@ -145,14 +151,11 @@ export async function validateOrdersHavePayments(
     paymentsByOrderId.set(payment.order_id, existing);
   }
 
-  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-
   for (const order of orders) {
-    if (order.payment_status === 'pending' && order.created_at < threeDaysAgo) {
-      const orderPayments = paymentsByOrderId.get(order.order_id);
-      if (!orderPayments || orderPayments.length === 0) {
+    for (const payment of paymentsByOrderId.get(order.order_id) || []) {
+      if (Math.abs(payment.amount - order.total_amount) > 0.01) {
         discrepancies.push({
-          id: `disc_${order.order_id}_no_payment`,
+          id: `disc_${order.order_id}_amount_mismatch`,
           // ... more fields
         });
       }
