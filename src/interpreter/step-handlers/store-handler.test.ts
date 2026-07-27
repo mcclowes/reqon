@@ -5,6 +5,7 @@ import { StoreHandler } from './store-handler.js';
 import { createContext, setVariable } from '../context.js';
 import type { StepHandlerDeps } from './types.js';
 import { MemoryStore } from '../../stores/memory.js';
+import { RuntimeError } from '../../errors/index.js';
 
 describe('StoreHandler', () => {
   let deps: StepHandlerDeps;
@@ -491,6 +492,69 @@ describe('StoreHandler', () => {
 
       // Individual update calls should be made
       expect(updateSpy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // Issue #280: a non-array store source used to be cast straight to Record and
+  // dereferenced, so a null/empty body threw a raw TypeError and a scalar threw
+  // an opaque one - both bypassing the deliberate RuntimeError path. Store
+  // errors also all claimed line 1, column 1.
+  describe('non-record sources', () => {
+    it('treats a null response as a no-op rather than throwing', async () => {
+      deps.ctx.response = null;
+
+      const step: StoreStep = {
+        type: 'StoreStep',
+        target: 'testStore',
+        source: { type: 'Identifier', name: 'response' } as Expression,
+        options: {},
+      };
+
+      await expect(new StoreHandler(deps).execute(step)).resolves.toBeUndefined();
+      expect(await store.count()).toBe(0);
+    });
+
+    it('treats an undefined source as a no-op', async () => {
+      const step: StoreStep = {
+        type: 'StoreStep',
+        target: 'testStore',
+        // References a variable that was never set -> evaluates to undefined.
+        source: { type: 'Identifier', name: 'missing' } as Expression,
+        options: {},
+      };
+
+      await expect(new StoreHandler(deps).execute(step)).resolves.toBeUndefined();
+      expect(await store.count()).toBe(0);
+    });
+
+    it('raises a RuntimeError (not a raw TypeError) for a scalar source', async () => {
+      deps.ctx.response = 'just a string';
+
+      const step: StoreStep = {
+        type: 'StoreStep',
+        target: 'testStore',
+        source: { type: 'Identifier', name: 'response' } as Expression,
+        options: {},
+      };
+
+      await expect(new StoreHandler(deps).execute(step)).rejects.toThrow(RuntimeError);
+      await expect(new StoreHandler(deps).execute(step)).rejects.toThrow(/object or array/i);
+      expect(await store.count()).toBe(0);
+    });
+
+    it('does not attach a confidently-wrong 1:1 location to store errors', async () => {
+      deps.ctx.response = { name: 'NoId' };
+
+      const step: StoreStep = {
+        type: 'StoreStep',
+        target: 'testStore',
+        source: { type: 'Identifier', name: 'response' } as Expression,
+        options: {},
+      };
+
+      await expect(new StoreHandler(deps).execute(step)).rejects.toSatisfy(
+        (err: unknown) => err instanceof RuntimeError && err.location === undefined
+      );
     });
   });
 });
