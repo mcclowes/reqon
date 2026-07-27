@@ -1,10 +1,8 @@
 /**
  * DSL fixtures of varying complexity for benchmarking.
  *
- * These are written in the same syntax the parser actually accepts - the same
- * dialect every example and parser test uses (`mission Name { ... }`, brace
- * blocks, `get`/`store ->`, `map x -> Schema { ... }`, guarded `match { }`).
- * `fixtures.test.ts` parses every one of them so they can't silently rot again.
+ * These must stay valid Reqon: `fixtures.test.ts` parses every one of them so
+ * they can't drift from the grammar the way they did before.
  */
 
 // Simple: minimal valid DSL
@@ -18,13 +16,8 @@ mission Simple {
   store results: memory("results")
 
   action FetchData {
-    get "/data" {
-      source: API
-    }
-
-    store response -> results {
-      key: .id
-    }
+    get "/data"
+    store response -> results { key: .id }
   }
 
   run FetchData
@@ -36,7 +29,12 @@ export const MEDIUM_DSL = `
 mission MediumComplexity {
   source API {
     auth: bearer,
-    base: "https://api.example.com"
+    base: "https://api.example.com",
+    rateLimit: {
+      strategy: pause,
+      maxWait: 60,
+      fallbackRpm: 100
+    }
   }
 
   store users: memory("users")
@@ -55,50 +53,42 @@ mission MediumComplexity {
   }
 
   action FetchUsers {
-    get "/users" {
-      source: API
-    }
+    get "/users"
 
     for user in response.data where .active == true {
       map user -> User {
-        id: user.id,
-        name: user.firstName + " " + user.lastName,
-        email: user.email
+        id: .id,
+        name: .firstName + " " + .lastName,
+        email: .email
       }
 
       validate response {
-        assume .id is string,
-        assume .name is string,
-        assume .email is string
+        assume .email != null
+        assume length(.name) > 0
       }
 
-      store response -> users {
-        key: .id
-      }
+      store response -> users { key: .id }
     }
   }
 
   action FetchOrders {
     get "/orders" {
-      source: API,
-      paginate: offset(offset, 50)
+      paginate: offset(offset, 50),
+      until: length(response) == 0
     }
 
-    for order in response.data {
+    for order in response {
       map order -> Order {
-        orderId: order.id,
-        total: order.amount * 100,
-        status: order.status
+        orderId: .id,
+        total: .amount * 100,
+        status: .status
       }
 
-      store response -> orders {
-        key: .orderId
-      }
+      store response -> orders { key: .orderId }
     }
   }
 
-  run FetchUsers
-    then FetchOrders
+  run FetchUsers then FetchOrders
 }
 `;
 
@@ -115,10 +105,10 @@ mission ComplexPipeline {
   }
 
   source SecondaryApi {
-    auth: api_key,
+    auth: bearer,
     base: "https://api.secondary.com",
     rateLimit: {
-      strategy: "throttle",
+      strategy: throttle,
       fallbackRpm: 50
     }
   }
@@ -133,23 +123,19 @@ mission ComplexPipeline {
     name: string,
     price: decimal,
     currency: string,
-    category: string,
-    tags: array
+    category: string
   }
 
   schema InventoryItem {
     sku: string,
     quantity: int,
-    warehouse: string,
-    lastUpdated: date
+    warehouse: string
   }
 
-  schema Combined {
+  schema CombinedItem {
     sku: string,
     name: string,
-    price: decimal,
     quantity: int,
-    warehouse: string,
     available: boolean,
     value: decimal
   }
@@ -158,85 +144,72 @@ mission ComplexPipeline {
     get "/products" {
       source: PrimaryApi,
       paginate: cursor(cursor, 100, "meta.next_cursor"),
+      until: length(response.items) == 0,
       since: lastSync,
       retry: {
         maxAttempts: 3,
         backoff: exponential,
-        initialDelay: 500
+        initialDelay: 1000
       }
     }
 
     for product in response.items where .status != "deleted" {
       map product -> Product {
-        sku: product.sku,
-        name: product.name,
-        price: product.price.amount,
-        currency: product.price.currency,
-        category: product.category.name,
-        tags: product.tags
+        sku: .sku,
+        name: .name,
+        price: .price.amount,
+        currency: .price.currency,
+        category: .category.name
       }
 
       validate response {
-        assume .sku is string,
-        assume .name is string,
-        assume .price is number,
+        assume length(.sku) > 0
         assume .price > 0
       }
 
-      store response -> products {
-        key: .sku
-      }
+      store response -> products { key: .sku }
     }
   }
 
   action FetchInventory {
     get "/inventory" {
       source: SecondaryApi,
-      paginate: page(page, 200)
+      paginate: page(page, 200),
+      until: length(response.data) == 0
     }
 
     for item in response.data {
       map item -> InventoryItem {
-        sku: item.productSku,
-        quantity: item.onHand,
-        warehouse: item.location.warehouse,
-        lastUpdated: item.updatedAt
+        sku: .productSku,
+        quantity: .onHand,
+        warehouse: .location.warehouse
       }
 
       validate response {
-        assume .sku is string,
-        assume .quantity is number,
         assume .quantity >= 0
       }
 
-      store response -> inventory {
-        key: .sku + "-" + .warehouse
-      }
+      store response -> inventory { key: .sku + "-" + .warehouse }
     }
   }
 
   action CombineData {
     for product in products {
       for inv in inventory where .sku == product.sku {
-        map inv -> Combined {
+        map inv -> CombinedItem {
           sku: product.sku,
           name: product.name,
-          price: product.price,
-          quantity: inv.quantity,
-          warehouse: inv.warehouse,
-          available: inv.quantity > 0,
-          value: product.price * inv.quantity
+          quantity: .quantity,
+          available: .quantity > 0,
+          value: product.price * .quantity
         }
 
-        store response -> combined {
-          key: product.sku + "-" + inv.warehouse
-        }
+        store response -> combined { key: .sku + "-" + .warehouse }
       }
     }
   }
 
-  run [FetchProducts, FetchInventory]
-    then CombineData
+  run [FetchProducts, FetchInventory] then CombineData
 }
 `;
 
@@ -251,123 +224,62 @@ mission Expressions {
   store results: memory("results")
 
   schema Computed {
-    sum: number,
-    product: number,
-    complex: number,
-    fullName: string,
     code: string,
+    sum: decimal,
+    product: decimal,
+    complex: decimal,
+    fullName: string,
     isValid: boolean,
     needsReview: boolean,
     complexCheck: boolean,
     tier: string,
-    nested1: number,
-    nested2: number,
-    final: number
+    nested1: string,
+    nested2: string,
+    final: decimal
   }
 
   action Calculate {
-    get "/data" {
-      source: API
-    }
+    get "/data"
 
     for item in response.items {
       map item -> Computed {
-        sum: item.a + item.b + item.c,
-        product: item.x * item.y * item.z,
-        complex: (item.a + item.b) * (item.c - item.d) / (item.e + 1),
+        // Arithmetic
+        sum: .a + .b + .c,
+        product: .x * .y * .z,
+        complex: (.a + .b) * (.c - .d) / (.e + 1),
 
-        fullName: item.firstName + " " + item.middleName + " " + item.lastName,
-        code: item.prefix + "-" + item.id + "-" + item.suffix,
+        // String operations
+        fullName: .firstName + " " + .middleName + " " + .lastName,
+        code: .prefix + "-" + .id + "-" + .suffix,
 
-        isValid: item.active == true and item.verified == true,
-        needsReview: item.score < 50 or item.flagged == true,
-        complexCheck: (item.type == "A" or item.type == "B") and item.status != "deleted",
+        // Boolean logic
+        isValid: .active == true and .verified == true,
+        needsReview: .score < 50 or .flagged == true,
+        complexCheck: (.type == "A" or .type == "B") and .status != "deleted",
 
-        tier: match item.score {
-          s where s >= 90 => "platinum",
-          s where s >= 70 => "gold",
-          s where s >= 50 => "silver",
+        // Match expression
+        tier: match .grade {
+          "A" => "platinum",
+          "B" => "gold",
+          "C" => "silver",
           _ => "bronze"
         },
 
-        nested1: item.level1.level2.level3.value,
-        nested2: item.data.items[0].nested.field,
+        // Nested access
+        nested1: .level1.level2.level3.value,
+        nested2: .data.items[0].nested.field,
 
-        final: (item.base * item.multiplier) + item.bonus - item.penalty
+        // Mixed
+        final: (.base * .multiplier) + .bonus - .penalty
       }
 
-      store response -> results {
-        key: item.id
-      }
+      store response -> results { key: .code }
     }
   }
 
   run Calculate
 }
 `;
-
-// Large: stress test with many actions and stores
-export function generateLargeDSL(actionCount: number = 20): string {
-  const stores = Array.from(
-    { length: actionCount },
-    (_, i) => `  store store${i}: memory("store${i}")`
-  ).join('\n');
-
-  const schemas = Array.from(
-    { length: actionCount },
-    (_, i) => `  schema Schema${i} {
-    id: string,
-    value${i}: number,
-    computed: number
-  }`
-  ).join('\n\n');
-
-  const actions = Array.from(
-    { length: actionCount },
-    (_, i) => `  action Action${i} {
-    get "/endpoint${i}" {
-      source: api,
-      paginate: offset(offset, 100)
-    }
-
-    for item in response.data where .active == true {
-      map item -> Schema${i} {
-        id: item.id,
-        value${i}: item.value * ${i + 1},
-        computed: item.a + item.b + ${i}
-      }
-
-      validate response {
-        assume .id is string,
-        assume .value${i} is number
-      }
-
-      store response -> store${i} {
-        key: .id
-      }
-    }
-  }`
-  ).join('\n\n');
-
-  const runSequence = Array.from({ length: actionCount }, (_, i) => `Action${i}`).join(', ');
-
-  return `
-mission LargeStressTest {
-  source api {
-    auth: bearer,
-    base: "https://api.example.com"
-  }
-
-${stores}
-
-${schemas}
-
-${actions}
-
-  run [${runSequence}]
-}
-`;
-}
 
 // Deeply nested expressions for evaluator stress testing
 export const DEEPLY_NESTED_EXPRESSIONS = `
@@ -380,22 +292,20 @@ mission NestedExpressions {
   store results: memory("results")
 
   schema Result {
-    result: number
+    id: string,
+    result: decimal
   }
 
   action Process {
-    get "/data" {
-      source: API
-    }
+    get "/data"
 
-    for item in response.items {
+    for item in response {
       map item -> Result {
-        result: ((((item.a + item.b) * (item.c + item.d)) + ((item.e - item.f) * (item.g - item.h))) * (((item.i + item.j) / (item.k + 1)) - ((item.l * item.m) + (item.n / (item.o + 1)))))
+        id: .id,
+        result: ((((.a + .b) * (.c + .d)) + ((.e - .f) * (.g - .h))) * (((.i + .j) / (.k + 1)) - ((.l * .m) + (.n / (.o + 1)))))
       }
 
-      store response -> results {
-        key: item.id
-      }
+      store response -> results { key: .id }
     }
   }
 
@@ -421,14 +331,12 @@ mission PatternMatching {
   }
 
   action Categorize {
-    get "/items" {
-      source: API
-    }
+    get "/items"
 
-    for item in response.items {
+    for item in response {
       map item -> Categorized {
-        id: item.id,
-        category: match item.type {
+        id: .id,
+        category: match .type {
           "A" => "category-a",
           "B" => "category-b",
           "C" => "category-c",
@@ -436,14 +344,14 @@ mission PatternMatching {
           "E" => "category-e",
           _ => "other"
         },
-        priority: match item.urgency {
-          u where u > 90 => "critical",
-          u where u > 70 => "high",
-          u where u > 50 => "medium",
-          u where u > 30 => "low",
+        priority: match .urgency {
+          "critical" => "p0",
+          "high" => "p1",
+          "medium" => "p2",
+          "low" => "p3",
           _ => "none"
         },
-        status: match item.state {
+        status: match .state {
           "pending" => "awaiting",
           "processing" => "in-progress",
           "completed" => "done",
@@ -453,15 +361,181 @@ mission PatternMatching {
         }
       }
 
-      store response -> results {
-        key: item.id
-      }
+      store response -> results { key: .id }
     }
   }
 
   run Categorize
 }
 `;
+
+// Store-only processing: no network, for benchmarking execution over pre-populated stores
+export const STORE_ONLY_DSL = `
+mission StoreProcessing {
+  store input: memory("input")
+  store output: memory("output")
+
+  schema Processed {
+    id: string,
+    fullName: string,
+    score: decimal,
+    category: string
+  }
+
+  action Process {
+    for item in input where .active == true {
+      map item -> Processed {
+        id: .id,
+        fullName: .firstName + " " + .lastName,
+        score: .value * 2,
+        category: match .tier {
+          "A" => "premium",
+          "B" => "standard",
+          _ => "basic"
+        }
+      }
+
+      validate response {
+        assume length(.id) > 0
+        assume .score >= 0
+      }
+
+      store response -> output { key: .id }
+    }
+  }
+
+  run Process
+}
+`;
+
+// Complex store processing: nested loops and multiple stores, still no network
+export const COMPLEX_STORE_DSL = `
+mission ComplexStoreProcessing {
+  store users: memory("users")
+  store orders: memory("orders")
+  store reports: memory("reports")
+
+  schema UserReport {
+    userId: string,
+    displayName: string,
+    tier: string,
+    eligible: boolean
+  }
+
+  schema OrderReport {
+    orderId: string,
+    userId: string,
+    total: decimal,
+    discount: decimal,
+    status: string
+  }
+
+  action ProcessUsers {
+    for user in users where .active == true {
+      map user -> UserReport {
+        userId: .id,
+        displayName: .firstName + " " + .lastName,
+        tier: match .tier {
+          "A" => "platinum",
+          "B" => "gold",
+          "C" => "silver",
+          _ => "bronze"
+        },
+        eligible: .verified == true and .age >= 18
+      }
+
+      validate response {
+        assume length(.userId) > 0
+      }
+
+      store response -> reports { key: .userId }
+    }
+  }
+
+  action ProcessOrders {
+    for order in orders {
+      for report in reports where .userId == order.userId {
+        map order -> OrderReport {
+          orderId: .id,
+          userId: .userId,
+          total: .amount * 100,
+          discount: match .status {
+            "completed" => .amount * 0.2,
+            "pending" => .amount * 0.15,
+            "cancelled" => .amount * 0.1,
+            _ => .amount * 0.05
+          },
+          status: .status
+        }
+
+        store response -> reports { key: .orderId, partial: true }
+      }
+    }
+  }
+
+  run ProcessUsers then ProcessOrders
+}
+`;
+
+// Large: stress test with many actions and stores
+export function generateLargeDSL(actionCount: number = 20): string {
+  const stores = Array.from(
+    { length: actionCount },
+    (_, i) => `  store store${i}: memory("store${i}")`
+  ).join('\n');
+
+  const actions = Array.from(
+    { length: actionCount },
+    (_, i) => `
+  action Action${i} {
+    get "/endpoint${i}" {
+      paginate: offset(offset, 100),
+      until: length(response.data) == 0
+    }
+
+    for item in response.data where .active == true {
+      map item -> Item {
+        id: .id,
+        value: .value * ${i + 1},
+        computed: .a + .b + ${i}
+      }
+
+      validate response {
+        assume length(.id) > 0
+        assume .value >= 0
+      }
+
+      store response -> store${i} { key: .id }
+    }
+  }
+`
+  ).join('\n');
+
+  const runSequence = Array.from({ length: actionCount }, (_, i) => `Action${i}`).join(', ');
+
+  return `
+mission LargeStressTest {
+  source API {
+    auth: bearer,
+    base: "https://api.example.com",
+    rateLimit: {
+      strategy: pause,
+      fallbackRpm: 1000
+    }
+  }
+
+  schema Item {
+    id: string,
+    value: decimal,
+    computed: decimal
+  }
+
+${stores}
+${actions}
+  run [${runSequence}]
+}
+`;
+}
 
 export const ALL_FIXTURES = {
   simple: SIMPLE_DSL,
@@ -470,4 +544,6 @@ export const ALL_FIXTURES = {
   expressionHeavy: EXPRESSION_HEAVY_DSL,
   deeplyNested: DEEPLY_NESTED_EXPRESSIONS,
   matchHeavy: MATCH_HEAVY_DSL,
+  storeOnly: STORE_ONLY_DSL,
+  complexStore: COMPLEX_STORE_DSL,
 };

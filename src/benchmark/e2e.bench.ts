@@ -12,124 +12,10 @@ import {
   COMPLEX_DSL,
   EXPRESSION_HEAVY_DSL,
   MATCH_HEAVY_DSL,
+  STORE_ONLY_DSL,
+  COMPLEX_STORE_DSL,
   generateLargeDSL,
 } from './fixtures.js';
-
-// DSL for benchmarking with pre-populated stores (no network)
-export const STORE_ONLY_DSL = `
-mission StoreProcessing {
-  store input: memory("input")
-  store output: memory("output")
-
-  schema Processed {
-    id: string,
-    fullName: string,
-    score: number,
-    category: string
-  }
-
-  action Process {
-    for item in input where .active == true {
-      map item -> Processed {
-        id: item.id,
-        fullName: item.firstName + " " + item.lastName,
-        score: item.value * 2,
-        category: match item.tier {
-          "A" => "premium",
-          "B" => "standard",
-          _ => "basic"
-        }
-      }
-
-      validate response {
-        assume .id is string,
-        assume .score is number
-      }
-
-      store response -> output {
-        key: .id
-      }
-    }
-  }
-
-  run Process
-}
-`;
-
-export const COMPLEX_STORE_DSL = `
-mission ComplexStoreProcessing {
-  store users: memory("users")
-  store orders: memory("orders")
-  store reports: memory("reports")
-
-  schema UserReport {
-    userId: string,
-    displayName: string,
-    tier: string,
-    eligible: boolean
-  }
-
-  schema OrderReport {
-    orderId: string,
-    userId: string,
-    total: number,
-    discount: number,
-    status: string
-  }
-
-  action ProcessUsers {
-    for user in users where .active == true {
-      map user -> UserReport {
-        userId: user.id,
-        displayName: user.firstName + " " + user.lastName,
-        tier: match user.score {
-          s where s >= 90 => "platinum",
-          s where s >= 70 => "gold",
-          s where s >= 50 => "silver",
-          _ => "bronze"
-        },
-        eligible: user.verified == true and user.age >= 18
-      }
-
-      validate response {
-        assume .userId is string,
-        assume .displayName is string
-      }
-
-      store response -> reports {
-        key: .userId
-      }
-    }
-  }
-
-  action ProcessOrders {
-    for order in orders {
-      for report in reports where .userId == order.userId {
-        map order -> OrderReport {
-          orderId: order.id,
-          userId: order.userId,
-          total: order.amount * 100,
-          discount: match report.tier {
-            "platinum" => order.amount * 0.2,
-            "gold" => order.amount * 0.15,
-            "silver" => order.amount * 0.1,
-            _ => order.amount * 0.05
-          },
-          status: order.status
-        }
-
-        store response -> reports {
-          key: .orderId,
-          upsert: true
-        }
-      }
-    }
-  }
-
-  run ProcessUsers
-    then ProcessOrders
-}
-`;
 
 // Generate test data for stores
 function generateUsers(count: number): Record<string, unknown>[] {
@@ -207,6 +93,9 @@ export async function runE2EBenchmarks(): Promise<void> {
   parseSuite.print();
 
   // Execution benchmarks with pre-populated stores
+  // These fixtures declare no source and issue no fetch, so they run for real
+  // rather than under dryRun - which skips every store write, and so would
+  // benchmark store processing without the stores.
   const execSuite = new BenchmarkSuite('Execute (with pre-populated stores)');
 
   // Small dataset (100 items)
@@ -224,7 +113,6 @@ export async function runE2EBenchmarks(): Promise<void> {
       const outputStore = new MemoryStore('output');
 
       await execute(STORE_ONLY_DSL, {
-        dryRun: true,
         stores: {
           input: inputStore,
           output: outputStore,
@@ -249,7 +137,6 @@ export async function runE2EBenchmarks(): Promise<void> {
       const outputStore = new MemoryStore('output');
 
       await execute(STORE_ONLY_DSL, {
-        dryRun: true,
         stores: {
           input: inputStore,
           output: outputStore,
@@ -275,7 +162,6 @@ export async function runE2EBenchmarks(): Promise<void> {
       }
 
       await execute(COMPLEX_STORE_DSL, {
-        dryRun: true,
         stores: {
           users: usersStore,
           orders: ordersStore,
@@ -301,7 +187,6 @@ export async function runE2EBenchmarks(): Promise<void> {
       }
 
       await execute(COMPLEX_STORE_DSL, {
-        dryRun: true,
         stores: {
           users: usersStore,
           orders: ordersStore,
