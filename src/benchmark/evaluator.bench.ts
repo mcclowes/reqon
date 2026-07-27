@@ -39,6 +39,9 @@ function createTestContext(): ExecutionContext {
     { id: 3, name: 'Item 3', price: 30 },
   ]);
 
+  // sum() needs numbers, not the objects in `items`
+  setVariable(ctx, 'prices', [10, 20, 30, 40, 50]);
+
   setVariable(ctx, 'a', 10);
   setVariable(ctx, 'b', 20);
   setVariable(ctx, 'c', 30);
@@ -215,7 +218,7 @@ export async function runEvaluatorBenchmarks(): Promise<void> {
   });
 
   suite.addSync('call-sum', () => {
-    return evaluate(call('sum', identifier('items')), ctx);
+    return evaluate(call('sum', identifier('prices')), ctx);
   });
 
   suite.addSync('call-first', () => {
