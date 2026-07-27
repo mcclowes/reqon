@@ -87,8 +87,11 @@ mission CustomerDataEnrichment {
           let total_orders = response.metrics.order_count
           let total_revenue = response.metrics.total_spent
           let avg_order_value = total_revenue / max(total_orders, 1)
-          // 86400000 = milliseconds in one day (now() and first_purchase are epoch millis)
-          let days_since_first = (now() - response.metrics.first_purchase) / 86400000
+          // 86400000 = milliseconds in one day. timestamp() is epoch millis (a
+          // number), so this subtraction is valid; first_purchase is assumed to
+          // be epoch millis too. (now() returns an ISO string, which can't be
+          // subtracted — use timestamp() for date arithmetic.)
+          let days_since_first = (timestamp() - response.metrics.first_purchase) / 86400000
           let purchase_frequency = total_orders / max(days_since_first / 30, 1)
 
           // Calculate customer lifetime value (simple model)

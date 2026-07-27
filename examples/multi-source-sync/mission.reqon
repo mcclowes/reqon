@@ -33,7 +33,6 @@ mission MultiSourceSync {
   // ============================================
 
   store orders: file("unified-orders")
-  store payments: file("unified-payments")
   store errors: file("sync-errors")
   store raw_orders: memory("raw_orders")
 
@@ -134,7 +133,9 @@ mission MultiSourceSync {
       source: "shopify",
       external_id: .id,
       customer_ref: .customer.id,
-      amount: parseDecimal(.total_price),
+      // Shopify's total_price is a string ("129.99"); parseNumber coerces it so
+      // it satisfies UnifiedOrder.amount (decimal).
+      amount: parseNumber(.total_price),
       currency: .currency,
       status: match .financial_status {
         "paid" => "paid",
@@ -142,7 +143,8 @@ mission MultiSourceSync {
         "refunded" => "refunded",
         _ => "unknown"
       },
-      created_at: parseDate(.created_at),
+      // Shopify's created_at is already an ISO-8601 string.
+      created_at: .created_at,
       synced_at: now()
     }
 

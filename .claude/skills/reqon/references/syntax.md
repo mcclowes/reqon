@@ -314,10 +314,34 @@ run [ActionA, ActionB] then [ActionC, ActionD] then ActionE
 
 ## Built-in Functions
 
-- `length(array)` - Array length
-- `now()` - Current timestamp
-- `env("VAR_NAME")` - Environment variable
-- `exists(store[key])` - Check if key exists in store
+Aggregation / arrays:
+- `length(array)` - Array (or string) length
+- `count(array)` - Same as length for arrays
+- `sum(array)` - Sum of a numeric array
+- `first(array)` / `last(array)` - First / last element
+- `range(end)` / `range(start, end)` - Build a numeric array (end-exclusive)
+
+Numbers:
+- `abs(n)`, `round(n)`, `floor(n)`, `ceil(n)`
+- `max(a, b, ...)` / `min(a, b, ...)` - Also accept a single array argument
+- `parseNumber(x)` - Coerce a value (e.g. a numeric string) to a number; `null` if unparseable
+
+Strings:
+- `concat(a, b, ...)` - Concatenate arguments as strings (`null`/`undefined` → `""`)
+
+Time:
+- `now()` - Current time as an ISO-8601 **string**
+- `timestamp()` - Current time as epoch **milliseconds** (a number) — use this for
+  date arithmetic; `now() - 86400000` throws because `now()` is a string
+- `fromUnix(seconds)` - Convert Unix epoch **seconds** to an ISO-8601 string
+
+Other:
+- `env("VAR_NAME")` - Environment variable (name must be a string literal)
+
+> There is **no** `exists()`, and a store cannot be read inside an expression:
+> `store[key]` lookups, `length(store)`, and `sum(store.field)` do not work
+> (a store is not a value in an expression). Read a store only by iterating it
+> with `for x in store where ...`.
 
 ## Expressions
 

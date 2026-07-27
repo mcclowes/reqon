@@ -27,6 +27,14 @@ mission SyncXeroInvoices {
     Invoices: array
   }
 
+  // NOTE: schema matching is *structural* (a value matches if it has the
+  // required fields with the right types; extra fields are ignored). These
+  // three error bodies are structurally identical, so a `match` can't tell them
+  // apart — the first arm whose schema matches wins, and the later arms are
+  // effectively unreachable for the same shape. Xero distinguishes them by HTTP
+  // status (429 / 404 / 401), which structural matching doesn't see. They are
+  // kept as separate names for readability; to branch on them reliably you would
+  // match on status or on a discriminating body field.
   schema XeroRateLimitError {
     Message: string,
     Type: string

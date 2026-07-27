@@ -80,7 +80,7 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action FetchUserAnalytics {
-    let yesterday = now() - 86400000
+    let yesterday = (floor(timestamp() / 86400000) - 1) * 86400000  // start of yesterday, epoch ms (UTC), stable across actions
     let report_date = yesterday
 
     get "/users/stats" {
@@ -110,7 +110,7 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action FetchRevenueMetrics {
-    let yesterday = now() - 86400000
+    let yesterday = (floor(timestamp() / 86400000) - 1) * 86400000  // start of yesterday, epoch ms (UTC), stable across actions
 
     get "/revenue/daily" {
       source: Metrics,
@@ -154,7 +154,7 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action FetchEngagementMetrics {
-    let yesterday = now() - 86400000
+    let yesterday = (floor(timestamp() / 86400000) - 1) * 86400000  // start of yesterday, epoch ms (UTC), stable across actions
 
     get "/engagement/summary" {
       source: Analytics,
@@ -182,7 +182,7 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action CompileDailyReport {
-    let yesterday = now() - 86400000
+    let yesterday = (floor(timestamp() / 86400000) - 1) * 86400000  // start of yesterday, epoch ms (UTC), stable across actions
 
     // Aggregate the day's metrics that the earlier actions stored
     let total_users = 0
@@ -264,7 +264,7 @@ mission DailyAnalyticsReports {
   // ============================================================
 
   action SendSlackSummary {
-    let yesterday = now() - 86400000
+    let yesterday = (floor(timestamp() / 86400000) - 1) * 86400000  // start of yesterday, epoch ms (UTC), stable across actions
 
     // Count outstanding high-severity alerts
     let alert_count = 0
