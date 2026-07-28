@@ -38,7 +38,10 @@ jobs:
 
       # Install ran with --ignore-scripts (security), which skips better-sqlite3's
       # prebuild-install postinstall. Rebuild just that one trusted optional dep so
-      # the SQLite execution-log backend is exercised by the suite.
+      # the SQLite execution-log backend is exercised by the suite. The rebuild only
+      # works because package.json allows better-sqlite3 under allowScripts: npm 12
+      # (installed above for OIDC) blocks unapproved install scripts outright, where
+      # the bundled npm only warns.
       - name: Build better-sqlite3 native binding
         run: npm rebuild better-sqlite3
 

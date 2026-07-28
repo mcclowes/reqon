@@ -40,7 +40,7 @@ A cleanup release. 1.0.0 shipped the bulk fan-out machinery; this one fixes the 
 - `pagesFetched` was always undefined in the `fetch.complete` event, and `isRetryableError` omitted 500 and 504.
 - **Every benchmark fixture was written in a dialect the parser has never accepted**, so `npm run bench` failed on every push. All six are rewritten in real Reqon syntax and guarded by a parse test. The store benchmarks no longer run with `dryRun`, which had been skipping the writes they existed to measure.
 - **The shipped examples now run.** Several called functions the runtime doesn't implement or did date arithmetic on `now()`.
-- **The release workflow rebuilds `better-sqlite3`** after its `--ignore-scripts` install, which is what killed the 1.0.0 tag's publish job.
+- **The release workflow rebuilds `better-sqlite3`** after its `--ignore-scripts` install, which is what killed the 1.0.0 tag's publish job. `better-sqlite3` is also approved under `allowScripts` in `package.json`, because npm 12 blocks unapproved install scripts outright where earlier versions only warned.
 
 ---
 

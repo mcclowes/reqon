@@ -108,5 +108,8 @@
     "typescript-eslint": "^8.18.2",
     "undici": "^8.9.0",
     "vitest": "^4.0.15"
+  },
+  "allowScripts": {
+    "better-sqlite3": true
   }
 }
