@@ -5,6 +5,7 @@ import { parseRateLimitHeaders, parseRetryAfterMs } from '../auth/rate-limiter.j
 import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
 import { laneKey } from '../auth/lane.js';
 import { sleep } from '../utils/async.js';
+import { redactText } from '../utils/redact.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
 import type { ProxyPool } from './proxy.js';
@@ -484,12 +485,16 @@ export class HttpClient {
     }
   }
 
-  /** Read a short snippet of a body for an error message (best-effort). */
+  /**
+   * Read a short snippet of a body for an error message (best-effort). The
+   * snippet lands in exception messages that get persisted to execution state
+   * and served over /status, so an API echoing a token in its error body must
+   * be scrubbed here, before truncation can cut a secret's closing quote (#263).
+   */
   private async safeReadSnippet(response: Response): Promise<string> {
     try {
-      const text = await response.text();
-      const trimmed = text.trim();
-      return trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed;
+      const text = redactText((await response.text()).trim());
+      return text.length > 200 ? `${text.slice(0, 200)}…` : text;
     } catch {
       return '';
     }

@@ -6,6 +6,7 @@ import {
   canResume,
   getProgress,
   getExecutionSummary,
+  redactExecutionState,
 } from './state.js';
 import { FileExecutionStore, MemoryExecutionStore } from './store.js';
 
@@ -148,6 +149,35 @@ describe('ExecutionState', () => {
     });
   });
 
+  describe('redactExecutionState', () => {
+    it('scrubs secrets from error messages, stage errors, and metadata', () => {
+      const state = createExecutionState({
+        mission: 'Leaky',
+        stages: ['A'],
+        metadata: { requestedBy: 'ops', api_key: 'sk-live-META' },
+      });
+      state.stages[0].error = 'HTTP 500: {"detail": "x", "access_token": "SECRET-STAGE"}';
+      state.errors.push({
+        stageIndex: 0,
+        action: 'A',
+        step: 'fetch',
+        message: 'GET https://api.example.com/x?client_secret=SECRET-URL failed (401)',
+        timestamp: new Date(),
+        attempt: 1,
+      });
+
+      const out = redactExecutionState(state);
+
+      expect(JSON.stringify(out)).not.toContain('SECRET-STAGE');
+      expect(JSON.stringify(out)).not.toContain('SECRET-URL');
+      expect(JSON.stringify(out)).not.toContain('sk-live-META');
+      expect(out.metadata!.requestedBy).toBe('ops');
+      expect(out.errors[0].message).toContain('failed (401)');
+      // Input untouched — the live state keeps full fidelity in-process.
+      expect(state.errors[0].message).toContain('SECRET-URL');
+    });
+  });
+
   describe('getExecutionSummary', () => {
     it('generates readable summary', () => {
       const state = createExecutionState({
@@ -272,6 +302,30 @@ describe('FileExecutionStore', () => {
 
     expect(loaded).not.toBeNull();
     expect(loaded!.stages[0].status).toBe('completed');
+  });
+
+  it('redacts secrets before they reach disk', async () => {
+    const state = createExecutionState({
+      mission: 'Leaky',
+      stages: ['A'],
+      metadata: { token: 'sk-live-DISK' },
+    });
+    state.errors.push({
+      stageIndex: 0,
+      action: 'A',
+      step: 'fetch',
+      message: 'body: {"api_key": "sk-live-BODY"}',
+      timestamp: new Date(),
+      attempt: 1,
+    });
+
+    await store.save(state);
+
+    const raw = await import('node:fs/promises').then((fs) =>
+      fs.readFile(`${TEST_DIR}/${state.id}.json`, 'utf-8')
+    );
+    expect(raw).not.toContain('sk-live-DISK');
+    expect(raw).not.toContain('sk-live-BODY');
   });
 
   it('preserves Date objects', async () => {

@@ -188,6 +188,67 @@ describe('for loop concurrency', () => {
     expect(ctx.actionScope?.pendingCheckpoints).toHaveLength(3);
   });
 
+  it('clamps declared concurrency to the shared ceiling, loudly', async () => {
+    const { deps, state } = trackingDeps();
+    deps.maxConcurrency = 4;
+    setVariable(
+      deps.ctx,
+      'items',
+      Array.from({ length: 30 }, (_, i) => i)
+    );
+
+    await new ForHandler(deps).execute(loop('items', 10000));
+
+    expect(state.peak).toBeLessThanOrEqual(4);
+    expect(state.completed).toHaveLength(30);
+    expect(deps.log).toHaveBeenCalledWith(expect.stringContaining('exceeds the maximum of 4'));
+  });
+
+  it('caps at the default ceiling when no maxConcurrency is configured', async () => {
+    const { deps, state } = trackingDeps();
+    setVariable(
+      deps.ctx,
+      'items',
+      Array.from({ length: 40 }, (_, i) => i)
+    );
+
+    await new ForHandler(deps).execute(loop('items', 500));
+
+    expect(state.peak).toBeLessThanOrEqual(8);
+    expect(state.completed).toHaveLength(40);
+  });
+
+  it('keeps emitting heartbeats and checking pause when every item fails', async () => {
+    const ctx = createContext();
+    setVariable(
+      ctx,
+      'items',
+      Array.from({ length: 25 }, (_, i) => i)
+    );
+    const heartbeats: unknown[] = [];
+    const checkPause = vi.fn(async () => {});
+
+    const deps: ForHandlerDeps = {
+      ctx,
+      log: vi.fn(),
+      actionName: 'testAction',
+      executeStep: vi.fn(async () => {
+        await tick(1);
+        throw new Error('every item fails');
+      }),
+      emit: (type, payload) => {
+        if (type === 'loop.heartbeat') heartbeats.push(payload);
+      },
+      checkPause,
+    };
+
+    await new ForHandler(deps).execute(loop('items', 4));
+
+    // 25 attempts, all failures: heartbeats at attempts 10 and 20.
+    expect(heartbeats.length).toBeGreaterThanOrEqual(2);
+    expect(checkPause).toHaveBeenCalled();
+  });
+
   it('falls back to sequential when a debugger is attached', async () => {
     const { deps, state } = trackingDeps();
     setVariable(deps.ctx, 'items', [1, 2, 3, 4]);

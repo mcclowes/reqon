@@ -1,4 +1,5 @@
 export { sleep } from './async.js';
+export { REDACTED, isSensitiveKey, redactSecrets, redactNamedValue, redactText } from './redact.js';
 export { safeEqual, hmacSha256Hex, verifyHmacSignature } from './crypto-safe.js';
 export {
   extractNestedValue,

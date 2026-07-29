@@ -1,5 +1,5 @@
 import { safeJoin } from '../utils/path.js';
-import type { ExecutionState } from './state.js';
+import { redactExecutionState, type ExecutionState } from './state.js';
 import {
   ensureDirectory,
   writeJsonFile,
@@ -68,7 +68,9 @@ export class FileExecutionStore implements ExecutionStore {
   async save(state: ExecutionState): Promise<void> {
     await this.initialized;
     const filePath = this.getFilePath(state.id);
-    await writeJsonFile(filePath, state);
+    // Redact at the write boundary: error messages carry response-body
+    // snippets and URLs, and this file outlives the process (#263).
+    await writeJsonFile(filePath, redactExecutionState(state));
   }
 
   async load(id: string): Promise<ExecutionState | null> {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redactSecrets, redactNamedValue, isSensitiveKey, REDACTED } from './redact.js';
+import { redactSecrets, redactNamedValue, redactText, isSensitiveKey, REDACTED } from './redact.js';
 
 describe('redactSecrets', () => {
   it('redacts credential-looking keys at any depth', () => {
@@ -63,6 +63,42 @@ describe('redactSecrets', () => {
     expect(out.self).toBe(out);
     expect((out.self as Record<string, unknown>).token).toBe(REDACTED);
   });
+
+  it('passes Date values through intact instead of destroying them', () => {
+    const when = new Date('2026-01-01T00:00:00Z');
+    const out = redactSecrets({ when, apiKey: 'sk' });
+    expect(out.when).toBe(when);
+    expect(out.apiKey).toBe(REDACTED);
+  });
+
+  it('passes RegExp and binary values through intact', () => {
+    const pattern = /abc/g;
+    const buf = Buffer.from('bytes');
+    const typed = new Uint8Array([1, 2, 3]);
+    const out = redactSecrets({ pattern, buf, typed });
+    expect(out.pattern).toBe(pattern);
+    expect(out.buf).toBe(buf);
+    expect(out.typed).toBe(typed);
+  });
+
+  it('redacts inside Map values and rebuilds Sets rather than flattening them to {}', () => {
+    const map = new Map<string, unknown>([
+      ['api_key', 'sk-live'],
+      ['plain', { token: 't', keep: 1 }],
+    ]);
+    const set = new Set([{ password: 'p' }]);
+
+    const out = redactSecrets({ map, set });
+
+    expect(out.map).toBeInstanceOf(Map);
+    expect(out.map.get('api_key')).toBe(REDACTED);
+    expect((out.map.get('plain') as Record<string, unknown>).token).toBe(REDACTED);
+    expect((out.map.get('plain') as Record<string, unknown>).keep).toBe(1);
+    expect(out.set).toBeInstanceOf(Set);
+    expect([...out.set][0]).toEqual({ password: REDACTED });
+    // Inputs unmutated
+    expect(map.get('api_key')).toBe('sk-live');
+  });
 });
 
 describe('isSensitiveKey', () => {
@@ -76,6 +112,61 @@ describe('isSensitiveKey', () => {
     for (const k of ['userId', 'count', 'title', 'email']) {
       expect(isSensitiveKey(k)).toBe(false);
     }
+  });
+
+  it('matches jwt, signature, and segment-bounded otp/pin', () => {
+    for (const k of [
+      'jwt',
+      'idJwt',
+      'signature',
+      'x_signature',
+      'otp',
+      'otpCode',
+      'user_pin',
+      'PIN',
+    ]) {
+      expect(isSensitiveKey(k)).toBe(true);
+    }
+  });
+
+  it('does not match words merely containing otp/pin, or session_count', () => {
+    for (const k of ['spinner', 'shipping', 'laptop', 'session_count', 'sessionCount']) {
+      expect(isSensitiveKey(k)).toBe(false);
+    }
+  });
+
+  it('still matches session itself and credential-bearing session keys', () => {
+    for (const k of ['session', 'session_id', 'sessionToken']) {
+      expect(isSensitiveKey(k)).toBe(true);
+    }
+  });
+});
+
+describe('redactText', () => {
+  it('scrubs sensitive JSON pairs from a body snippet', () => {
+    const body = '{"error": "bad request", "api_key": "sk-live-SECRET", "id": "42"}';
+    const out = redactText(body);
+    expect(out).not.toContain('sk-live-SECRET');
+    expect(out).toContain('bad request');
+    expect(out).toContain('"42"');
+  });
+
+  it('scrubs sensitive query params from URLs in messages', () => {
+    const msg = 'GET https://api.example.com/v1/x?page=2&access_token=SECRET failed';
+    const out = redactText(msg);
+    expect(out).not.toContain('SECRET');
+    expect(out).toContain('page=2');
+  });
+
+  it('scrubs bearer credentials', () => {
+    const out = redactText('got header Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig');
+    expect(out).not.toContain('eyJhbGciOiJIUzI1NiJ9');
+    expect(out).toContain(`Bearer ${REDACTED}`);
+  });
+
+  it('leaves innocuous text untouched', () => {
+    const msg = 'HTTP 500 fetching /orders?page=2&limit=50: {"error": "server exploded"}';
+    expect(redactText(msg)).toBe(msg);
   });
 });
 

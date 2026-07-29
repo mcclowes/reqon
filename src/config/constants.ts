@@ -154,6 +154,23 @@ export const SCHEDULER_DEFAULTS = {
 } as const;
 
 // ============================================
+// Concurrency Configuration
+// ============================================
+
+/**
+ * Default concurrency configuration
+ */
+export const CONCURRENCY_DEFAULTS = {
+  /**
+   * Ceiling on branches in flight for BOTH fan-out mechanisms: `run [A, B]`
+   * parallel stages and `for ... concurrency N` loops. One shared, configurable
+   * limit (ExecutorConfig.maxParallel) so a mission asking for `concurrency
+   * 10000` cannot open 10,000 sockets while stages stay capped at 8 (#262).
+   */
+  MAX_PARALLEL: 8,
+} as const;
+
+// ============================================
 // Execution Configuration
 // ============================================
 

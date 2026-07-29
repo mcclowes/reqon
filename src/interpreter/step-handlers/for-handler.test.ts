@@ -133,6 +133,28 @@ describe('ForHandler', () => {
       expect(ids).toContain('1');
       expect(ids).toContain('2');
     });
+
+    it('warns when a store shadows a variable of the same name, and iterates the store', async () => {
+      const store = new MemoryStore('items');
+      await store.set('1', { id: '1', from: 'store' });
+      deps.ctx.stores.set('items', store);
+      setVariable(deps.ctx, 'items', [{ from: 'variable' }]);
+
+      const step: ForStep = {
+        type: 'ForStep',
+        variable: 'item',
+        collection: { type: 'Identifier', name: 'items' } as Expression,
+        steps: [
+          { type: 'LetStep', name: 'x', value: { type: 'Identifier', name: 'item' } } as ActionStep,
+        ],
+      };
+
+      const handler = new ForHandler(deps);
+      await handler.execute(step);
+
+      expect(deps.log).toHaveBeenCalledWith(expect.stringContaining("Store 'items' shadows"));
+      expect((executedSteps[0].item as Record<string, unknown>).from).toBe('store');
+    });
   });
 
   describe('filtering with where clause', () => {
