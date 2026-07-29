@@ -11,6 +11,7 @@
  */
 
 import { CIRCUIT_BREAKER_DEFAULTS } from '../config/index.js';
+import { laneSource } from './lane.js';
 
 export type CircuitState = 'closed' | 'open' | 'half_open';
 
@@ -27,6 +28,31 @@ export interface CircuitBreakerConfig {
   failureStatusCodes?: number[];
   /** Whether to count network errors as failures (default: true) */
   countNetworkErrors?: boolean;
+  /**
+   * Open the circuit when this percentage of requests in the window failed,
+   * instead of on an absolute count.
+   *
+   * An absolute `failureThreshold` cannot be tuned for a bulk run: at a few
+   * thousand requests a second, five failures is a rounding error rather than
+   * an outage, so a count-based circuit sits permanently open. Set this (with
+   * `minimumRequests`) for high-volume sources and the breaker tracks health
+   * rather than raw incidents.
+   */
+  failureRate?: number;
+  /**
+   * Requests required in the window before `failureRate` is consulted, so a
+   * cold start of three failures is not mistaken for a 100% failure rate.
+   * (default: 20)
+   */
+  minimumRequests?: number;
+  /**
+   * Time in ms a half-open probe may be outstanding before another probe is
+   * admitted (default: 30000). A probe slot that is never explicitly released -
+   * because a request threw before reporting its outcome, say - would otherwise
+   * wedge the circuit in half-open forever. Expiring the slot makes that
+   * self-heal.
+   */
+  probeTimeout?: number;
 }
 
 export interface CircuitBreakerStatus {
@@ -63,10 +89,17 @@ interface CircuitEntry {
   failures: number;
   successes: number;
   failureTimestamps: number[];
+  /** Only tracked when a failureRate is configured - the denominator. */
+  successTimestamps: number[];
   lastFailureTime?: number;
   openedAt?: number;
-  /** True while a single half-open probe request is in flight. */
-  probeInFlight: boolean;
+  /**
+   * Timestamp (ms) at which the current half-open probe was admitted, or
+   * undefined when no probe is outstanding. A timestamp rather than a boolean so
+   * a stale probe (never released because its request threw before reporting)
+   * can expire after `config.probeTimeout` instead of wedging the circuit.
+   */
+  probeStartedAt?: number;
   /** Timestamp of the last state-changing activity, used for eviction. */
   lastActivity: number;
   config: Required<CircuitBreakerConfig>;
@@ -79,6 +112,9 @@ const DEFAULT_CONFIG: Required<CircuitBreakerConfig> = {
   failureWindow: CIRCUIT_BREAKER_DEFAULTS.FAILURE_WINDOW_MS,
   failureStatusCodes: [...CIRCUIT_BREAKER_DEFAULTS.FAILURE_STATUS_CODES],
   countNetworkErrors: CIRCUIT_BREAKER_DEFAULTS.COUNT_NETWORK_ERRORS,
+  failureRate: 0, // 0 = disabled, fall back to the absolute threshold
+  minimumRequests: 20,
+  probeTimeout: CIRCUIT_BREAKER_DEFAULTS.PROBE_TIMEOUT_MS,
 };
 
 /**
@@ -154,7 +190,7 @@ export class CircuitBreaker {
       if (timeSinceOpen >= entry.config.resetTimeout) {
         // Transition to half-open and let this single caller be the probe.
         this.transitionTo(entry, 'half_open', source, endpoint);
-        entry.probeInFlight = true;
+        entry.probeStartedAt = now;
         return true;
       }
 
@@ -164,10 +200,19 @@ export class CircuitBreaker {
     // Half-open: allow exactly one probe at a time. Every other request is
     // denied until the in-flight probe resolves (success closes the circuit or
     // advances the count; failure re-opens it), preventing a recovery stampede.
-    if (entry.probeInFlight) {
+    //
+    // The probe slot expires after `probeTimeout`: if a probe's outcome is never
+    // reported (its request threw before recordSuccess/recordFailure ran), the
+    // slot would otherwise stay claimed forever and the circuit would wedge in
+    // half-open — never open, so resetTimeout can't re-arm it, and never
+    // admitting another probe. Expiry lets the next caller probe instead.
+    if (
+      entry.probeStartedAt !== undefined &&
+      now - entry.probeStartedAt < entry.config.probeTimeout
+    ) {
       return false;
     }
-    entry.probeInFlight = true;
+    entry.probeStartedAt = now;
     return true;
   }
 
@@ -197,8 +242,13 @@ export class CircuitBreaker {
    */
   recordSuccess(source: string, endpoint?: string): void {
     // Read-only lookup: a success on an untracked (implicitly closed) endpoint
-    // has nothing to record, so don't allocate an entry for it.
-    const entry = this.getEntry(source, endpoint);
+    // has nothing to record, so don't allocate an entry for it. Rate mode is
+    // the exception - successes are the denominator, so they must be counted
+    // from the first one. Keys are lane-scoped, so this stays bounded.
+    let entry = this.getEntry(source, endpoint);
+    if (!entry && this.resolveConfig(source).failureRate > 0) {
+      entry = this.getOrCreateEntry(source, endpoint);
+    }
     if (!entry) {
       return;
     }
@@ -212,12 +262,21 @@ export class CircuitBreaker {
         this.transitionTo(entry, 'closed', source, endpoint);
       } else {
         // Probe succeeded but more are needed; release the slot for the next.
-        entry.probeInFlight = false;
+        entry.probeStartedAt = undefined;
       }
     } else if (entry.state === 'closed') {
       // Clear old failures from window
       this.pruneOldFailures(entry);
+      if (entry.config.failureRate > 0) {
+        entry.successTimestamps.push(Date.now());
+      }
     }
+  }
+
+  /** Config a key would resolve to, without allocating an entry for it. */
+  private resolveConfig(source: string): Required<CircuitBreakerConfig> {
+    const sourceEntry = this.circuits.get(source) ?? this.circuits.get(laneSource(source));
+    return sourceEntry?.config ?? this.defaultConfig;
   }
 
   /**
@@ -231,8 +290,13 @@ export class CircuitBreaker {
   ): void {
     // Resolve config without forcing an entry — ignored failures (e.g. a 404)
     // must not allocate a permanent circuit for an otherwise-untracked endpoint.
+    // Mirror recordSuccess/getOrCreateEntry and fall back through the lane source
+    // (`api@host:port` -> `api`): http.ts keys the breaker per egress lane while
+    // the mission configures thresholds under the bare source name, so without
+    // this fallback a lane failure would silently use the default config and
+    // ignore a configured failureStatusCodes / countNetworkErrors.
     const existing = this.getEntry(source, endpoint);
-    const config = existing?.config ?? this.getEntry(source)?.config ?? this.defaultConfig;
+    const config = existing?.config ?? this.resolveConfig(source);
 
     // Check if this failure type should be counted
     const isFailureStatus =
@@ -240,6 +304,15 @@ export class CircuitBreaker {
     const shouldCount = isFailureStatus || (isNetworkError && config.countNetworkErrors);
 
     if (!shouldCount) {
+      // An uncounted failure (a 404, or a 4xx we don't treat as an outage) is
+      // still a failed probe: it must release a half-open slot, or the circuit
+      // wedges in half-open forever (never re-opened, never re-probed). Leaving
+      // it half-open means the next request becomes a fresh probe rather than
+      // being fast-failed against an inconclusive outcome.
+      if (existing?.state === 'half_open') {
+        existing.probeStartedAt = undefined;
+        existing.lastActivity = Date.now();
+      }
       return;
     }
 
@@ -261,14 +334,9 @@ export class CircuitBreaker {
       entry.lastFailureTime = now;
 
       // Check if we should open the circuit
-      if (entry.failures >= config.failureThreshold) {
-        this.transitionTo(
-          entry,
-          'open',
-          source,
-          endpoint,
-          `${entry.failures} failures in ${config.failureWindow}ms window`
-        );
+      const reason = this.openReason(entry, config);
+      if (reason) {
+        this.transitionTo(entry, 'open', source, endpoint, reason);
       }
     }
   }
@@ -317,7 +385,7 @@ export class CircuitBreaker {
       entry.failureTimestamps = [];
       entry.lastFailureTime = undefined;
       entry.openedAt = undefined;
-      entry.probeInFlight = false;
+      entry.probeStartedAt = undefined;
       entry.lastActivity = Date.now();
 
       if (previousState !== 'closed') {
@@ -377,13 +445,40 @@ export class CircuitBreaker {
     return endpoint ? `${source}:${endpoint}` : source;
   }
 
+  /**
+   * Why the circuit should open, or undefined to stay closed.
+   *
+   * Rate mode needs a minimum sample: three failures out of three requests is
+   * 100%, but it is not evidence of an outage, and opening there would make a
+   * cold start self-defeating.
+   */
+  private openReason(
+    entry: CircuitEntry,
+    config: Required<CircuitBreakerConfig>
+  ): string | undefined {
+    if (config.failureRate > 0) {
+      const total = entry.failures + entry.successTimestamps.length;
+      if (total < config.minimumRequests) return undefined;
+
+      const rate = (entry.failures / total) * 100;
+      return rate >= config.failureRate
+        ? `${rate.toFixed(1)}% of ${total} requests failed in ${config.failureWindow}ms window`
+        : undefined;
+    }
+
+    return entry.failures >= config.failureThreshold
+      ? `${entry.failures} failures in ${config.failureWindow}ms window`
+      : undefined;
+  }
+
   private createEntry(config: Required<CircuitBreakerConfig>): CircuitEntry {
     return {
       state: 'closed',
       failures: 0,
       successes: 0,
       failureTimestamps: [],
-      probeInFlight: false,
+      successTimestamps: [],
+      probeStartedAt: undefined,
       lastActivity: Date.now(),
       config,
     };
@@ -399,8 +494,10 @@ export class CircuitBreaker {
     let entry = this.circuits.get(key);
 
     if (!entry) {
-      // Check for source-level config
-      const sourceEntry = this.circuits.get(source);
+      // Check for source-level config. The lane fallback matters because
+      // http.ts addresses the breaker per egress IP (`api@host:port`) while the
+      // mission configures thresholds under the source name alone.
+      const sourceEntry = this.circuits.get(source) ?? this.circuits.get(laneSource(source));
       const config = sourceEntry?.config ?? this.defaultConfig;
       entry = this.createEntry(config);
       this.circuits.set(key, entry);
@@ -414,6 +511,9 @@ export class CircuitBreaker {
     const windowStart = now - entry.config.failureWindow;
     entry.failureTimestamps = entry.failureTimestamps.filter((ts) => ts >= windowStart);
     entry.failures = entry.failureTimestamps.length;
+    if (entry.config.failureRate > 0) {
+      entry.successTimestamps = entry.successTimestamps.filter((ts) => ts >= windowStart);
+    }
   }
 
   private transitionTo(
@@ -428,7 +528,7 @@ export class CircuitBreaker {
     entry.lastActivity = Date.now();
     // Any state change clears the half-open probe slot; canProceed re-claims it
     // when it admits the next probe.
-    entry.probeInFlight = false;
+    entry.probeStartedAt = undefined;
 
     const event: CircuitBreakerEvent = {
       source,

@@ -53,7 +53,8 @@ mission OrderReconciliation {
   store payments: sql("reconciled_payments")
   store shipments: sql("reconciled_shipments")
   store discrepancies: sql("audit_discrepancies")
-  store sync_state: sql("sync_checkpoints")
+  // Incremental-sync checkpoints are managed by `since: lastSync` in the sync
+  // actions, so there is no manual checkpoint store.
 
   // ============================================================
   // SCHEMAS - Unified data models

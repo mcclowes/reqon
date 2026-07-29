@@ -27,6 +27,13 @@ import { isRecord } from '../utils/type-guards.js';
 import { EvaluatorError, UnsupportedOperationError } from '../errors/index.js';
 
 /**
+ * Hard cap on the number of items range() will materialise. High enough for a
+ * full FPL manager sweep (~12M), low enough to fail loudly rather than OOM on a
+ * fat-fingered bound like range(1, 1e12).
+ */
+const RANGE_MAX = 20_000_000;
+
+/**
  * Evaluate a Reqon/Vague expression within an execution context.
  *
  * Supports all expression types from the Vague DSL including literals, identifiers,
@@ -205,13 +212,13 @@ export function evaluate(
         case '!=':
           return left !== right;
         case '<':
-          return compareNumbers(left, right, '<');
+          return compareValues(left, right, '<');
         case '>':
-          return compareNumbers(left, right, '>');
+          return compareValues(left, right, '>');
         case '<=':
-          return compareNumbers(left, right, '<=');
+          return compareValues(left, right, '<=');
         case '>=':
-          return compareNumbers(left, right, '>=');
+          return compareValues(left, right, '>=');
         case 'in': {
           // Membership: element in collection. Arrays test by value, strings
           // test substring, objects test own-key presence.
@@ -315,14 +322,78 @@ export function evaluate(
           return Array.isArray(args[0]) ? args[0][0] : undefined;
         case 'last':
           return Array.isArray(args[0]) ? args[0][args[0].length - 1] : undefined;
+        case 'range': {
+          // range(end) -> [0, 1, ..., end-1]; range(start, end) -> [start, ..., end-1].
+          // Materialises the whole array (the for-loop consumes an array), so a
+          // hard cap guards against an accidental range that would exhaust memory.
+          const hasStart = args.length > 1;
+          const start = hasStart ? toNumber(args[0], 'range') : 0;
+          const end = toNumber(hasStart ? args[1] : args[0], 'range');
+          if (!Number.isFinite(start) || !Number.isFinite(end)) {
+            throw new EvaluatorError('range() bounds must be finite numbers', {
+              expression: 'range',
+            });
+          }
+          const count = Math.max(0, Math.ceil(end - start));
+          if (count > RANGE_MAX) {
+            throw new EvaluatorError(
+              `range() would produce ${count} items, over the ${RANGE_MAX} cap`,
+              { expression: 'range' }
+            );
+          }
+          const out = new Array<number>(count);
+          for (let i = 0; i < count; i++) out[i] = start + i;
+          return out;
+        }
+        case 'abs':
+          return Math.abs(toNumber(args[0], 'abs'));
         case 'round':
           return Math.round(toNumber(args[0], 'round'));
         case 'floor':
           return Math.floor(toNumber(args[0], 'floor'));
         case 'ceil':
           return Math.ceil(toNumber(args[0], 'ceil'));
+        case 'max':
+        case 'min': {
+          // Variadic numeric max/min: max(a, b, ...). A single array argument is
+          // also accepted, so max([1, 2, 3]) works like max(1, 2, 3).
+          const values = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
+          if (values.length === 0) {
+            throw new EvaluatorError(`${expr.callee}() requires at least one argument`, {
+              expression: expr.callee,
+            });
+          }
+          const nums = values.map((v) => toNumber(v, expr.callee));
+          return expr.callee === 'max' ? Math.max(...nums) : Math.min(...nums);
+        }
+        case 'concat': {
+          // String concatenation of any number of arguments; null/undefined
+          // render as empty string, matching evaluateToString's coercion.
+          return args.map((v) => String(v ?? '')).join('');
+        }
+        case 'parseNumber': {
+          // Coerce a value (typically a numeric string like "99.99") to a
+          // number. Returns null when it can't be parsed, so a bad field drops
+          // out rather than poisoning arithmetic with NaN.
+          if (args[0] === null || args[0] === undefined) return null;
+          const n = Number(args[0] as number);
+          return Number.isNaN(n) ? null : n;
+        }
+        case 'fromUnix': {
+          // Unix epoch seconds -> ISO-8601 string. Many APIs (Stripe, etc.)
+          // return seconds; this normalises them to the same date format as
+          // sources that already return ISO strings. Returns null if not finite.
+          const secs = Number(args[0] as number);
+          if (!Number.isFinite(secs)) return null;
+          return new Date(secs * 1000).toISOString();
+        }
         case 'now':
           return new Date().toISOString();
+        case 'timestamp':
+          // Epoch milliseconds, for arithmetic. Unlike now() (an ISO string),
+          // timestamp() returns a number so `timestamp() - 86400000` (24h ago)
+          // and other date math work.
+          return Date.now();
         case 'env': {
           // The variable name must be a static string literal. A dynamic argument
           // (e.g. env(response.field)) would let fetched/untrusted data choose
@@ -403,23 +474,38 @@ export function evaluateToString(
  */
 export function interpolatePath(path: string, ctx: ExecutionContext, current?: unknown): string {
   return path.replace(/\{([^}]+)\}/g, (_, expr) => {
-    // Simple variable interpolation
-    const parts = expr.split('.');
-    let value: unknown = current;
+    // Resolve the root segment first, then walk the rest as pure member access
+    // (matching QualifiedName evaluation). Resolving each segment independently
+    // would, when `current` lacks the first segment, mis-resolve a later segment
+    // as a standalone context variable — e.g. `{org.id}` looking up `id` instead
+    // of falling back to the `org` variable and reading its `.id`.
+    const [head, ...rest] = expr.split('.');
+    let value: unknown =
+      isRecord(current) && head in current ? current[head] : getVariable(ctx, head);
 
-    for (const part of parts) {
-      if (isRecord(value)) {
-        value = value[part];
-      } else {
-        value = getVariable(ctx, part);
-      }
+    for (const part of rest) {
+      value = isRecord(value) ? value[part] : undefined;
+    }
+
+    // An unresolved placeholder must fail loudly rather than interpolate to ''.
+    // `/users/{id}` collapsing to `/users/` is a silently broken URL, and on a
+    // permissive API `DELETE /users/` is a collection delete, not a no-op (#260).
+    // There is no case where the author meant "put nothing here".
+    if (value === undefined || value === null) {
+      const inScope = isRecord(current) ? Object.keys(current) : [];
+      const scopeHint = inScope.length
+        ? ` Fields on the current record: ${inScope.join(', ')}.`
+        : '';
+      throw new EvaluatorError(`Path parameter {${expr}} did not resolve to a value.${scopeHint}`, {
+        expression: expr,
+      });
     }
 
     // URL-encode each interpolated value so a path param can't inject path
     // segments, query strings, or fragments into the request target. Path params
     // are single segments, so encoding (which escapes '/', '?', '#', etc.) is the
     // correct treatment.
-    return encodeURIComponent(String(value ?? ''));
+    return encodeURIComponent(String(value));
   });
 }
 
@@ -451,37 +537,98 @@ function toNumber(value: unknown, operator: string): number {
   });
 }
 
-/** Coerce for comparison, yielding NaN (not a throw) for nullish/non-numeric. */
-function toComparable(value: unknown): number {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'boolean') return value ? 1 : 0;
-  if (typeof value === 'string') return Number(value);
-  return NaN;
+/**
+ * Recognises the ISO-8601 date shapes an HTTP API actually emits: a bare date
+ * (`2026-01-01`) or a timestamp (`2026-01-01T00:00:00.123Z`, with an optional
+ * space separator and numeric or `Z` offset). Deliberately strict — `Number()`
+ * and `Date.parse()` both accept far too much, which is how #248 slipped in.
+ */
+const ISO_8601 = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+/** Parse an ISO-8601 string to epoch ms, or null if it isn't one. */
+function parseIsoDate(value: string): number | null {
+  if (!ISO_8601.test(value)) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
 }
 
 /**
- * Arithmetic comparison for `where`/`match`/`validate` guards. A missing or
- * non-numeric operand makes the comparison false (the record is excluded) rather
- * than throwing — real API data routinely omits fields, and one missing field
- * shouldn't abort the whole stage.
+ * Ordering for `where`/`match`/`validate` guards (`<`, `>`, `<=`, `>=`).
+ *
+ * Operands are compared by their actual type rather than coerced through
+ * `Number()`: numbers numerically, booleans as 0/1, ISO-8601 date strings
+ * chronologically, and all other strings lexicographically. This is what makes
+ * the core incremental-sync idiom `where .updated_at > lastSync` work — a date
+ * string is present and perfectly comparable, `Number()` just turned it to NaN.
+ *
+ * Two operands that can't be ordered are handled deliberately:
+ *   - a genuinely absent operand (`null`/`undefined`, or a `NaN` number) makes
+ *     the comparison false, excluding the record. Real API data omits fields,
+ *     and one absence shouldn't abort a stage.
+ *   - a real type mismatch (e.g. number vs object, or number vs a non-numeric
+ *     string) throws, because it's a bug in the mission the author can fix, not
+ *     data to silently skip.
  */
-function compareNumbers(left: unknown, right: unknown, operator: string): boolean {
-  const leftNum = toComparable(left);
-  const rightNum = toComparable(right);
-  if (Number.isNaN(leftNum) || Number.isNaN(rightNum)) return false;
+function compareValues(left: unknown, right: unknown, operator: string): boolean {
+  // Absent operand: excluded, not an error. Covers null, undefined, and NaN
+  // (which no ordering relation holds for anyway).
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return false;
+  }
+  if (
+    (typeof left === 'number' && Number.isNaN(left)) ||
+    (typeof right === 'number' && Number.isNaN(right))
+  ) {
+    return false;
+  }
 
+  const order = orderOf(left, right, operator);
   switch (operator) {
     case '<':
-      return leftNum < rightNum;
+      return order < 0;
     case '>':
-      return leftNum > rightNum;
+      return order > 0;
     case '<=':
-      return leftNum <= rightNum;
+      return order <= 0;
     case '>=':
-      return leftNum >= rightNum;
+      return order >= 0;
     default:
       return false;
   }
+}
+
+/** -1 / 0 / 1 ordering of two like-typed values, or throw on a type mismatch. */
+function orderOf(left: unknown, right: unknown, operator: string): number {
+  const cmp = (a: number, b: number): number => (a < b ? -1 : a > b ? 1 : 0);
+
+  if (typeof left === 'number' && typeof right === 'number') {
+    return cmp(left, right);
+  }
+  if (typeof left === 'boolean' && typeof right === 'boolean') {
+    return cmp(left ? 1 : 0, right ? 1 : 0);
+  }
+  if (typeof left === 'string' && typeof right === 'string') {
+    // Both ISO-8601 → compare as instants so `2026-01-02` > `2026-01-01T00:00Z`
+    // orders correctly instead of by byte. Otherwise plain lexicographic.
+    const l = parseIsoDate(left);
+    const r = parseIsoDate(right);
+    if (l !== null && r !== null) return cmp(l, r);
+    return left < right ? -1 : left > right ? 1 : 0;
+  }
+
+  throw new EvaluatorError(
+    `Cannot compare ${describeType(left)} with ${describeType(right)} using '${operator}'. ` +
+      `Ordering comparisons require both operands to be the same type ` +
+      `(number, boolean, or string); cast one side first.`,
+    { expression: operator }
+  );
+}
+
+/** Human-readable type label for comparison error messages. */
+function describeType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
 }
 
 /** Type check functions map - more efficient than switch statement */

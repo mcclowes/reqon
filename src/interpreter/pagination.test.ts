@@ -502,4 +502,76 @@ describe('Pagination Strategies', () => {
       expect(result.nextCursor).toBe('deep-cursor');
     });
   });
+
+  describe('itemsPath (#250)', () => {
+    it('picks the declared field instead of guessing the first array', () => {
+      const config: PaginationConfig = {
+        type: 'page',
+        param: 'page',
+        pageSize: 10,
+        itemsPath: 'data',
+      };
+      const strategy = new PageNumberPaginationStrategy(config);
+      const ctx: PaginationContext = { page: 0, pageSize: 10 };
+
+      // `warnings` precedes `data`; the first-array-key guess would lock onto it.
+      const response = {
+        warnings: [],
+        data: Array.from({ length: 10 }, (_, i) => ({ id: i })),
+      };
+      const result = strategy.extractResults(response, ctx);
+
+      expect(result.items).toHaveLength(10);
+      expect(result.hasMore).toBe(true);
+    });
+
+    it('resolves a nested itemsPath', () => {
+      const config: PaginationConfig = {
+        type: 'offset',
+        param: 'offset',
+        pageSize: 10,
+        itemsPath: 'result.records',
+      };
+      const strategy = new OffsetPaginationStrategy(config);
+      const ctx: PaginationContext = { page: 0, pageSize: 10 };
+
+      const response = { errors: [], result: { records: [{ id: 1 }, { id: 2 }] } };
+      expect(strategy.extractResults(response, ctx).items).toEqual([{ id: 1 }, { id: 2 }]);
+    });
+
+    it('returns an empty page when a declared path is absent, without guessing', () => {
+      const config: PaginationConfig = {
+        type: 'offset',
+        param: 'offset',
+        pageSize: 10,
+        itemsPath: 'data',
+      };
+      const strategy = new OffsetPaginationStrategy(config);
+      const ctx: PaginationContext = { page: 0, pageSize: 10 };
+
+      const response = { warnings: [{ id: 1 }] };
+      const result = strategy.extractResults(response, ctx);
+
+      expect(result.items).toEqual([]);
+      expect(result.hasMore).toBe(false);
+    });
+
+    it('honours itemsPath for cursor pagination', () => {
+      const config: PaginationConfig = {
+        type: 'cursor',
+        param: 'cursor',
+        pageSize: 10,
+        cursorPath: 'meta.next',
+        itemsPath: 'data',
+      };
+      const strategy = new CursorPaginationStrategy(config);
+      const ctx: PaginationContext = { page: 0, pageSize: 10 };
+
+      const response = { warnings: [], data: [{ id: 1 }], meta: { next: 'abc' } };
+      const result = strategy.extractResults(response, ctx);
+
+      expect(result.items).toEqual([{ id: 1 }]);
+      expect(result.nextCursor).toBe('abc');
+    });
+  });
 });

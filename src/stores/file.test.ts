@@ -140,11 +140,44 @@ describe('FileStore', () => {
       expect(Object.keys(parsedBefore)).toHaveLength(0);
 
       // After flush, data should be persisted
-      store.flush();
+      await store.flush();
 
       const contentAfter = readFileSync(filePath, 'utf-8');
       const parsedAfter = JSON.parse(contentAfter);
       expect(parsedAfter['1']).toEqual({ id: '1', name: 'Alice' });
+    });
+  });
+
+  describe('close (#259)', () => {
+    it('returns a promise and persists batch-mode data via the async path', async () => {
+      const store = new FileStore('close-batch', { baseDir: TEST_DIR, persist: 'batch' });
+      const filePath = store.getFilePath();
+      await store.set('1', { id: '1', name: 'Alice' });
+
+      const pending = store.close();
+      // close() is async now, so closeStores can await it (was fire-and-forget void).
+      expect(typeof (pending as Promise<void>).then).toBe('function');
+      await pending;
+
+      const parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
+      expect(parsed['1']).toEqual({ id: '1', name: 'Alice' });
+    });
+
+    it('waits for the async write chain so nothing is clobbered at close', async () => {
+      const store = new FileStore('close-immediate', { baseDir: TEST_DIR });
+      const filePath = store.getFilePath();
+
+      // Fire several immediate-mode writes without awaiting each individually.
+      const writes = [
+        store.set('1', { id: '1' }),
+        store.set('2', { id: '2' }),
+        store.set('3', { id: '3' }),
+      ];
+      await Promise.all(writes);
+      await store.close();
+
+      const parsed = JSON.parse(readFileSync(filePath, 'utf-8'));
+      expect(Object.keys(parsed).sort()).toEqual(['1', '2', '3']);
     });
   });
 

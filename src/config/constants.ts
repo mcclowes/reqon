@@ -58,6 +58,12 @@ export const RATE_LIMIT_DEFAULTS = {
   CLEANUP_CHECK_INTERVAL: 100,
   /** Maximum entries before forced cleanup */
   MAX_ENTRIES_BEFORE_CLEANUP: 1000,
+  /**
+   * Floor cool-off (ms) applied to a lane on a 429 that carries no Retry-After.
+   * Without it a headerless 429 produces no backoff and the lane keeps
+   * hammering. A configured model raises this to its own tightened wait.
+   */
+  REJECT_COOLOFF_MS: 1000,
 } as const;
 
 // ============================================
@@ -76,10 +82,23 @@ export const CIRCUIT_BREAKER_DEFAULTS = {
   SUCCESS_THRESHOLD: 2,
   /** Time window in milliseconds for counting failures */
   FAILURE_WINDOW_MS: 60000,
-  /** HTTP status codes to count as failures */
-  FAILURE_STATUS_CODES: [500, 501, 502, 503, 504] as readonly number[],
+  /**
+   * HTTP status codes to count as failures. 401/403 count by default: an
+   * auth-shaped rejection almost never resolves on its own, and without it a
+   * revoked key can drive a million-request loop that ends "successfully"
+   * with an empty store (#254). Deliberately excludes 429 (the rate limiter's
+   * job) and 404 (data, not an outage).
+   */
+  FAILURE_STATUS_CODES: [401, 403, 500, 501, 502, 503, 504] as readonly number[],
   /** Whether to count network errors as failures */
   COUNT_NETWORK_ERRORS: true,
+  /**
+   * Time in milliseconds a half-open probe may be outstanding before another
+   * probe is admitted. Bounds the impact of a lost probe release (e.g. a
+   * request that threw before reporting its outcome), so the breaker self-heals
+   * instead of wedging permanently in half-open.
+   */
+  PROBE_TIMEOUT_MS: 30000,
 } as const;
 
 // ============================================

@@ -27,7 +27,7 @@ There's no store-config CLI flag. Build a configured PostgREST adapter with
 overrides whatever the mission declared for that name:
 
 ```typescript
-import { createStore, fromFile } from 'reqon';
+import { createStore, fromFile } from 'reqon-dsl';
 
 const items = createStore({
   type: 'postgrest',
@@ -282,4 +282,3 @@ Verify the URL and credentials:
 ```bash
 curl -H "apikey: your-key" https://abc.supabase.co/rest/v1/items
 ```
-</content>

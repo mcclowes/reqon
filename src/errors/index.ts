@@ -29,10 +29,15 @@ export interface ErrorContext {
  * Base class for Reqon errors with source location info
  */
 export class ReqonError extends Error {
-  readonly location: SourceLocation;
+  /**
+   * Source position of the error. Optional: some errors (e.g. runtime store
+   * errors) don't yet have real positions threaded through, and a confidently
+   * wrong "1:1" is worse than none.
+   */
+  readonly location?: SourceLocation;
   readonly context?: ErrorContext;
 
-  constructor(message: string, location: SourceLocation, context?: ErrorContext) {
+  constructor(message: string, location?: SourceLocation, context?: ErrorContext) {
     super(message);
     this.name = 'ReqonError';
     this.location = location;
@@ -48,10 +53,12 @@ export class ReqonError extends Error {
     // Header with location
     const fileInfo = this.context?.filePath ? `${this.context.filePath}:` : '';
     lines.push(`${this.name}: ${this.message}`);
-    lines.push(`  --> ${fileInfo}${this.location.line}:${this.location.column}`);
+    if (this.location) {
+      lines.push(`  --> ${fileInfo}${this.location.line}:${this.location.column}`);
+    }
 
     // Show source context if available
-    if (this.context?.source) {
+    if (this.location && this.context?.source) {
       const sourceLines = this.context.source.split('\n');
       const errorLine = sourceLines[this.location.line - 1];
 
@@ -128,7 +135,7 @@ export class RuntimeError extends ReqonError {
 
   constructor(
     message: string,
-    location: SourceLocation,
+    location?: SourceLocation,
     context?: ErrorContext,
     options?: { action?: string; stepType?: string }
   ) {
@@ -152,11 +159,13 @@ export class RuntimeError extends ReqonError {
     }
 
     // Location
-    const fileInfo = this.context?.filePath ? `${this.context.filePath}:` : '';
-    lines.push(`  --> ${fileInfo}${this.location.line}:${this.location.column}`);
+    if (this.location) {
+      const fileInfo = this.context?.filePath ? `${this.context.filePath}:` : '';
+      lines.push(`  --> ${fileInfo}${this.location.line}:${this.location.column}`);
+    }
 
     // Source context
-    if (this.context?.source) {
+    if (this.location && this.context?.source) {
       const sourceLines = this.context.source.split('\n');
       const errorLine = sourceLines[this.location.line - 1];
 

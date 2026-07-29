@@ -212,4 +212,3 @@ run A then B then C // sequential
 ### Last-writer-wins surprises
 
 If parallel branches write the same key, only the last write survives. Give each branch a distinct key prefix.
-</content>

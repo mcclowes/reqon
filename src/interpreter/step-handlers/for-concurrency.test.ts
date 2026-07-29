@@ -111,7 +111,9 @@ describe('for loop concurrency', () => {
     expect(state.completed.map((i) => (i as { n: number }).n).sort()).toEqual([4, 5, 6]);
   });
 
-  it('stops pulling new items once one fails, then surfaces the error', async () => {
+  // Strict mode only: the default tolerates a failed item and keeps going.
+  // See for-error-tolerance.test.ts.
+  it('under onError abort, stops pulling new items once one fails and surfaces it', async () => {
     const ctx = createContext();
     setVariable(
       ctx,
@@ -132,7 +134,8 @@ describe('for loop concurrency', () => {
       }),
     };
 
-    await expect(new ForHandler(deps).execute(loop('items', 4))).rejects.toThrow('boom on 1');
+    const strict = { ...loop('items', 4), onError: { action: 'abort' as const } };
+    await expect(new ForHandler(deps).execute(strict)).rejects.toThrow('boom on 1');
 
     // The four in flight when it blew up may finish; the remaining 36 must not start.
     expect(started.length).toBeLessThan(12);

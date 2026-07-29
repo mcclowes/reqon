@@ -252,7 +252,7 @@ mission LongRunning {
 ## Programmatic access
 
 ```typescript
-import { execute, FileExecutionStore } from 'reqon';
+import { execute, FileExecutionStore } from 'reqon-dsl';
 
 const store = new FileExecutionStore('.reqon-data/executions');
 

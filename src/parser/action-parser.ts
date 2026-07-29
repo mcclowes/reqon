@@ -28,10 +28,12 @@ import type {
   PauseStep,
   PauseResumeTrigger,
   StoreDefinition,
+  BatchConfig,
   FieldMapping,
   ValidationConstraint,
   StoreOptions,
   RetryConfig,
+  LoopErrorPolicy,
 } from '../ast/nodes.js';
 import { FetchParser } from './fetch-parser.js';
 
@@ -71,7 +73,72 @@ export class ActionParser extends FetchParser {
     const target = this.consume(TokenType.STRING, 'Expected target name').value;
     this.consume(TokenType.RPAREN, "Expected ')'");
 
-    return { type: 'StoreDefinition', name, storeType, target };
+    const batch = this.parseStoreOptions();
+
+    return { type: 'StoreDefinition', name, storeType, target, batch };
+  }
+
+  /** Optional `{ batch: … }` block after a store's `type("target")`. */
+  private parseStoreOptions(): BatchConfig | undefined {
+    if (!this.check(TokenType.LBRACE)) return undefined;
+    this.advance();
+
+    let batch: BatchConfig | undefined;
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      const key = this.consumeIdentifier('Expected store option').value;
+      this.consume(TokenType.COLON, "Expected ':'");
+      if (key === 'batch') {
+        batch = this.parseBatchConfig();
+      } else {
+        throw this.error(`Unknown store option: ${key}`);
+      }
+      this.match(TokenType.COMMA);
+    }
+    this.consume(TokenType.RBRACE, "Expected '}'");
+    return batch;
+  }
+
+  /** `batch: 500` shorthand, or `batch: { size, maxDelay?, durability? }`. */
+  private parseBatchConfig(): BatchConfig {
+    if (this.check(TokenType.NUMBER)) {
+      return { size: parseInt(this.advance().value, 10) };
+    }
+
+    this.consume(TokenType.LBRACE, "Expected batch size or '{'");
+    let size: number | undefined;
+    let maxDelay: number | undefined;
+    let durability: 'strict' | 'relaxed' | undefined;
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      const key = this.consumeIdentifier('Expected batch option').value;
+      this.consume(TokenType.COLON, "Expected ':'");
+      switch (key) {
+        case 'size':
+          size = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'maxDelay':
+          maxDelay = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'durability': {
+          const value = this.consumeAny(
+            [TokenType.STRING, TokenType.IDENTIFIER],
+            'Expected durability'
+          ).value;
+          if (value !== 'strict' && value !== 'relaxed') {
+            throw this.error(`Unknown durability: ${value} (expected strict or relaxed)`);
+          }
+          durability = value;
+          break;
+        }
+        default:
+          throw this.error(`Unknown batch option: ${key}`);
+      }
+      this.match(TokenType.COMMA);
+    }
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    if (size === undefined) throw this.error('batch requires a size');
+    return { size, ...(maxDelay !== undefined && { maxDelay }), ...(durability && { durability }) };
   }
 
   /**
@@ -129,6 +196,7 @@ export class ActionParser extends FetchParser {
     }
 
     const concurrency = this.parseConcurrencyClause();
+    const onError = this.parseOnErrorClause();
 
     this.consume(TokenType.LBRACE, "Expected '{'");
     const steps: ActionStep[] = [];
@@ -140,7 +208,31 @@ export class ActionParser extends FetchParser {
 
     this.consume(TokenType.RBRACE, "Expected '}'");
 
-    return { type: 'ForStep', variable, collection, condition, steps, concurrency };
+    return { type: 'ForStep', variable, collection, condition, steps, concurrency, onError };
+  }
+
+  /**
+   * Optional `onError continue | abort | queue <store>` in a for loop header.
+   *
+   * A soft keyword, like `concurrency`, so `onError` stays usable as an
+   * identifier elsewhere. Absent means continue - see ForStep.onError.
+   */
+  private parseOnErrorClause(): LoopErrorPolicy | undefined {
+    if (!this.check(TokenType.IDENTIFIER) || this.peek().value !== 'onError') {
+      return undefined;
+    }
+    this.advance();
+
+    if (this.match(ReqonTokenType.ABORT)) return { action: 'abort' };
+    if (this.match(ReqonTokenType.CONTINUE)) return { action: 'continue' };
+    if (this.match(ReqonTokenType.QUEUE)) {
+      const store = this.consumeIdentifier('Expected a store name after onError queue').value;
+      return { action: 'continue', queue: store };
+    }
+
+    throw this.error(
+      `Expected 'continue', 'abort' or 'queue <store>' after onError, got: ${this.peek().value}`
+    );
   }
 
   /**
@@ -434,17 +526,22 @@ export class ActionParser extends FetchParser {
    * Parse a match arm
    */
   protected parseMatchArm(): MatchArm {
-    // Array-of-schema pattern: [Schema] matches an array whose elements all
-    // satisfy Schema. A bare identifier (or '_') matches a single value.
+    // A bare number dispatches on the response status (`404 -> skip`).
+    // `[Schema]` matches an array whose elements all satisfy Schema. A bare
+    // identifier (or '_') matches a single value.
+    let status: number | undefined;
     let schema: string;
     let isArray = false;
-    if (this.match(TokenType.LBRACKET)) {
+    if (this.check(TokenType.NUMBER)) {
+      const token = this.advance();
+      status = parseInt(token.value, 10);
+      schema = token.value;
+    } else if (this.match(TokenType.LBRACKET)) {
       schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name in array pattern').value;
       this.consume(TokenType.RBRACKET, "Expected ']' to close array pattern");
       isArray = true;
     } else {
-      // Schema name or '_' for wildcard
-      schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name or _').value;
+      schema = this.consume(TokenType.IDENTIFIER, 'Expected status code, schema name or _').value;
     }
 
     // Optional guard condition: _ where <condition>
@@ -458,7 +555,7 @@ export class ActionParser extends FetchParser {
     // Check for flow directives
     const flow = this.tryParseFlowDirective();
     if (flow) {
-      return { schema, isArray, guard, flow };
+      return { schema, status, isArray, guard, flow };
     }
 
     // Check for step block
@@ -472,12 +569,12 @@ export class ActionParser extends FetchParser {
       }
 
       this.consume(TokenType.RBRACE, "Expected '}'");
-      return { schema, isArray, guard, steps };
+      return { schema, status, isArray, guard, steps };
     }
 
     // Single step
     const step = this.parseActionStep();
-    return { schema, isArray, guard, steps: [step] };
+    return { schema, status, isArray, guard, steps: [step] };
   }
 
   /**

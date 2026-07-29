@@ -4,7 +4,10 @@ Pulling per-manager data from the Fantasy Premier League API: a public,
 unauthenticated API with no rate limit headers and a low tolerance for hammering
 from one IP.
 
-Two files, and the order matters.
+Three files. `bootstrap.vague` (one request for all the static data),
+`first-500k.vague` (the whole job in one mission - fetch the first 500k managers
+from one host), and `managers.vague` (the fleet-ready sibling - the first 100k
+with an egress pool and crash-resume). Start at the top.
 
 ## Start with bootstrap.vague
 
@@ -17,29 +20,230 @@ reqon examples/fpl-sharded/bootstrap.vague --verbose
 ```
 
 Reach for the second file only when you need the per-manager endpoints
-(`/entry/{id}/history/`, `/entry/{id}/event/{gw}/picks/`), where the work is
-millions of small requests rather than one big one.
+(`/entry/{id}/`, `/entry/{id}/history/`, `/entry/{id}/event/{gw}/picks/`), where
+the work is millions of small requests rather than one big one.
 
 ## managers.vague
 
-Shows the three pieces that make a sharded fan-out work.
+Same endpoint, schema, model and store tuning as `first-500k.vague`, pulling the
+first **100,000** managers - but built to scale out and survive a restart. It's
+the fleet-ready sibling: everything `first-500k.vague` does, plus an egress pool
+and crash-resume. Run it the same way:
+
+```bash
+FPL_USER_AGENT="you (you@example.com)" reqon examples/fpl-sharded/managers.vague --verbose
+```
 
 **Egress pool.** `proxy: [...]` on the source rotates requests round-robin
 across proxies, per request attempt. A 429 on one IP retries from another. Rate
 limit and circuit breaker state are keyed per proxy, so each IP gets its own
-budget and one failing proxy opens only its own circuit.
+budget and one failing proxy opens only its own circuit. Unset by default, so it
+runs direct; set the env vars and one worker fans its rate across four IPs. At
+that point raise `concurrency` toward `pool-size × 192` to fill every budget.
 
-**Loop concurrency.** `for entry in shard concurrency 8` runs eight iterations
-in flight. Without it a worker issues one request at a time and can't use the
-egress it has. Iterations already get their own scope, so `response` and the
-loop variable stay isolated.
+**Crash-resume.** `checkpoint: onFailure` (mission level) persists execution
+state on failure so a died run resumes rather than restarting from id 1. Upserts
+are idempotent, so a resumed run reconciles safely. `onFailure` keeps the hot
+path fast — it doesn't checkpoint all 100k iterations, only on a break (use
+`afterStep` if you need per-iteration durability and can spend the writes).
 
-**Sharding by input.** Each worker reads its own `fpl_shard` file and upserts
-into one shared PostgREST table. Shards are disjoint, so workers never contend.
+**Arbitrary id sets.** The ids come from `range(1, 100001)` here. To pull a
+non-contiguous set instead — a fleet slice, a re-fetch of stale records — feed a
+shard file (`store shard: file("fpl_shard")` + `for entry in shard`); the
+commented block in the file shows the swap. Shards are disjoint, so a fleet
+never contends on the shared store.
+
+**Same speed as first-500k.** Model at the measured ceiling, `concurrency 192`
+for the heavy endpoint, and a whole-run relaxed batch so the file store writes
+once — see the `first-500k.vague` notes below for why each matters. Measured on a
+5,000-manager slice: **~2,300 req/s, zero failures**; the first 100k lands in
+about a minute from one IP.
+
+## first-500k.vague
+
+`managers.vague` is a worker: hand it a shard, it pulls it. When the id list is
+just "the first N managers", you don't need a shard file or an orchestrator at
+all - `first-500k.vague` is the whole job in one mission:
+
+```bash
+FPL_USER_AGENT="you (you@example.com)" reqon examples/fpl-sharded/first-500k.vague --verbose
+```
+
+Three choices make it fast, all reqon, no scripts around it:
+
+- **`range()` generates the ids.** `for id in range(1, 500001)` iterates
+  1..500,000 in-mission - no 500k-line shard file to write first. (`range(end)`
+  or `range(start, end)`, start-inclusive / end-exclusive, capped at 20M so a
+  fat-fingered bound fails loudly instead of eating memory.) Change the bound to
+  pull a different count.
+- **The model is pinned at FPL's measured ceiling.** `capacity: 5000, refill:
+  1800` mirrors what one IP actually tolerates (burst ~5-7k, then ~1,800 req/s);
+  `safety: 0.9` paces just under, and a 429 tightens it automatically. So it runs
+  as fast as one IP politely can, without a 429 storm.
+- **Concurrency is set for a heavy endpoint.** `/entry/{id}/` embeds the
+  manager's leagues, so it's a ~100ms round-trip - at concurrency 48 the socket
+  count caps the run at ~440 req/s, well under the model. `concurrency 192` fills
+  the latency pipe so the *model* is the governor (it caps the rate regardless).
+- **The store writes once, not 500k times.** `batch: { size: 600000, maxDelay:
+  ..., durability: relaxed }` buffers the whole run in memory and flushes on close
+  as a single file write. A file store rewrites the entire file per flush, so a
+  per-record or small batch would be O(n²) IO - the store, not the fetch, would
+  be the bottleneck. The trade is memory (hundreds of MB for 500k) and no
+  durability until the end; for a durable or much larger pull, point `managers`
+  at `postgrest(...)` with a `size: 500` relaxed batch instead.
+
+**Measured:** the identical pipeline pulled 8,000 real manager records at
+**~2,400 req/s, zero failures** (burst-inflated, since 8k barely exceeds the
+bucket). At the model's steady ~1,600 req/s the full 500k lands in **~5 minutes
+from a single IP**. Add a proxy pool (the `proxy:` block, unset by default) and
+the per-IP budgets fan that rate across egress IPs - a couple dozen IPs is the
+~20k req/s that clears 12M in ten minutes (see
+[How fast can this actually go?](#how-fast-can-this-actually-go)).
+
+It stays polite by default: no proxies, one host, paced under the measured limit.
+500k requests is still 500k requests, so run it when you actually need the data,
+not to watch the number go up.
+
+## Modeling the rate limit
+
+Being resilient to a rate limit (retry, back off) is not the same as staying
+under it. A flat `fallbackRpm` is resilient but blunt: it either leaves the
+server's burst allowance unused, or, set too high, drains it and eats 429s - and
+it can't learn from those 429s. Most servers - FPL included, via OpenResty -
+enforce a **token bucket**: a full bucket absorbs a burst, then sustained
+traffic above the refill rate is throttled. Model that bucket and reqon paces
+under it locally, using the burst and holding the sustained rate:
+
+```
+rateLimit: {
+  strategy: throttle,
+  model: { type: tokenBucket, capacity: 20, refill: 5, safety: 0.9 }
+}
+```
+
+- `capacity` — how many requests a full bucket absorbs at once (the burst).
+- `refill` — tokens the bucket regains per second (the sustained rate).
+- `safety` — pace at this fraction of the modeled rate *and* burst for headroom
+  against clock skew (optional, default 1.0).
+
+reqon simulates the bucket with the same GCRA scheduler a rate limiter uses, per
+egress lane, and releases a request only when the modeled bucket has a token.
+Against a mock enforcing capacity 50 / refill 100 per second, a naive fixed
+200/s took 452 × 429 out of 1000; the model took **zero**, while still using the
+burst.
+
+### The numbers are a ceiling, not a measurement
+
+You almost never know a server's real limit exactly, and it shifts with load.
+So the model self-calibrates: **an observed 429 tightens the offending lane
+below the configured rate and holds it there; quiet time eases it back up.**
+This matters most for a headerless limiter like FPL's - it sends no
+`Retry-After`, so the 429 itself is the *only* feedback the client gets. (Before
+this, a headerless 429 produced no client-side correction at all: the lane just
+kept hammering the rate that had already failed.)
+
+The practical consequence: pick `capacity` and `refill` as a best-guess ceiling
+and let the run converge. Overshoot the sustained rate and the 429s pull it
+back within a few requests; undershoot and you simply leave some throughput on
+the table. The example's numbers (burst 20, ~5/s per proxy) are deliberately
+conservative so it stays polite from one host - raise them toward the server's
+true ceiling for a fleet. Keep `capacity` no larger than the burst you're
+willing to fire *before* the first feedback arrives; the burst is the one part
+adaptation can't walk back after the fact.
+
+## How fast can this actually go?
+
+FPL has on the order of 11-12M managers, so a full per-manager pull is ~12M
+requests. Ten minutes is 600 seconds, i.e. a sustained **~20,000 requests/second
+in aggregate**. That number is worth stating plainly because it sets the shape
+of the whole operation:
+
+- The bottleneck is not reqon. One worker process drives well over ten thousand
+  requests/second through the full fetch → map → store pipeline (mock numbers
+  below), and ~2,200 req/s against live FPL from a single IP (measured below).
+- The gate is FPL's **per-IP rate**, and it's higher than you'd guess. Measured
+  from one IP: FPL absorbs a **burst of ~5,000-7,000 requests** before the first
+  429, then sustains **~1,800-2,000 req/s** with only a ~10-15% 429 trickle. Call
+  the sustained figure `R`; here `R ≈ 1,800`.
+- So the pull needs roughly `20,000 / R` egress IPs held for ten minutes - about
+  **a dozen IPs**, paced to maybe ~20-25 to keep a clean margin below the limit.
+  Not the thousands an earlier, pessimistic guess implied.
+
+So 12M-in-10-min is genuinely feasible, on a couple dozen IPs rather than a
+data-center. That does not make it *polite*: it is still pulling a service's
+entire userbase as fast as its limiter allows, which its terms of use generally
+frown on however few IPs you spread it over. This example is built to be capable
+of that scale - sharded fan-out, per-IP budgets, batched ingest, a
+self-calibrating rate model - and to default to the polite, single-host,
+direct-egress version. Treat 12M-in-10-min as the design target the architecture
+must survive, not as a throughput to point at FPL. The overnight, incremental,
+cached pull below gets you the same data without hammering anyone.
+
+> Measured live from one IP on 2026-07-26, via reqon's own `HttpClient` (no
+> client throttle, no retry, 429s counted as data): 2 ramp + 3 sustained runs,
+> ~400 induced 429s total. FPL sends no rate-limit headers, so these are
+> black-box observations - the burst depth and refill vary run to run and with
+> FPL's load, and can change without notice. Treat `R ≈ 1,800/s/IP` as an
+> order-of-magnitude fact (hundreds-to-thousands, not single digits), not a
+> constant to hard-code.
+
+### Throughput, measured
+
+Numbers for the pipeline itself - the real CLI running `managers.vague`-shaped
+missions against a **zero-latency local mock** (loopback, no rate limit), so this
+is the code's ceiling, not what you'd see over the wire. 5,000 requests:
+
+| concurrency | store                          | req/s   |
+| ----------- | ------------------------------ | ------- |
+| 8           | memory                         | ~16,000 |
+| 8           | file, `batch` **relaxed**      | ~16,900 |
+| 8           | file, plain (this example)     | ~740    |
+| 8           | file, `batch: 500` **strict**  | ~72     |
+| 512         | file, plain                    | ~13,000 |
+| 512         | file, `batch: 500` strict      | ~13,900 |
+
+Two things to read off this:
+
+- **The pipeline ceiling is ~16k req/s per process**, reached with an in-memory
+  store or a relaxed-durability batch. It is never the constraint against a
+  rate-limited API.
+- **`batch: 500` in strict mode at low concurrency is a trap** - 72 req/s, 10×
+  *slower* than no batching. The batch (500) never fills at concurrency 8, so
+  every flush waits the 100ms timer. Match the batch size to your concurrency, or
+  use `durability: relaxed`, and batching helps instead of hurting. This is why
+  the runnable example uses a plain file store.
+
+Over the real network none of these is the limit anyway: effective throughput is
+`concurrency / round-trip-latency`, and then FPL's per-IP rate sits below that.
+The store numbers matter only so you don't hobble a worker with a batch config
+that's slower than no batch at all.
+
+And against **live FPL** from one IP (reqon's own `HttpClient`, ~21-30ms
+round-trip, no client throttle):
+
+| what                              | measured                                        |
+| --------------------------------- | ----------------------------------------------- |
+| burst before first 429            | ~5,000-7,000 requests                           |
+| sustained accept rate             | ~1,800-2,000 req/s (≈10-15% 429 above that)     |
+| reqon's achieved rate @ conc 48   | ~2,200 req/s (concurrency-bound, not FPL-bound) |
+
+The achieved rate rose with concurrency until it met FPL's limiter at roughly
+the same place - so from one IP, one worker at a few dozen in-flight requests
+saturates what FPL will give it. More per IP just buys 429s; more throughput
+means more IPs.
 
 ## Running it
 
-Each worker needs its shard and its slice of the pool:
+No configuration required. It runs direct from your own IP, into a file store:
+
+```bash
+reqon examples/fpl-sharded/managers.vague --verbose
+```
+
+That is the right way to try it. Reach for the rest when the shard is big enough
+that one IP won't do.
+
+### With an egress pool
 
 ```bash
 export FPL_USER_AGENT="your-project (you@example.com)"
@@ -51,11 +255,31 @@ export FPL_PROXY_4=http://user:pass@proxy-d:3128
 reqon examples/fpl-sharded/managers.vague --verbose
 ```
 
+Leave all four unset and the mission runs direct. Setting only some of them is
+an error rather than a shorter pool: the missing entries would concentrate the
+whole request rate onto whichever proxies did resolve, which is the failure the
+pool exists to prevent.
+
 Proxy support needs the optional peer dependency:
 
 ```bash
 npm install undici
 ```
+
+### As a fleet
+
+Swap the file store for the shared table so every worker upserts into one place,
+and batch the writes so each flush is one array POST rather than 500 round-trips:
+
+```
+store managers: postgrest("fpl_managers") { batch: { size: 500, durability: relaxed } }
+```
+
+`relaxed` matters here: with the default `strict` and a batch larger than the
+loop's concurrency, every flush waits the 100ms timer (see
+[Throughput, measured](#throughput-measured)). Relaxed lets the fan-out run at
+full speed and the batch fill by size; the trade is crash-safety of the in-flight
+buffer, which a resumable, idempotent-upsert run can afford.
 
 The shard file lives at `.reqon-data/fpl_shard.json`, keyed by id:
 
@@ -66,8 +290,14 @@ The shard file lives at `.reqon-data/fpl_shard.json`, keyed by id:
 }
 ```
 
-Reqon has no `range()` builtin, so the id list is an input. Whatever starts your
-workers writes each shard file before the run.
+A contiguous block of ids is what `range()` is for (see `first-500k.vague`); the
+shard file is how a worker takes an arbitrary set instead - a disjoint slice, a
+resume list, a re-fetch of records that went stale. Whatever starts your workers
+writes each shard file before the run.
+A shard is an input file, so whatever starts your workers writes each one before
+the run. That's what buys you disjoint, arbitrary id sets across a fleet. When
+the ids are just a contiguous block, you don't need the file at all - `range()`
+generates them in-mission, which is what `first-500k.vague` does.
 
 ## Orchestration
 
@@ -95,9 +325,10 @@ routing around a control the API owner put there. FPL is public and the
 community scrapes it constantly, so this isn't exotic, but be a good citizen:
 
 - Set a real `User-Agent` with a contact address. It's already wired up here.
-- Keep `fallbackRpm` conservative. It's per proxy, so the worker's total rate is
-  `fallbackRpm x pool size`.
+- Keep the model conservative. `capacity`/`refill` are per proxy, so the
+  worker's total rate is roughly `refill x pool size`; the self-calibration only
+  ever paces *below* what you configure, never above it.
 - Fetch overnight, and only re-fetch managers whose data actually changed.
-- Cache. Manager history for a finished gameweek never changes again.
+- Cache. A finished gameweek's results never change again.
 
 The polite version is usually also the cheaper version.

@@ -193,4 +193,3 @@ Only the root file defines the `mission`. Action files can contain `action` defi
 ### "Duplicate action definition"
 
 An action with the same name is defined in two files. Action names must be unique across the whole folder.
-</content>

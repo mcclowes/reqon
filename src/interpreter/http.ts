@@ -1,36 +1,17 @@
+import { z } from 'zod';
 import type { RetryConfig } from '../ast/nodes.js';
 import type { RateLimiter } from '../auth/types.js';
-import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
+import { parseRateLimitHeaders, parseRetryAfterMs } from '../auth/rate-limiter.js';
 import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
+import { laneKey } from '../auth/lane.js';
 import { sleep } from '../utils/async.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
 import type { ProxyPool } from './proxy.js';
 
-/**
- * Parse a `Retry-After` header into a delay in ms, clamped to `maxDelayMs`.
- * The header may be delta-seconds (`120`) or an HTTP-date; a date in the past or
- * an unparseable value yields 0 and `undefined` respectively. Clamping stops a
- * hostile/broken server from pinning the client for hours, and the date branch
- * stops `parseInt` from turning a date into `NaN` → `sleep(NaN)` → a tight loop.
- */
-export function parseRetryAfterMs(
-  value: string | null | undefined,
-  maxDelayMs: number
-): number | undefined {
-  if (!value) return undefined;
-  const trimmed = value.trim();
-  const seconds = Number(trimmed);
-  let ms: number;
-  if (trimmed !== '' && Number.isFinite(seconds)) {
-    ms = seconds * 1000;
-  } else {
-    const when = Date.parse(trimmed);
-    if (Number.isNaN(when)) return undefined;
-    ms = when - Date.now();
-  }
-  return Math.min(Math.max(ms, 0), maxDelayMs);
-}
+// Re-exported for compatibility: the parser lives with the other header
+// parsing in auth/rate-limiter.ts so both consumers share one implementation.
+export { parseRetryAfterMs };
 
 /** Maximum buffered response body size (10 MiB) before the request is rejected. */
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
@@ -51,11 +32,46 @@ export interface HttpClientConfig {
    * IP's 429s or failures don't throttle or trip the rest.
    */
   proxyPool?: ProxyPool;
+  /**
+   * Notified before each retry backoff, so observers can surface a retry count.
+   * Retries happen inside this loop, invisible to the caller otherwise.
+   */
+  onRetry?: (info: RetryInfo) => void;
+}
+
+/** A single retry attempt about to be made after a backoff. */
+export interface RetryInfo {
+  source?: string;
+  path: string;
+  /** The attempt that just failed (1-based); the retry is `attempt + 1`. */
+  attempt: number;
+  maxAttempts: number;
+  /** Why the attempt is being retried: an HTTP status or a network reason. */
+  reason: string;
+  /** Backoff before the next attempt, in ms. */
+  waitMs: number;
+}
+
+/**
+ * The header(s) and/or query param(s) a provider adds to authenticate a request.
+ * Lets schemes other than `Authorization: Bearer` (Basic, an API key in a custom
+ * header or a query param) participate without the client hardcoding one shape.
+ */
+export interface AuthContribution {
+  headers?: Record<string, string>;
+  query?: Record<string, string>;
 }
 
 export interface AuthProvider {
   getToken(): Promise<string>;
   refreshToken?(): Promise<string>;
+  /**
+   * Full auth contribution for a request. Implement this for any scheme that is
+   * not `Authorization: Bearer <getToken()>` — Basic auth, or an API key in a
+   * custom header or query param. When absent, the client falls back to sending
+   * `Authorization: Bearer <getToken()>`.
+   */
+  applyAuth?(): Promise<AuthContribution>;
 }
 
 export interface HttpRequest {
@@ -70,6 +86,13 @@ export interface HttpRequest {
    * server can dedup a re-sent write.
    */
   idempotencyKey?: string;
+  /**
+   * Statuses to treat as a normal response rather than a failure. An allowed
+   * status short-circuits the retry, refresh and error paths below and is
+   * reported to the circuit breaker as a success - the server answered
+   * correctly, we simply asked about something that isn't there.
+   */
+  allow?: number[];
 }
 
 /** HTTP methods that are safe to retry automatically (idempotent per RFC 7231). */
@@ -88,18 +111,48 @@ export class HttpClient {
     this.config = config;
   }
 
+  /** Notify the retry observer (if any) before a backoff. Never throws. */
+  private notifyRetry(
+    req: HttpRequest,
+    attempt: number,
+    maxAttempts: number,
+    reason: string,
+    waitMs: number
+  ): void {
+    if (!this.config.onRetry) return;
+    try {
+      this.config.onRetry({
+        source: this.config.sourceName,
+        path: req.path,
+        attempt,
+        maxAttempts,
+        reason,
+        waitMs,
+      });
+    } catch {
+      // Observability must never break a request.
+    }
+  }
+
   async request<T = unknown>(req: HttpRequest, retry?: RetryConfig): Promise<HttpResponse<T>> {
-    const url = this.buildUrl(req.path, req.query);
+    // Resolve auth once up front: header contributions go into the request
+    // headers, query contributions (e.g. an API key in a query param) into the
+    // URL. Bearer/OAuth2 contribute a header; Basic and API-key providers may
+    // contribute either.
+    const auth = await this.resolveAuthContribution();
+    const url = this.buildUrl(req.path, this.mergeQuery(req.query, auth?.query));
     const requestHeaders = { ...req.headers };
     if (req.idempotencyKey) {
       requestHeaders['Idempotency-Key'] = req.idempotencyKey;
     }
-    const headers = await this.buildHeaders(requestHeaders);
+    const headers = this.buildHeaders(requestHeaders, auth);
 
     const fetchOptions: RequestInit = {
       method: req.method,
       headers,
-      body: req.body ? JSON.stringify(req.body) : undefined,
+      // Serialize any defined body. A truthiness check would silently drop a
+      // legitimate falsy payload (0, false, ""); only null/undefined mean "no body".
+      body: req.body != null ? JSON.stringify(req.body) : undefined,
     };
 
     // Auto-retry only idempotent verbs, or any verb carrying an idempotency key.
@@ -127,28 +180,40 @@ export class HttpClient {
       // Resilience state is per egress IP. Sharing one key across a pool would
       // throttle every proxy to a single IP's budget and let one bad proxy trip
       // the breaker for all of them.
-      const laneKey =
-        this.config.sourceName && lane
-          ? `${this.config.sourceName}@${lane.label}`
-          : this.config.sourceName;
+      const requestLane = this.config.sourceName
+        ? laneKey(this.config.sourceName, lane?.label)
+        : undefined;
 
       try {
         // Check the circuit breaker before each attempt; state may have changed
         // during a retry backoff. Throws CircuitBreakerError if open, which the
         // catch below re-throws rather than retrying.
-        if (this.config.circuitBreaker && laneKey) {
-          this.config.circuitBreaker.ensureCanProceed(laneKey, req.path);
+        //
+        // Scoped to the lane, not the path. req.path is interpolated per
+        // iteration, so a fan-out over `/entry/{id}/` would file every request
+        // under its own key: the throttle would never see a previous request to
+        // pace against and the breaker would never accumulate to its threshold.
+        if (this.config.circuitBreaker && requestLane) {
+          this.config.circuitBreaker.ensureCanProceed(requestLane);
         }
 
         // Wait for rate limit capacity if we have a rate limiter
-        if (this.config.rateLimiter && laneKey) {
-          await this.config.rateLimiter.waitForCapacity(laneKey, req.path);
+        if (this.config.rateLimiter && requestLane) {
+          await this.config.rateLimiter.waitForCapacity(requestLane);
         }
 
         const attemptOptions = lane
           ? ({ ...fetchOptions, dispatcher: lane.dispatcher } as RequestInit)
           : fetchOptions;
-        const response = await this.fetchWithTimeout(url, attemptOptions, timeout, req.method);
+        // Dispatch through the fetch that owns this dispatcher; see
+        // ProxyLane.fetchImpl. Falls back to global fetch off the proxy path.
+        const response = await this.fetchWithTimeout(
+          url,
+          attemptOptions,
+          timeout,
+          req.method,
+          lane?.fetchImpl ?? fetch
+        );
 
         // Extract and record rate limit info from response headers
         const responseHeaders: Record<string, string> = {};
@@ -156,18 +221,34 @@ export class HttpClient {
           responseHeaders[key] = value;
         });
 
-        if (this.config.rateLimiter && laneKey) {
+        if (this.config.rateLimiter && requestLane) {
           const rateLimitInfo = parseRateLimitHeaders(responseHeaders);
 
-          // Add retry-after from 429 responses
+          // Flag every 429 so the limiter backs off and calibrates its model,
+          // even when the server sends no Retry-After (FPL's OpenResty bucket
+          // doesn't). The header, when present, refines the wait.
           if (response.status === 429) {
+            rateLimitInfo.rejected = true;
             const ms = parseRetryAfterMs(response.headers.get('Retry-After'), maxDelay);
             if (ms !== undefined) {
               rateLimitInfo.retryAfter = Math.ceil(ms / 1000);
             }
           }
 
-          this.config.rateLimiter.recordResponse(laneKey, rateLimitInfo, req.path);
+          this.config.rateLimiter.recordResponse(requestLane, rateLimitInfo);
+        }
+
+        // An allowed status is data. Decided before the retry and error paths
+        // so `allow: [404]` costs one request, not maxAttempts of them.
+        if (req.allow?.includes(response.status)) {
+          if (this.config.circuitBreaker && requestLane) {
+            this.config.circuitBreaker.recordSuccess(requestLane);
+          }
+          return {
+            status: response.status,
+            data: await this.parseResponseBody<T>(response, url, req.method),
+            headers: responseHeaders,
+          };
         }
 
         // Handle rate limiting: retry only while attempts remain. A 429 on the
@@ -177,6 +258,8 @@ export class HttpClient {
           const delay =
             parseRetryAfterMs(response.headers.get('Retry-After'), maxDelay) ??
             this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+          this.notifyRetry(req, attempt, maxAttempts, '429', delay);
+          await this.drainBody(response);
           await sleep(delay);
           continue;
         }
@@ -184,12 +267,14 @@ export class HttpClient {
         // Handle server errors with retry
         if (response.status >= 500) {
           // Record failure in circuit breaker
-          if (this.config.circuitBreaker && laneKey) {
-            this.config.circuitBreaker.recordFailure(laneKey, req.path, response.status);
+          if (this.config.circuitBreaker && requestLane) {
+            this.config.circuitBreaker.recordFailure(requestLane, undefined, response.status);
           }
 
           if (retriable && attempt < maxAttempts) {
             const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+            this.notifyRetry(req, attempt, maxAttempts, `${response.status}`, delay);
+            await this.drainBody(response);
             await sleep(delay);
             continue;
           }
@@ -205,10 +290,12 @@ export class HttpClient {
           attempt < maxAttempts
         ) {
           hasRefreshed = true;
+          await this.drainBody(response);
           await this.config.auth.refreshToken();
-          // Rebuild headers with new token (preserving the idempotency key)
-          const newHeaders = await this.buildHeaders(requestHeaders);
-          fetchOptions.headers = newHeaders;
+          // Rebuild headers with the refreshed token (preserving the idempotency
+          // key). Only header-based schemes refresh, so the URL query is stable.
+          const refreshedAuth = await this.resolveAuthContribution();
+          fetchOptions.headers = this.buildHeaders(requestHeaders, refreshedAuth);
           continue;
         }
 
@@ -216,6 +303,20 @@ export class HttpClient {
         // 429/401-refresh cases handled above) or a 5xx that exhausted retries.
         // Returning it as `data` would let map/store persist an API error body.
         if (response.status >= 400) {
+          // Report a 4xx to the breaker so it observes the outcome: this releases
+          // a half-open probe slot and lets a configured `failureStatusCodes`
+          // count auth failures (a revoked key 403ing every request) toward the
+          // threshold instead of looping forever (#254). Whether it *counts*
+          // stays governed by config. 5xx was already recorded above; recording
+          // it here too would double-count, so this is 4xx-only.
+          if (
+            this.config.circuitBreaker &&
+            requestLane &&
+            response.status >= 400 &&
+            response.status < 500
+          ) {
+            this.config.circuitBreaker.recordFailure(requestLane, undefined, response.status);
+          }
           const snippet = await this.safeReadSnippet(response);
           throw new FetchError(
             `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}` +
@@ -227,8 +328,8 @@ export class HttpClient {
         const data = await this.parseResponseBody<T>(response, url, req.method);
 
         // Record success in circuit breaker
-        if (this.config.circuitBreaker && laneKey && response.status < 500) {
-          this.config.circuitBreaker.recordSuccess(laneKey, req.path);
+        if (this.config.circuitBreaker && requestLane && response.status < 500) {
+          this.config.circuitBreaker.recordSuccess(requestLane);
         }
 
         return {
@@ -251,8 +352,8 @@ export class HttpClient {
         }
 
         // Record network errors in circuit breaker
-        if (this.config.circuitBreaker && laneKey) {
-          this.config.circuitBreaker.recordFailure(laneKey, req.path, undefined, true);
+        if (this.config.circuitBreaker && requestLane) {
+          this.config.circuitBreaker.recordFailure(requestLane, undefined, undefined, true);
         }
 
         // A network error on a non-idempotent write is ambiguous: the request
@@ -264,6 +365,7 @@ export class HttpClient {
 
         if (attempt < maxAttempts) {
           const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
+          this.notifyRetry(req, attempt, maxAttempts, lastError.message || 'network error', delay);
           await sleep(delay);
         }
       }
@@ -281,16 +383,17 @@ export class HttpClient {
     url: string,
     options: RequestInit,
     timeoutMs: number,
-    method: string
+    method: string,
+    fetchImpl: typeof globalThis.fetch = fetch
   ): Promise<Response> {
     if (!timeoutMs || timeoutMs <= 0) {
-      return fetch(url, options);
+      return fetchImpl(url, options);
     }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetch(url, { ...options, signal: controller.signal });
+      return await fetchImpl(url, { ...options, signal: controller.signal });
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         throw new FetchError(`Request timed out after ${timeoutMs}ms`, {
@@ -366,6 +469,21 @@ export class HttpClient {
     return Buffer.concat(chunks).toString('utf-8');
   }
 
+  /**
+   * Release an unread response body before abandoning a response on a retry or
+   * refresh path. In the fetch API the body is a resource with an ownership
+   * contract: if you won't read it, cancel it. Undici otherwise holds the socket
+   * until GC, so a retry-heavy run leaks connections and exhausts the pool,
+   * surfacing as unexplained timeouts rather than as a leak (#253).
+   */
+  private async drainBody(response: Response): Promise<void> {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Best-effort: an already-consumed or errored body has nothing to leak.
+    }
+  }
+
   /** Read a short snippet of a body for an error message (best-effort). */
   private async safeReadSnippet(response: Response): Promise<string> {
     try {
@@ -390,9 +508,35 @@ export class HttpClient {
     return url;
   }
 
-  private async buildHeaders(
-    requestHeaders?: Record<string, string>
-  ): Promise<Record<string, string>> {
+  /**
+   * Resolve the configured auth provider's contribution for a request, or
+   * undefined when the source is unauthenticated. A provider that implements
+   * `applyAuth` controls its own header/query shape (Basic, API key); otherwise
+   * the default is `Authorization: Bearer <getToken()>`.
+   */
+  private async resolveAuthContribution(): Promise<AuthContribution | undefined> {
+    const auth = this.config.auth;
+    if (!auth) return undefined;
+    if (auth.applyAuth) {
+      return auth.applyAuth();
+    }
+    const token = await auth.getToken();
+    return { headers: { Authorization: `Bearer ${token}` } };
+  }
+
+  /** Merge base query params with auth-provided ones (auth wins on conflict). */
+  private mergeQuery(
+    base?: Record<string, string>,
+    auth?: Record<string, string>
+  ): Record<string, string> | undefined {
+    if (!auth || Object.keys(auth).length === 0) return base;
+    return { ...base, ...auth };
+  }
+
+  private buildHeaders(
+    requestHeaders?: Record<string, string>,
+    auth?: AuthContribution
+  ): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
@@ -400,9 +544,8 @@ export class HttpClient {
       ...requestHeaders,
     };
 
-    if (this.config.auth) {
-      const token = await this.config.auth.getToken();
-      headers['Authorization'] = `Bearer ${token}`;
+    if (auth?.headers) {
+      Object.assign(headers, auth.headers);
     }
 
     return headers;
@@ -449,6 +592,56 @@ export class BearerAuthProvider implements AuthProvider {
   }
 }
 
+/**
+ * HTTP Basic auth: sends `Authorization: Basic base64(username:password)`.
+ * Before #200 a `basic` source was silently sent unauthenticated.
+ */
+export class BasicAuthProvider implements AuthProvider {
+  private readonly encoded: string;
+
+  constructor(username: string, password: string) {
+    this.encoded = Buffer.from(`${username}:${password}`).toString('base64');
+  }
+
+  async getToken(): Promise<string> {
+    return this.encoded;
+  }
+
+  async applyAuth(): Promise<AuthContribution> {
+    return { headers: { Authorization: `Basic ${this.encoded}` } };
+  }
+}
+
+/**
+ * API-key auth: sends the key in a header (default `X-API-Key`) or, when
+ * `location: 'query'`, as a query parameter. Before #200 an `api_key` source
+ * was silently sent unauthenticated.
+ */
+export class ApiKeyAuthProvider implements AuthProvider {
+  private readonly key: string;
+  private readonly paramName: string;
+  private readonly location: 'header' | 'query';
+
+  constructor(key: string, options: { name?: string; location?: 'header' | 'query' } = {}) {
+    this.key = key;
+    this.location = options.location ?? 'header';
+    this.paramName = options.name ?? (this.location === 'query' ? 'api_key' : 'X-API-Key');
+  }
+
+  async getToken(): Promise<string> {
+    return this.key;
+  }
+
+  async applyAuth(): Promise<AuthContribution> {
+    return this.location === 'query'
+      ? { query: { [this.paramName]: this.key } }
+      : { headers: { [this.paramName]: this.key } };
+  }
+}
+
+/** Refresh ahead of expiry at this fraction of the token's lifetime. */
+const PROACTIVE_REFRESH_FRACTION = 0.8;
+
 // OAuth2 auth provider (simplified)
 export class OAuth2AuthProvider implements AuthProvider {
   private accessToken: string;
@@ -458,6 +651,8 @@ export class OAuth2AuthProvider implements AuthProvider {
   private clientSecret?: string;
   /** Single-flight guard: coalesces concurrent refreshes into one in-flight request */
   private refreshPromise: Promise<string> | null = null;
+  /** Epoch ms after which getToken refreshes proactively (from `expires_in`). */
+  private refreshAfter?: number;
 
   constructor(config: {
     accessToken: string;
@@ -474,7 +669,26 @@ export class OAuth2AuthProvider implements AuthProvider {
   }
 
   async getToken(): Promise<string> {
+    // Refresh ahead of a known expiry: a reactive-only refresh costs a wasted
+    // request plus a retry on every expiry. Failure falls back to the current
+    // token — the 401 path remains the place real refresh errors surface.
+    if (this.shouldProactivelyRefresh()) {
+      try {
+        return await this.refreshToken();
+      } catch {
+        return this.accessToken;
+      }
+    }
     return this.accessToken;
+  }
+
+  private shouldProactivelyRefresh(): boolean {
+    return (
+      this.refreshAfter !== undefined &&
+      Date.now() >= this.refreshAfter &&
+      !!this.refreshTokenValue &&
+      !!this.tokenEndpoint
+    );
   }
 
   async refreshToken(): Promise<string> {
@@ -510,12 +724,63 @@ export class OAuth2AuthProvider implements AuthProvider {
       }),
     });
 
-    const data = (await response.json()) as { access_token: string; refresh_token?: string };
-    this.accessToken = data.access_token;
-    if (data.refresh_token) {
-      this.refreshTokenValue = data.refresh_token;
+    // A failed refresh (e.g. 400 invalid_grant on an expired refresh token) has
+    // no access_token. Without this check `accessToken` becomes undefined and
+    // every later request sends `Bearer undefined`, turning an expired-token
+    // condition into a confusing 401 loop. Surface the real reason instead (#255).
+    if (!response.ok) {
+      throw new Error(`OAuth2 token refresh failed: ${await describeOAuthError(response)}`);
+    }
+
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch {
+      throw new Error(
+        `OAuth2 token refresh failed: token endpoint returned a non-JSON body (HTTP ${response.status})`
+      );
+    }
+
+    // Validate rather than cast. This data crosses a trust boundary; `as` only
+    // silences the compiler, it doesn't check that access_token is really there.
+    const parsed = OAuth2TokenResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new Error('OAuth2 token refresh failed: response did not contain a valid access_token');
+    }
+
+    this.accessToken = parsed.data.access_token;
+    if (parsed.data.refresh_token) {
+      this.refreshTokenValue = parsed.data.refresh_token;
+    }
+    if (parsed.data.expires_in !== undefined && Number.isFinite(parsed.data.expires_in)) {
+      this.refreshAfter = Date.now() + parsed.data.expires_in * 1000 * PROACTIVE_REFRESH_FRACTION;
     }
 
     return this.accessToken;
   }
+}
+
+/** Shape of a successful RFC 6749 token response (only the fields we consume). */
+const OAuth2TokenResponseSchema = z.object({
+  access_token: z.string().min(1),
+  refresh_token: z.string().min(1).optional(),
+  expires_in: z.number().optional(),
+  token_type: z.string().optional(),
+});
+
+/**
+ * Extract a human-readable reason from an OAuth2 error response. Providers put
+ * the real cause in the `error` / `error_description` fields (RFC 6749 §5.2);
+ * fall back to the status line when the body isn't the expected JSON.
+ */
+async function describeOAuthError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string; error_description?: string };
+    if (body?.error) {
+      return body.error_description ? `${body.error} (${body.error_description})` : body.error;
+    }
+  } catch {
+    // Non-JSON body; fall through to the status line.
+  }
+  return `HTTP ${response.status}`;
 }

@@ -164,6 +164,63 @@ export class PostgRESTStore implements StoreAdapter {
     }
   }
 
+  /**
+   * Insert-or-replace a batch in one round-trip. PostgREST accepts an array
+   * body; `merge-duplicates` resolves conflicts on the primary key.
+   *
+   * Duplicate keys within the batch are collapsed first: a multi-row insert with
+   * ON CONFLICT cannot affect the same row twice in one statement, so PostgREST
+   * would reject the whole batch. Last write wins, shallow-merged, matching the
+   * order the records arrived.
+   */
+  async bulkSet(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void> {
+    await this.bulkWrite(records, false);
+  }
+
+  /** Bulk upsert - same wire shape as {@link bulkSet}; the primary key resolves conflicts. */
+  async bulkUpsert(records: Array<{ key: string; value: Record<string, unknown> }>): Promise<void> {
+    await this.bulkWrite(records, true);
+  }
+
+  private async bulkWrite(
+    records: Array<{ key: string; value: Record<string, unknown> }>,
+    merge: boolean
+  ): Promise<void> {
+    if (records.length === 0) return;
+
+    // Collapse duplicate keys: Postgres rejects a statement that touches the
+    // same conflict target twice. For a plain set the later value replaces the
+    // earlier; for an upsert we shallow-merge, both in arrival order.
+    const byKey = new Map<string, Record<string, unknown>>();
+    for (const { key, value } of records) {
+      // Keep the record's own primary-key field if it has one - stamping the
+      // string key over a numeric id would change its type. Only fill it in
+      // when absent.
+      const stamped =
+        this.primaryKey in value ? { ...value } : { ...value, [this.primaryKey]: key };
+      const existing = byKey.get(key);
+      byKey.set(key, existing && merge ? { ...existing, ...stamped } : stamped);
+    }
+
+    const response = await this.request(this.baseUrl, {
+      method: 'POST',
+      headers: {
+        ...this.headers,
+        // return=minimal: don't pull N rows back over the wire just to discard them.
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify([...byKey.values()]),
+    });
+
+    if (!response.ok) {
+      const error = await this.parseError(response);
+      throw new PostgRESTError(
+        `Failed to bulk write ${byKey.size} records: ${error}`,
+        response.status
+      );
+    }
+  }
+
   async update(key: string, value: Partial<Record<string, unknown>>): Promise<void> {
     const url = `${this.baseUrl}?${this.primaryKey}=eq.${encodeURIComponent(key)}`;
 

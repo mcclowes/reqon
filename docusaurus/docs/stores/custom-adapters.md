@@ -52,7 +52,7 @@ stores all filter on equality. `count` applies only the `where` clause and ignor
 
 ```typescript
 import { createClient } from 'redis';
-import type { StoreAdapter, StoreFilter } from 'reqon';
+import type { StoreAdapter, StoreFilter } from 'reqon-dsl';
 
 export class RedisStoreAdapter implements StoreAdapter {
   private client: ReturnType<typeof createClient>;
@@ -140,7 +140,7 @@ mission. The adapter replaces whatever store the mission declared under that nam
 so declare any valid store type as a placeholder:
 
 ```typescript
-import { execute } from 'reqon';
+import { execute } from 'reqon-dsl';
 import { RedisStoreAdapter } from './redis-adapter';
 
 const cache = new RedisStoreAdapter('redis://localhost:6379', 'my-cache');
@@ -250,4 +250,3 @@ describe('RedisStoreAdapter', () => {
   });
 });
 ```
-</content>

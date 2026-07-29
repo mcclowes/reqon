@@ -2,12 +2,18 @@
 
 Demonstrates Reqon's multiple store types for comprehensive data synchronization.
 
+> **Run this one with `--dev`.** `sql()` and `nosql()` have no database adapter
+> behind them: `sql()` works only with a PostgREST backend configured, `nosql()`
+> has no implementation at all, and both throw unless `--dev` opts into the local
+> JSON file fallback. This example is a shape demo, not a working database sync —
+> for real database storage see [postgrest-sync](../postgrest-sync/).
+
 ## Key Features
 
 | Feature | Description |
 |---------|-------------|
-| `sql()` | Relational database storage |
-| `nosql()` | Document database storage |
+| `sql()` | Relational storage *shape* — no adapter; falls back to JSON files under `--dev` |
+| `nosql()` | Document storage *shape* — not implemented; falls back to JSON files under `--dev` |
 | `memory()` | Temporary in-memory storage |
 | `file()` | File-based storage/export |
 | `upsert: true` | Update or insert semantics |
@@ -90,66 +96,72 @@ store {
 ```
 
 ### Querying Stores
+The only way to read a store is to iterate it with a `for` loop (optionally
+filtered with `where`):
+
 ```vague
-// Get by key
-let product = products[product_id]
+// Iterate all records
+for product in products { ... }
 
-// Filter
-let active = products where .status == "active"
-
-// Aggregate
-let total = sum(inventory.quantity)
-let count = length(products)
+// Iterate a filtered subset
+for product in products where .status == "active" { ... }
 ```
 
-### Cross-Store Operations
-```vague
-// Join data from multiple stores
-for product in products {
-  let details = product_details[product.id]
-  let inv = inventory where .product_id == product.id
+There is intentionally **no inline store access** in expressions:
 
-  store {
-    product: product,
-    details: details,
-    stock: sum(inv.available)
-  } -> combined { key: product.id }
+```vague
+// NOT supported — a store is not a value in an expression:
+let product = products[product_id]     // key lookup → empty
+let count   = length(products)         // → 0, not the row count
+let total   = sum(inventory.quantity)  // throws: sum() requires an array
+```
+
+`length()`/`sum()` work over arrays (like `response.data` or `.line_items`), not
+over a store. To count or total a store, aggregate the per-record rows with
+downstream tooling, or accumulate during the `for` loop as you write output.
+
+### Cross-Store Operations
+Join by nesting `for` loops — the inner loop filters the second store against the
+current record of the outer loop:
+
+```vague
+// Join products to their inventory rows across two stores
+for product in products {
+  for inv in inventory where .product_id == product.id {
+    store {
+      product_id: product.id,
+      warehouse: inv.warehouse_id,
+      available: inv.available
+    } -> combined { key: product.id + "_" + inv.warehouse_id }
+  }
 }
 ```
 
 ## Usage
 
 ```bash
-# Run the sync
-node dist/cli.js examples/database-sync/sync.vague --verbose
-
-# With database connection string
-DATABASE_URL=postgres://... node dist/cli.js examples/database-sync/sync.vague
+# Run the sync. --dev is required: without it the sql/nosql stores throw.
+node dist/cli.js examples/database-sync/sync.vague --dev --verbose
 ```
+
+Under `--dev`, `sql()` writes to `.reqon-data/sql/` and `nosql()` to
+`.reqon-data/nosql/`.
 
 ## Configuration
 
-Database connections are configured via environment variables:
-
-```bash
-# SQL databases
-DATABASE_URL=postgres://user:pass@host:5432/db
-MYSQL_URL=mysql://user:pass@host:3306/db
-
-# NoSQL databases
-MONGODB_URL=mongodb://host:27017/db
-REDIS_URL=redis://host:6379
-
-# File storage
-FILE_STORAGE_PATH=/path/to/storage
-```
+There are no `DATABASE_URL`/`MYSQL_URL`/`MONGODB_URL` style connection strings —
+Reqon reads none of them. The only store backend that talks to a real database is
+`postgrest()`, configured through PostgREST/Supabase options. See
+[postgrest-sync](../postgrest-sync/).
 
 ## Best Practices
 
-1. **Use SQL for relational data**: Products, categories, transactions
-2. **Use NoSQL for flexible data**: User preferences, metadata, logs
-3. **Use memory for processing**: Queues, temporary aggregations
-4. **Use file for exports**: Reports, backups, data exchange
-5. **Always specify keys**: Ensures idempotent operations
-6. **Use upsert for sync**: Handles both creates and updates
-7. **Use partial for efficiency**: Only update changed fields
+1. **Use postgrest for real persistence**: it's the only database-backed adapter
+2. **Use memory for processing**: Queues, temporary aggregations
+3. **Use file for exports**: Reports, backups, data exchange
+4. **Always specify keys**: Ensures idempotent operations
+5. **Use upsert for sync**: Handles both creates and updates
+6. **Use partial for efficiency**: Only update changed fields
+
+The `sql`/`nosql` split above is a modelling exercise. Until those adapters
+exist, treat them as file stores with a label.

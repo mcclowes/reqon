@@ -79,8 +79,19 @@ export class FileSyncStore implements SyncStore {
 
   async recordSync(checkpoint: SyncCheckpoint): Promise<void> {
     await this.initialized;
+    if (this.isStale(checkpoint)) return;
     this.checkpoints.set(checkpoint.key, checkpoint);
     await this.persist();
+  }
+
+  /**
+   * A watermark is monotonic: a checkpoint older than the current one is
+   * dropped whole rather than rewinding it (or merging incoherent fields).
+   * `clear` is the explicit reset path.
+   */
+  private isStale(checkpoint: SyncCheckpoint): boolean {
+    const existing = this.checkpoints.get(checkpoint.key);
+    return existing !== undefined && existing.syncedAt > checkpoint.syncedAt;
   }
 
   async list(): Promise<SyncCheckpoint[]> {
@@ -117,6 +128,9 @@ export class MemorySyncStore implements SyncStore {
   }
 
   async recordSync(checkpoint: SyncCheckpoint): Promise<void> {
+    // Monotonic, matching FileSyncStore: never rewind the watermark.
+    const existing = this.checkpoints.get(checkpoint.key);
+    if (existing && existing.syncedAt > checkpoint.syncedAt) return;
     this.checkpoints.set(checkpoint.key, { ...checkpoint });
   }
 

@@ -289,6 +289,24 @@ describe('PauseManager', () => {
     expect(pause.resumeTriggers).toContainEqual({ type: 'timeout', active: true });
   });
 
+  it('does not mutate the caller-provided resumeTriggers array', async () => {
+    const triggers = [{ type: 'webhook' as const, path: '/cb' }];
+    const frozen = Object.freeze([...triggers]);
+    // Frozen input must not throw: the default timeout trigger is appended to a
+    // copy, never the caller's array.
+    const pause = await manager.createPause({
+      executionId: 'exec-frozen',
+      mission: 'TestMission',
+      duration: '1h',
+      checkpoint: { stageIndex: 0, stepIndex: 0, action: 'Test', variables: {} },
+      resumeTriggers: frozen as unknown as Array<{ type: 'webhook'; path: string }>,
+    });
+    // Caller's array is untouched (still just the webhook trigger)...
+    expect(frozen).toHaveLength(1);
+    // ...while the pause still gained the implicit timeout trigger.
+    expect(pause.resumeTriggers).toContainEqual({ type: 'timeout', active: true });
+  });
+
   it('resumes pause manually', async () => {
     const pause = await manager.createPause({
       executionId: 'exec-123',

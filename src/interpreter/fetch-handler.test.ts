@@ -566,12 +566,18 @@ describe('FetchHandler', () => {
         },
       };
 
+      const emit = vi.fn();
+      deps.emit = emit;
       const handler = new FetchHandler(deps);
       const result = await handler.execute(step);
 
       expect(Array.isArray(result.data)).toBe(true);
       expect((result.data as unknown[]).length).toBe(6);
       expect(callCount).toBe(3);
+
+      // fetch.complete must report the real page count, not undefined.
+      const complete = emit.mock.calls.find((c) => c[0] === 'fetch.complete');
+      expect(complete?.[1]).toMatchObject({ pagesFetched: 3, recordCount: 6 });
     });
 
     it('fetches with page number pagination', async () => {
@@ -734,11 +740,94 @@ describe('FetchHandler', () => {
       };
 
       const handler = new FetchHandler(deps);
-      await handler.execute(step);
+      const result = await handler.execute(step);
 
       // Should stop at 100 pages max
       expect(callCount).toBe(100);
-      expect(deps.log).toHaveBeenCalledWith('Warning: pagination limit (100) reached');
+      expect(deps.log).toHaveBeenCalledWith('Pagination page limit (100) reached');
+      // #246: stopping at the cap must be surfaced as truncation, not silence.
+      expect(result.truncated).toEqual({
+        reason: 'page-cap',
+        pagesFetched: 100,
+        itemsFetched: 100,
+      });
+    });
+
+    // #246: a cap firing must be visible (truncated flag + event) so a sync
+    // checkpoint never advances past records that were never fetched.
+    describe('truncation (#246)', () => {
+      const endless = (perPage = 1): void => {
+        let call = 0;
+        (mockClient.request as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+          call++;
+          return {
+            status: 200,
+            data: { items: Array.from({ length: perPage }, (_, i) => ({ id: call * 1000 + i })) },
+            headers: {},
+          };
+        });
+      };
+      const offsetStep = (maxPages?: number, maxItems?: number): FetchStep => ({
+        type: 'FetchStep',
+        source: 'api',
+        method: 'GET',
+        path: { type: 'Literal', value: '/items', dataType: 'string' } as Expression,
+        paginate: { type: 'offset', param: 'offset', pageSize: 1, maxPages, maxItems },
+      });
+
+      it('honours a per-step maxPages cap and reports truncation', async () => {
+        endless();
+        const result = await new FetchHandler(deps).execute(offsetStep(5));
+        expect((result.data as unknown[]).length).toBe(5);
+        expect(result.truncated).toEqual({ reason: 'page-cap', pagesFetched: 5, itemsFetched: 5 });
+      });
+
+      it('honours a per-step maxItems cap and reports truncation', async () => {
+        endless(2); // 2 items per page
+        const result = await new FetchHandler(deps).execute(offsetStep(undefined, 6));
+        expect((result.data as unknown[]).length).toBe(6);
+        expect(result.truncated).toEqual({ reason: 'item-cap', pagesFetched: 3, itemsFetched: 6 });
+      });
+
+      it('honours a runtime-default cap when no per-step cap is set', async () => {
+        endless();
+        deps.maxPaginationPages = 3;
+        const result = await new FetchHandler(deps).execute(offsetStep());
+        expect((result.data as unknown[]).length).toBe(3);
+        expect(result.truncated?.reason).toBe('page-cap');
+      });
+
+      it('emits a fetch.truncated event when a cap fires', async () => {
+        endless();
+        const emit = vi.fn();
+        deps.emit = emit;
+        await new FetchHandler(deps).execute(offsetStep(4));
+        expect(emit).toHaveBeenCalledWith(
+          'fetch.truncated',
+          expect.objectContaining({ reason: 'page-cap', pagesFetched: 4, itemsFetched: 4 })
+        );
+      });
+
+      it('does not flag truncation when pagination ends naturally on the cap boundary', async () => {
+        // Three pages of a pageSize-2 fetch, the last one short so the source
+        // itself signals hasMore=false exactly as the page cap is reached.
+        let call = 0;
+        (mockClient.request as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+          call++;
+          const items = call < 3 ? [{ id: call }, { id: call + 100 }] : [{ id: call }];
+          return { status: 200, data: { items }, headers: {} };
+        });
+        const step: FetchStep = {
+          type: 'FetchStep',
+          source: 'api',
+          method: 'GET',
+          path: { type: 'Literal', value: '/items', dataType: 'string' } as Expression,
+          paginate: { type: 'offset', param: 'offset', pageSize: 2, maxPages: 3 },
+        };
+        const result = await new FetchHandler(deps).execute(step);
+        expect((result.data as unknown[]).length).toBe(5);
+        expect(result.truncated).toBeUndefined();
+      });
     });
 
     it('logs pagination progress', async () => {
@@ -806,6 +895,49 @@ describe('FetchHandler', () => {
       await handler.execute(step);
 
       expect(deps.log).toHaveBeenCalledWith(expect.stringContaining('Incremental sync:'));
+    });
+  });
+
+  describe('recordCheckpoint', () => {
+    const sinceStep = (updateFrom?: string): FetchStep => ({
+      type: 'FetchStep',
+      source: 'api',
+      method: 'GET',
+      path: { type: 'Literal', value: '/events', dataType: 'string' } as Expression,
+      since: { type: 'lastSync', ...(updateFrom ? { updateFrom } : {}) },
+    });
+
+    it('walks a top-level array response for the newest updateFrom timestamp', async () => {
+      const data = [
+        { id: 1, updated_at: '2026-01-05T00:00:00Z' },
+        { id: 2, updated_at: '2026-03-01T00:00:00Z' },
+        { id: 3, updated_at: '2026-02-01T00:00:00Z' },
+      ];
+
+      const syncedAt = await new FetchHandler(deps).recordCheckpoint(
+        'k',
+        sinceStep('updated_at'),
+        data,
+        new Date('2026-07-01T00:00:00Z')
+      );
+
+      expect(syncedAt?.toISOString()).toBe('2026-03-01T00:00:00.000Z');
+    });
+
+    it('never records a checkpoint older than the existing watermark', async () => {
+      mockSyncStore.getLastSync = vi.fn(async () => new Date('2026-05-01T00:00:00Z'));
+
+      const syncedAt = await new FetchHandler(deps).recordCheckpoint(
+        'k',
+        sinceStep('updated_at'),
+        { updated_at: '2026-04-01T00:00:00Z' },
+        new Date('2026-07-01T00:00:00Z')
+      );
+
+      expect(syncedAt?.toISOString()).toBe('2026-05-01T00:00:00.000Z');
+      expect(mockSyncStore.recordSync).toHaveBeenCalledWith(
+        expect.objectContaining({ syncedAt: new Date('2026-05-01T00:00:00Z') })
+      );
     });
   });
 });

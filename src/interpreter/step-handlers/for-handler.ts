@@ -1,10 +1,12 @@
-import type { ForStep, ActionStep } from '../../ast/nodes.js';
+import { createHash } from 'node:crypto';
+import type { ForStep, ActionStep, LoopErrorPolicy } from '../../ast/nodes.js';
 import type { StepHandler, StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
 import { childContext, setVariable, getVariable } from '../context.js';
 import type { ExecutionContext } from '../context.js';
 import { StepError } from '../../errors/index.js';
-import { SkipSignal, QueueSignal } from '../signals.js';
+import { SkipSignal, QueueSignal, markTolerated } from '../signals.js';
+import { isRecord } from '../../utils/type-guards.js';
 import type { DebugController, DebugSnapshot, DebugLocation } from '../../debug/index.js';
 
 /** Heartbeat interval for loop iterations */
@@ -26,6 +28,8 @@ export interface ForHandlerDeps extends StepHandlerDeps {
   checkPause?: () => Promise<void>;
   /** Handle a `queue` directive raised within a loop item. */
   handleQueue?: (signal: QueueSignal) => Promise<void>;
+  /** Reports an item the loop tolerated, so the run can summarise the damage. */
+  onItemFailed?: (info: { action: string; index: number; error: string }) => void;
 }
 
 /**
@@ -122,7 +126,8 @@ export class ForHandler implements StepHandler<ForStep> {
         processedCount++;
       } catch (error) {
         failedCount++;
-        throw error; // Re-throw to propagate
+        if (this.errorPolicy(step).action === 'abort') throw error;
+        await this.recordFailure(step, item, i, error);
       }
     }
 
@@ -163,10 +168,11 @@ export class ForHandler implements StepHandler<ForStep> {
   /**
    * Run iterations with a bounded number in flight.
    *
-   * Failure is fail-fast on the queue: the first error stops workers pulling new
-   * items, iterations already in flight are allowed to finish, and the first
-   * error is then rethrown. That keeps the sequential path's "stop on error"
-   * promise without abandoning half-done work mid-write.
+   * Under the default `continue` policy a failed item is recorded and the
+   * workers keep pulling. Under `onError abort` the first error stops workers
+   * pulling new items, iterations already in flight are allowed to finish, and
+   * the error is then rethrown - matching the sequential path's "stop on error"
+   * without abandoning half-done work mid-write.
    */
   private async executeConcurrently(
     step: ForStep,
@@ -176,6 +182,7 @@ export class ForHandler implements StepHandler<ForStep> {
   ): Promise<void> {
     let next = 0;
     let processedCount = 0;
+    let failedCount = 0;
     let firstError: unknown;
 
     const worker = async (): Promise<void> => {
@@ -192,8 +199,12 @@ export class ForHandler implements StepHandler<ForStep> {
           await this.executeForItem(step, items[i], `[${i}]`);
           processedCount++;
         } catch (error) {
-          firstError ??= error;
-          return;
+          if (this.errorPolicy(step).action === 'abort') {
+            firstError ??= error;
+            return;
+          }
+          failedCount++;
+          await this.recordFailure(step, items[i], i, error);
         }
 
         // Heartbeat on completions rather than a loop counter: with workers
@@ -217,10 +228,71 @@ export class ForHandler implements StepHandler<ForStep> {
       totalItems: items.length,
       itemsProcessed: processedCount,
       itemsSkipped: originalCount - items.length,
-      itemsFailed: firstError === undefined ? 0 : 1,
+      itemsFailed: failedCount + (firstError === undefined ? 0 : 1),
     });
 
     if (firstError !== undefined) throw firstError;
+  }
+
+  /** Continue past failed items unless the loop opted into strict mode. */
+  private errorPolicy(step: ForStep): LoopErrorPolicy {
+    return step.onError ?? { action: 'continue' };
+  }
+
+  /**
+   * Log a tolerated failure and, if the loop named a queue, record the item.
+   *
+   * Always logged: continuing by default means a broken mission (every request
+   * 401ing, say) would otherwise finish "successfully" having stored nothing,
+   * and a silent zero is worse than a loud failure.
+   */
+  private async recordFailure(
+    step: ForStep,
+    item: unknown,
+    index: number,
+    error: unknown
+  ): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error);
+    markTolerated(error);
+    this.deps.log(`Item ${index} failed, continuing: ${message}`);
+
+    this.deps.emit?.('loop.item.failed', {
+      variable: step.variable,
+      itemIndex: index,
+      error: message,
+    });
+    this.deps.onItemFailed?.({ action: this.deps.actionName, index, error: message });
+
+    const queue = this.errorPolicy(step).queue;
+    if (!queue) return;
+
+    const store = this.deps.ctx.stores.get(queue);
+    if (!store) {
+      throw new StepError(`onError queue store not found: ${queue}`, 'for', {
+        action: this.deps.actionName,
+      });
+    }
+
+    const status = (error as { statusCode?: number })?.statusCode;
+    await store.set(this.deadLetterKey(step, item, index), {
+      item,
+      error: message,
+      ...(status !== undefined ? { status } : {}),
+      action: this.deps.actionName,
+      index,
+      failedAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Key a dead-letter entry by the identity of the failed record, never its
+   * loop position. Index keys silently overwrite each other when two loops share
+   * one `onError queue` store, and across re-runs and resumes (#256) - so the
+   * store whose whole job is not to lose failures loses them. Namespaced by
+   * action + loop variable so two loops can safely share a store.
+   */
+  private deadLetterKey(step: ForStep, item: unknown, index: number): string {
+    return `${this.deps.actionName}:${step.variable}:${recordIdentity(item, index)}`;
   }
 
   /**
@@ -259,4 +331,28 @@ export class ForHandler implements StepHandler<ForStep> {
       throw error;
     }
   }
+}
+
+/**
+ * Derive a stable identity for a failed loop item, preferring a natural key,
+ * then a content hash, and only falling back to position for values that have
+ * neither (null/undefined). Identity is a property of the record; position is a
+ * property of one traversal (#256).
+ */
+function recordIdentity(item: unknown, index: number): string {
+  if (isRecord(item)) {
+    const natural = item.id ?? item._id ?? item.key ?? item.uuid;
+    if (natural !== undefined && natural !== null && natural !== '') {
+      return `id-${String(natural)}`;
+    }
+    return `sha-${hashContent(JSON.stringify(item))}`;
+  }
+  if (item !== undefined && item !== null) {
+    return `val-${hashContent(String(item))}`;
+  }
+  return `idx-${index}`;
+}
+
+function hashContent(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 16);
 }

@@ -284,8 +284,10 @@ mission TaskManager {
   // ============================================================
 
   action BulkDeleteOldTasks {
-    // Delete archived tasks older than 90 days
-    for task in archived_tasks where .created_at < now() - 7776000000 {
+    // Delete archived tasks older than 90 days. timestamp() is epoch ms, so the
+    // arithmetic is valid; this assumes the API returns created_at as epoch ms
+    // (use now() when you need an ISO-8601 string instead).
+    for task in archived_tasks where .created_at < timestamp() - 7776000000 {
       delete "/tasks/{task.id}" {
         source: TaskAPI
       }

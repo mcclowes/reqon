@@ -244,14 +244,16 @@ export async function fetchShopifyOrder(orderId: string): Promise<UnifiedOrder |
 
 // Activity: Get last sync timestamp
 export async function getShopifyLastSync(): Promise<string | null> {
-  // This would query the database - simplified for example
-  // In Reqon: sync_state.get("shopify_orders_last_sync")
+  // This would query the database - simplified for example.
+  // In Reqon both this read AND the update below are handled by a single
+  // `since: lastSync { param: "updated_at_min", format: iso }` on the fetch.
   return process.env.SHOPIFY_LAST_SYNC || null;
 }
 
 // Activity: Update last sync timestamp
 export async function updateShopifyLastSync(timestamp: string): Promise<void> {
-  // This would update the database - simplified for example
-  // In Reqon: store { "shopify_orders_last_sync": now() } -> sync_state { key: ... }
+  // This would update the database - simplified for example.
+  // In Reqon: no separate activity — `since: lastSync` advances the checkpoint
+  // automatically after a successful fetch.
   console.log(`Updated Shopify last sync to: ${timestamp}`);
 }

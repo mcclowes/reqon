@@ -225,6 +225,105 @@ describe('evaluate', () => {
     });
   });
 
+  // Regression coverage for #248: comparisons used to coerce every operand
+  // through Number(), so any non-numeric value became NaN and every ordering
+  // comparison returned false. That silently broke `where .updated_at > lastSync`.
+  describe('ordering comparisons (dates, strings, booleans)', () => {
+    const ctx = createContext();
+    const cmp = (left: unknown, right: unknown, operator: string): boolean =>
+      evaluate(
+        {
+          type: 'BinaryExpression',
+          operator,
+          left: { type: 'Literal', value: left, dataType: 'string' },
+          right: { type: 'Literal', value: right, dataType: 'string' },
+        } as Expression,
+        ctx
+      ) as boolean;
+
+    it('compares ISO-8601 date strings chronologically', () => {
+      expect(cmp('2026-01-02T00:00:00Z', '2026-01-01T00:00:00Z', '>')).toBe(true);
+      expect(cmp('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', '>')).toBe(false);
+      expect(cmp('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', '<')).toBe(true);
+      expect(cmp('2026-01-01', '2026-01-01', '>=')).toBe(true);
+      expect(cmp('2026-01-01', '2026-01-01', '<=')).toBe(true);
+    });
+
+    it('orders bare dates against timestamps by instant, not by byte', () => {
+      // Lexicographically '2026-01-02' > '2026-01-01T...'; chronologically too,
+      // but the failure mode is a same-day timestamp vs bare date.
+      expect(cmp('2026-01-01T12:00:00Z', '2026-01-01', '>')).toBe(true);
+    });
+
+    it('compares plain strings lexicographically', () => {
+      expect(cmp('banana', 'apple', '>')).toBe(true);
+      expect(cmp('banana', 'apple', '<')).toBe(false);
+      expect(cmp('apple', 'banana', '<')).toBe(true);
+      expect(cmp('apple', 'apple', '>=')).toBe(true);
+    });
+
+    it('compares numbers numerically', () => {
+      const num = (l: number, r: number, op: string): boolean =>
+        evaluate(
+          {
+            type: 'BinaryExpression',
+            operator: op,
+            left: { type: 'Literal', value: l, dataType: 'number' },
+            right: { type: 'Literal', value: r, dataType: 'number' },
+          } as Expression,
+          ctx
+        ) as boolean;
+      expect(num(2, 10, '<')).toBe(true);
+      expect(num(10, 2, '>')).toBe(true);
+    });
+
+    it('satisfies trichotomy: exactly one of <, ==, > holds for like-typed values', () => {
+      const pairs: [unknown, unknown, 'string' | 'number'][] = [
+        ['2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', 'string'],
+        ['apple', 'banana', 'string'],
+        ['apple', 'apple', 'string'],
+        [3, 5, 'number'],
+        [5, 5, 'number'],
+      ];
+      for (const [a, b, dataType] of pairs) {
+        const bin = (op: string): boolean =>
+          evaluate(
+            {
+              type: 'BinaryExpression',
+              operator: op,
+              left: { type: 'Literal', value: a, dataType },
+              right: { type: 'Literal', value: b, dataType },
+            } as Expression,
+            ctx
+          ) as boolean;
+        const holds = [bin('<'), bin('=='), bin('>')].filter(Boolean).length;
+        expect(holds).toBe(1);
+      }
+    });
+
+    it('excludes (returns false) when either operand is absent', () => {
+      const expr = (op: string): Expression =>
+        ({
+          type: 'BinaryExpression',
+          operator: op,
+          left: { type: 'Identifier', name: 'missing' },
+          right: { type: 'Literal', value: '2026-01-01', dataType: 'string' },
+        }) as Expression;
+      expect(evaluate(expr('>'), ctx, {})).toBe(false);
+      expect(evaluate(expr('<='), ctx, {})).toBe(false);
+    });
+
+    it('throws on a genuine type mismatch instead of matching nothing silently', () => {
+      const expr: Expression = {
+        type: 'BinaryExpression',
+        operator: '>',
+        left: { type: 'Literal', value: 5, dataType: 'number' },
+        right: { type: 'Literal', value: 'apple', dataType: 'string' },
+      } as Expression;
+      expect(() => evaluate(expr, ctx)).toThrow(/Cannot compare/);
+    });
+  });
+
   describe('logical expressions', () => {
     it('evaluates and (true && true)', () => {
       const ctx = createContext();
@@ -641,6 +740,159 @@ describe('evaluate', () => {
       expect(evaluate(expr, ctx)).toBe(4);
     });
 
+    const rangeExpr = (...values: number[]): Expression => ({
+      type: 'CallExpression',
+      callee: 'range',
+      arguments: values.map((value) => ({ type: 'Literal', value, dataType: 'number' })),
+    });
+
+    it('range(end) counts from 0 to end-1', () => {
+      expect(evaluate(rangeExpr(5), createContext())).toEqual([0, 1, 2, 3, 4]);
+    });
+
+    it('range(start, end) is start-inclusive, end-exclusive', () => {
+      expect(evaluate(rangeExpr(1, 6), createContext())).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('range yields an empty array when start >= end', () => {
+      expect(evaluate(rangeExpr(5, 5), createContext())).toEqual([]);
+      expect(evaluate(rangeExpr(9, 3), createContext())).toEqual([]);
+    });
+
+    it('range produces a large sweep without an input file', () => {
+      const result = evaluate(rangeExpr(1, 500001), createContext()) as number[];
+      expect(result.length).toBe(500000);
+      expect(result[0]).toBe(1);
+      expect(result[result.length - 1]).toBe(500000);
+    });
+
+    it('range refuses a range past the safety cap', () => {
+      expect(() => evaluate(rangeExpr(0, 20_000_001), createContext())).toThrow(/cap/);
+    });
+
+    const numLit = (value: number): Expression => ({
+      type: 'Literal',
+      value,
+      dataType: 'number',
+    });
+    const strLit = (value: string): Expression => ({
+      type: 'Literal',
+      value,
+      dataType: 'string',
+    });
+
+    it('abs returns the magnitude of a number', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'abs',
+        arguments: [numLit(-42)],
+      };
+      expect(evaluate(expr, createContext())).toBe(42);
+    });
+
+    it('max returns the largest of its numeric arguments', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'max',
+        arguments: [numLit(3), numLit(9), numLit(1)],
+      };
+      expect(evaluate(expr, createContext())).toBe(9);
+    });
+
+    it('min returns the smallest of its numeric arguments', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'min',
+        arguments: [numLit(3), numLit(9), numLit(1)],
+      };
+      expect(evaluate(expr, createContext())).toBe(1);
+    });
+
+    it('max accepts a single array argument', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'max',
+        arguments: [
+          {
+            type: 'OrderedSequenceType',
+            elements: [numLit(4), numLit(2), numLit(7)],
+          },
+        ],
+      };
+      expect(evaluate(expr, createContext())).toBe(7);
+    });
+
+    it('max guards a divisor against zero (max(n, 1))', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'max',
+        arguments: [numLit(0), numLit(1)],
+      };
+      expect(evaluate(expr, createContext())).toBe(1);
+    });
+
+    it('concat joins its arguments as strings, coercing numbers', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'concat',
+        arguments: [strLit('order_'), numLit(42), strLit('_done')],
+      };
+      expect(evaluate(expr, createContext())).toBe('order_42_done');
+    });
+
+    it('concat renders null/undefined as empty string', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'concat',
+        arguments: [strLit('a'), { type: 'Literal', value: null, dataType: 'null' }, strLit('b')],
+      };
+      expect(evaluate(expr, createContext())).toBe('ab');
+    });
+
+    it('parseNumber coerces a numeric string to a number', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'parseNumber',
+        arguments: [strLit('99.99')],
+      };
+      expect(evaluate(expr, createContext())).toBe(99.99);
+    });
+
+    it('parseNumber returns null for an unparseable value', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'parseNumber',
+        arguments: [strLit('not-a-number')],
+      };
+      expect(evaluate(expr, createContext())).toBeNull();
+    });
+
+    it('fromUnix converts epoch seconds to an ISO-8601 string', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'fromUnix',
+        arguments: [numLit(1700000000)],
+      };
+      expect(evaluate(expr, createContext())).toBe('2023-11-14T22:13:20.000Z');
+    });
+
+    it('fromUnix returns null for a non-finite argument', () => {
+      const expr: Expression = {
+        type: 'CallExpression',
+        callee: 'fromUnix',
+        arguments: [strLit('nope')],
+      };
+      expect(evaluate(expr, createContext())).toBeNull();
+    });
+
+    it('timestamp returns epoch milliseconds usable in arithmetic', () => {
+      const before = Date.now();
+      const expr: Expression = { type: 'CallExpression', callee: 'timestamp', arguments: [] };
+      const result = evaluate(expr, createContext()) as number;
+      expect(typeof result).toBe('number');
+      expect(result).toBeGreaterThanOrEqual(before);
+    });
+
     it('throws on unknown function', () => {
       const ctx = createContext();
       const expr: Expression = {
@@ -896,12 +1148,37 @@ describe('interpolatePath', () => {
     expect(result).toBe('/orgs/acme/projects/widget');
   });
 
-  it('handles missing values as empty string', () => {
+  it('throws on an unresolved placeholder rather than emitting an empty segment (#260)', () => {
     const ctx = createContext();
 
-    const result = interpolatePath('/users/{nonExistent}', ctx, {});
+    // Previously interpolated to `/users/`, a silently broken URL.
+    expect(() => interpolatePath('/users/{nonExistent}', ctx, {})).toThrow(/\{nonExistent\}/);
+  });
 
-    expect(result).toBe('/users/');
+  it('names the fields in scope when a placeholder is unresolved (#260)', () => {
+    const ctx = createContext();
+
+    expect(() => interpolatePath('/users/{id}', ctx, { userId: 7 })).toThrow(/userId/);
+  });
+
+  it('throws when a nested path resolves to a non-object mid-walk (#260)', () => {
+    const ctx = createContext();
+    setVariable(ctx, 'id', 'GLOBAL-LEAK');
+    // `org` is a string, so `org.id` cannot resolve; this must fail loudly rather
+    // than leak the unrelated `id` context variable.
+    expect(() => interpolatePath('/orgs/{org.id}', ctx, { org: 'acme' })).toThrow(/\{org\.id\}/);
+  });
+
+  it('falls back to a context variable for a dotted path the current item lacks', () => {
+    const ctx = createContext();
+    setVariable(ctx, 'org', { id: 'acme' });
+    // `current` has no `org`; the root segment must resolve to the `org`
+    // context variable and read its `.id`, not look up `id` as a standalone var.
+    const current = { id: 'item-X' };
+
+    const result = interpolatePath('/orgs/{org.id}/users', ctx, current);
+
+    expect(result).toBe('/orgs/acme/users');
   });
 });
 

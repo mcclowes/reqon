@@ -2,6 +2,7 @@ import type { StoreAdapter } from './types.js';
 import { MemoryStore } from './memory.js';
 import { FileStore, type FileStoreOptions } from './file.js';
 import { PostgRESTStore, type PostgRESTOptions } from './postgrest.js';
+import { BatchingStore, type BatchOptions } from './batching.js';
 import { type Logger, createLogger } from '../utils/logger.js';
 
 export type StoreType = 'memory' | 'file' | 'sql' | 'nosql' | 'postgrest';
@@ -17,6 +18,8 @@ export interface CreateStoreOptions {
   fileOptions?: FileStoreOptions;
   /** PostgREST/Supabase options */
   postgrest?: Omit<PostgRESTOptions, 'table'>;
+  /** Wrap the adapter in a batching layer for high-throughput fan-out. */
+  batch?: BatchOptions;
   /** Logger instance */
   logger?: Logger;
   /**
@@ -39,6 +42,14 @@ export interface CreateStoreOptions {
  * - 'nosql' - MongoDB/DynamoDB
  */
 export function createStore(options: CreateStoreOptions): StoreAdapter {
+  const adapter = createBaseAdapter(options);
+  // A batching layer buffers per-record writes and flushes in bulk - the
+  // difference between one DB round-trip per record and one per batch under a
+  // high-fan-out loop.
+  return options.batch ? new BatchingStore(adapter, options.batch) : adapter;
+}
+
+function createBaseAdapter(options: CreateStoreOptions): StoreAdapter {
   const logger = options.logger ?? createLogger();
 
   switch (options.type) {

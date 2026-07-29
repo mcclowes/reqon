@@ -7,6 +7,8 @@ import type {
   RateLimitEvent,
 } from './types.js';
 import { sleep } from '../utils/async.js';
+import { laneSource } from './lane.js';
+import { TokenBucketModel } from './rate-model.js';
 import { RATE_LIMIT_DEFAULTS } from '../config/index.js';
 
 interface RateLimitState {
@@ -17,7 +19,12 @@ interface RateLimitState {
   lastRequestAt?: Date;
 }
 
-const DEFAULT_CONFIG: Required<RateLimitConfig> = {
+// `model` has no default - its absence means "no model", so it is omitted from
+// the required defaults rather than given a placeholder.
+type ResolvedRateLimitConfig = Required<Omit<RateLimitConfig, 'model'>> &
+  Pick<RateLimitConfig, 'model'>;
+
+const DEFAULT_CONFIG: Required<Omit<RateLimitConfig, 'model'>> = {
   strategy: RATE_LIMIT_DEFAULTS.STRATEGY,
   maxWait: RATE_LIMIT_DEFAULTS.MAX_WAIT_SECONDS,
   notifyAt: RATE_LIMIT_DEFAULTS.NOTIFY_AT_SECONDS,
@@ -58,7 +65,30 @@ export class RateLimitError extends Error {
  */
 export class AdaptiveRateLimiter implements RateLimiter {
   private state: Map<string, RateLimitState> = new Map();
+  /**
+   * Next free send slot per egress lane, as an epoch ms timestamp.
+   *
+   * Deliberately keyed by lane alone, not by endpoint: a sharded fan-out calls
+   * a different interpolated path every iteration, and per-path buckets mean
+   * every request looks like the first one and the throttle never engages.
+   */
+  private pacing: Map<string, number> = new Map();
+  /**
+   * Active Retry-After backoff per egress lane.
+   *
+   * A 429 is the server objecting to this client, not to the one URL that
+   * happened to trip it. Held per lane so a fan-out over thousands of distinct
+   * paths actually stops, while a pool's other proxies keep working.
+   */
+  private laneBackoff: Map<string, Date> = new Map();
   private configs: Map<string, RateLimitConfig> = new Map();
+  /**
+   * A local simulation of the server's limiter, per configured source. When
+   * present it drives throttle pacing instead of the flat `fallbackRpm`, so a
+   * run uses the server's burst allowance and holds its sustained rate. The
+   * model keys its own buckets per lane, so one instance serves a whole pool.
+   */
+  private models: Map<string, TokenBucketModel> = new Map();
   private callbacks: RateLimitCallbacks = {};
   private lastCleanup: number = Date.now();
   private maxStaleAgeMs: number;
@@ -109,6 +139,19 @@ export class AdaptiveRateLimiter implements RateLimiter {
         this.state.delete(key);
       }
     }
+
+    // Lane-keyed maps get the same sweep: entries whose moment is long past
+    // hold no useful state and would otherwise accumulate forever.
+    for (const [lane, until] of this.laneBackoff) {
+      if (until < staleThreshold) {
+        this.laneBackoff.delete(lane);
+      }
+    }
+    for (const [lane, slot] of this.pacing) {
+      if (slot < now - this.maxStaleAgeMs) {
+        this.pacing.delete(lane);
+      }
+    }
   }
 
   /**
@@ -130,13 +173,30 @@ export class AdaptiveRateLimiter implements RateLimiter {
     return endpoint ? `${source}:${endpoint}` : source;
   }
 
-  private getConfig(source: string): Required<RateLimitConfig> {
-    const sourceConfig = this.configs.get(source) ?? {};
+  /**
+   * Resolve config for a source, falling back to the bare source name when
+   * given a proxy lane key. http.ts addresses the limiter per egress IP
+   * (`api@proxy-a`) so each IP gets its own budget, but the mission configures
+   * limits under the source name alone — without this fallback every pooled
+   * request silently runs on defaults instead of the configured limits.
+   */
+  private getConfig(source: string): ResolvedRateLimitConfig {
+    const sourceConfig = this.configs.get(source) ?? this.configs.get(laneSource(source)) ?? {};
     return { ...DEFAULT_CONFIG, ...this.defaultConfig, ...sourceConfig };
   }
 
   configure(source: string, config: RateLimitConfig): void {
     this.configs.set(source, config);
+    if (config.model) {
+      this.models.set(source, new TokenBucketModel(config.model));
+    } else {
+      this.models.delete(source);
+    }
+  }
+
+  /** Resolve the limiter model for a source or one of its proxy lanes. */
+  private getModel(source: string): TokenBucketModel | undefined {
+    return this.models.get(source) ?? this.models.get(laneSource(source));
   }
 
   setCallbacks(callbacks: RateLimitCallbacks): void {
@@ -146,10 +206,18 @@ export class AdaptiveRateLimiter implements RateLimiter {
   async canProceed(source: string, endpoint?: string): Promise<boolean> {
     const key = this.getKey(source, endpoint);
     const state = this.state.get(key);
+    const now = new Date();
+
+    // A 429 anywhere on this lane holds every endpoint on it
+    const laneBackoff = this.laneBackoff.get(source);
+    if (laneBackoff && laneBackoff > now) {
+      return false;
+    }
+    if (laneBackoff) {
+      this.laneBackoff.delete(source);
+    }
 
     if (!state) return true;
-
-    const now = new Date();
 
     // Check retry-after (from 429)
     if (state.retryAfter && state.retryAfter > now) {
@@ -171,15 +239,59 @@ export class AdaptiveRateLimiter implements RateLimiter {
     return true;
   }
 
+  /**
+   * Claim the next send slot on a lane, returning how long to wait for it.
+   *
+   * Reservation rather than measurement. Measuring "time since the last
+   * request" cannot pace concurrent callers: N iterations in flight all read
+   * the same timestamp, compute the same delay, and fire as a batch at N times
+   * the configured rate. Claiming a slot works because the read-and-advance
+   * below is synchronous, so concurrent callers are handed strictly increasing
+   * slots and space themselves out.
+   */
+  private reserveSlot(source: string, endpoint?: string): number {
+    const config = this.getConfig(source);
+    if (config.strategy !== 'throttle') return 0;
+
+    // A model of the server's limiter governs pacing when configured: it knows
+    // the burst allowance and the sustained rate, which a flat rpm can't
+    // express. Its bucket is keyed per lane, so `source` (the lane key) is the
+    // bucket key.
+    const model = this.getModel(source);
+    if (model) return model.reserve(source, Date.now());
+
+    // Otherwise honour whichever is more conservative: the configured floor, or
+    // the spacing implied by the quota headers this endpoint last reported.
+    const intervalMs = Math.max(
+      60000 / config.fallbackRpm,
+      this.headerIntervalMs(source, endpoint) ?? 0
+    );
+
+    const now = Date.now();
+    const slot = Math.max(now, this.pacing.get(source) ?? 0);
+    this.pacing.set(source, slot + intervalMs);
+    return slot - now;
+  }
+
+  /** Spacing implied by remaining quota over the time left in the window. */
+  private headerIntervalMs(source: string, endpoint?: string): number | undefined {
+    const state = this.state.get(this.getKey(source, endpoint));
+    if (!state?.resetAt || state.remaining === undefined || state.remaining <= 0) {
+      return undefined;
+    }
+    const msUntilReset = state.resetAt.getTime() - Date.now();
+    return msUntilReset > 0 ? msUntilReset / state.remaining : undefined;
+  }
+
   async waitForCapacity(source: string, endpoint?: string): Promise<void> {
     const config = this.getConfig(source);
     const key = this.getKey(source, endpoint);
 
     // Check if we can proceed immediately
     if (await this.canProceed(source, endpoint)) {
-      // In throttle mode, add delay between requests
+      // In throttle mode, hold the caller until its reserved slot comes up
       if (config.strategy === 'throttle') {
-        const delay = this.getThrottleDelay(source, endpoint);
+        const delay = this.reserveSlot(source, endpoint);
         if (delay > 0) {
           await sleep(delay);
         }
@@ -193,7 +305,10 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     // Calculate wait time
     let waitUntil: Date;
-    if (state?.retryAfter) {
+    const laneBackoff = this.laneBackoff.get(source);
+    if (laneBackoff && laneBackoff.getTime() > now) {
+      waitUntil = laneBackoff;
+    } else if (state?.retryAfter) {
       waitUntil = state.retryAfter;
     } else if (state?.resetAt) {
       waitUntil = state.resetAt;
@@ -257,47 +372,38 @@ export class AdaptiveRateLimiter implements RateLimiter {
     // Emit resumed event
     const waitedSeconds = Math.floor((Date.now() - startTime) / 1000);
     this.callbacks.onResumed?.({ source, endpoint, waitedSeconds });
+
+    // Reserve a slot on the same terms as the fast path. The invariant is "every
+    // caller that proceeds has claimed a slot", and only the fast path upheld it:
+    // N callers freed by the same 429-backoff tick would otherwise fire together,
+    // straight back into the limit we just hit. `pacing` was pushed past the
+    // backoff for exactly this, but nothing on the wait path read it until now
+    // (#252).
+    if (config.strategy === 'throttle') {
+      const delay = this.reserveSlot(source, endpoint);
+      if (delay > 0) {
+        await sleep(delay);
+      }
+    }
   }
 
+  /**
+   * How long a request issued right now would be held for, in ms.
+   *
+   * Read-only: it reports the pacing waitForCapacity would apply without
+   * claiming the slot, so callers can inspect the throttle without perturbing
+   * it. Actual pacing comes from the lane reservation in waitForCapacity.
+   */
   getThrottleDelay(source: string, endpoint?: string): number {
-    const key = this.getKey(source, endpoint);
-    const state = this.state.get(key);
     const config = this.getConfig(source);
-
     if (config.strategy !== 'throttle') return 0;
-    if (!state) return 0;
+
+    const model = this.getModel(source);
+    if (model) return Math.round(model.peek(source, Date.now()));
 
     const now = Date.now();
-
-    // If we have remaining count and reset time, calculate optimal spacing
-    if (
-      state.remaining !== undefined &&
-      state.remaining > 0 &&
-      state.resetAt &&
-      state.resetAt.getTime() > now
-    ) {
-      const msUntilReset = state.resetAt.getTime() - now;
-      // Space requests evenly across remaining time
-      const optimalInterval = msUntilReset / state.remaining;
-
-      // Check time since last request
-      if (state.lastRequestAt) {
-        const msSinceLastRequest = now - state.lastRequestAt.getTime();
-        const delay = Math.max(0, optimalInterval - msSinceLastRequest);
-        return Math.round(delay);
-      }
-
-      return Math.round(optimalInterval);
-    }
-
-    // Fallback: use configured RPM
-    const intervalMs = 60000 / config.fallbackRpm;
-    if (state.lastRequestAt) {
-      const msSinceLastRequest = now - state.lastRequestAt.getTime();
-      return Math.max(0, Math.round(intervalMs - msSinceLastRequest));
-    }
-
-    return 0;
+    const untilNextSlot = Math.max(0, (this.pacing.get(source) ?? 0) - now);
+    return Math.round(Math.max(untilNextSlot, this.headerIntervalMs(source, endpoint) ?? 0));
   }
 
   recordResponse(source: string, info: RateLimitInfo, endpoint?: string): void {
@@ -306,20 +412,50 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     const state: RateLimitState = this.state.get(key) ?? {};
 
-    if (info.remaining !== undefined) {
+    // Belt-and-braces against non-finite values from callers that bypass
+    // parseRateLimitHeaders: a NaN stored here poisons every later comparison.
+    if (info.remaining !== undefined && Number.isFinite(info.remaining)) {
       state.remaining = info.remaining;
     }
 
-    if (info.limit !== undefined) {
+    if (info.limit !== undefined && Number.isFinite(info.limit)) {
       state.limit = info.limit;
     }
 
-    if (info.resetAt) {
+    if (info.resetAt && !isNaN(info.resetAt.getTime())) {
       state.resetAt = info.resetAt;
     }
 
-    if (info.retryAfter !== undefined) {
-      state.retryAfter = new Date(now.getTime() + info.retryAfter * 1000);
+    const retryAfterSec =
+      info.retryAfter !== undefined && Number.isFinite(info.retryAfter)
+        ? info.retryAfter
+        : undefined;
+    if (retryAfterSec !== undefined) {
+      const until = new Date(now.getTime() + retryAfterSec * 1000);
+      state.retryAfter = until;
+      this.laneBackoff.set(source, until);
+      // Push the lane's send slot past the backoff so callers already queued on
+      // the throttle don't stampede the moment it lifts.
+      this.pacing.set(source, Math.max(this.pacing.get(source) ?? 0, until.getTime()));
+    }
+
+    // A 429 is direct feedback that the configured pace is too high for this
+    // lane. Tighten the model so it eases below the server's true rate, then
+    // ensure the lane is backed off by *something*:
+    //  - a Retry-After (handled above) is the server's own instruction;
+    //  - a configured model paces the lane itself, via the penalize just done;
+    //  - otherwise a headerless 429 would produce no backoff at all, so apply a
+    //    floor cool-off - the only thing stopping the lane from hammering the
+    //    rate that just failed.
+    if (info.rejected) {
+      const model = this.getModel(source);
+      model?.penalize(source, now.getTime());
+
+      if (retryAfterSec === undefined && !model) {
+        const until = new Date(now.getTime() + RATE_LIMIT_DEFAULTS.REJECT_COOLOFF_MS);
+        this.laneBackoff.set(source, until);
+        this.pacing.set(source, Math.max(this.pacing.get(source) ?? 0, until.getTime()));
+      }
     }
 
     state.lastRequestAt = now;
@@ -330,12 +466,13 @@ export class AdaptiveRateLimiter implements RateLimiter {
     // limited by CLEANUP_INTERVAL_MS / MAX_ENTRIES_BEFORE_CLEANUP inside
     // cleanup(), so this counter only decides how often we *consider* sweeping.
     //
-    // TODO: this limiter is purely reactive — it learns limits from response
-    // headers after the fact. Add proactive in-flight token accounting (track
-    // tokens consumed by requests that have been issued but not yet returned a
-    // response) so concurrent callers can't collectively blow past the limit
-    // between header updates. That is a larger redesign; the eviction leak fix
-    // above is independent of it.
+    // Proactive pacing (when a source declares a `model`) is handled by the
+    // token-bucket reservation in reserveSlot, which accounts for issued-but-
+    // unreturned requests by advancing the schedule synchronously. The reactive
+    // path above is the safety net: a 429 backs the lane off (via Retry-After or
+    // the floor cool-off) and, when a model is configured, `penalize` tightens
+    // its effective rate so the pace self-calibrates below the server's true
+    // limit rather than repeatedly rediscovering it via 429s.
     this.responsesSinceCleanup++;
     if (this.responsesSinceCleanup >= RATE_LIMIT_DEFAULTS.CLEANUP_CHECK_INTERVAL) {
       this.responsesSinceCleanup = 0;
@@ -377,6 +514,31 @@ export class AdaptiveRateLimiter implements RateLimiter {
 }
 
 /**
+ * Parse a `Retry-After` header into a delay in ms, clamped to `maxDelayMs`.
+ * The header may be delta-seconds (`120`) or an HTTP-date; a date in the past or
+ * an unparseable value yields 0 and `undefined` respectively. Clamping stops a
+ * hostile/broken server from pinning the client for hours, and the date branch
+ * stops `parseInt` from turning a date into `NaN` → `sleep(NaN)` → a tight loop.
+ */
+export function parseRetryAfterMs(
+  value: string | null | undefined,
+  maxDelayMs: number
+): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const seconds = Number(trimmed);
+  let ms: number;
+  if (trimmed !== '' && Number.isFinite(seconds)) {
+    ms = seconds * 1000;
+  } else {
+    const when = Date.parse(trimmed);
+    if (Number.isNaN(when)) return undefined;
+    ms = when - Date.now();
+  }
+  return Math.min(Math.max(ms, 0), maxDelayMs);
+}
+
+/**
  * Parse rate limit info from HTTP response headers
  *
  * Supports common header patterns:
@@ -394,14 +556,19 @@ export function parseRateLimitHeaders(headers: Record<string, string>): RateLimi
     normalized[key.toLowerCase()] = value;
   }
 
-  // Parse remaining
+  // Parse remaining. A malformed value (NaN) must be discarded, not stored: NaN
+  // compares false against everything and silently poisons all downstream pacing
+  // arithmetic, so the throttle stops throttling with no error (see #251).
   const remainingKey = findHeader(normalized, [
     'x-ratelimit-remaining',
     'ratelimit-remaining',
     'x-rate-limit-remaining',
   ]);
   if (remainingKey) {
-    info.remaining = parseInt(normalized[remainingKey], 10);
+    const remaining = Number(normalized[remainingKey]);
+    if (Number.isFinite(remaining)) {
+      info.remaining = remaining;
+    }
   }
 
   // Parse limit
@@ -411,7 +578,10 @@ export function parseRateLimitHeaders(headers: Record<string, string>): RateLimi
     'x-rate-limit-limit',
   ]);
   if (limitKey) {
-    info.limit = parseInt(normalized[limitKey], 10);
+    const limit = Number(normalized[limitKey]);
+    if (Number.isFinite(limit)) {
+      info.limit = limit;
+    }
   }
 
   // Parse reset
@@ -421,43 +591,76 @@ export function parseRateLimitHeaders(headers: Record<string, string>): RateLimi
     'x-rate-limit-reset',
   ]);
   if (resetKey) {
-    const resetValue = normalized[resetKey];
-    // Could be Unix timestamp or ISO date
-    const asNumber = parseInt(resetValue, 10);
-    if (!isNaN(asNumber)) {
-      // Unix timestamp (seconds)
-      if (asNumber > 1000000000000) {
-        // Already in milliseconds
-        info.resetAt = new Date(asNumber);
-      } else {
-        // In seconds
-        info.resetAt = new Date(asNumber * 1000);
-      }
-    } else {
-      // Try as date string
-      const parsed = new Date(resetValue);
-      if (!isNaN(parsed.getTime())) {
-        info.resetAt = parsed;
-      }
+    const resetAt = parseResetHeader(resetKey, normalized[resetKey]);
+    if (resetAt) {
+      info.resetAt = resetAt;
     }
   }
 
   // Parse Retry-After (usually from 429 responses)
   const retryAfter = normalized['retry-after'];
   if (retryAfter) {
-    const asNumber = parseInt(retryAfter, 10);
-    if (!isNaN(asNumber)) {
-      info.retryAfter = asNumber;
+    // `Number()`, not `parseInt`: `parseInt('2035-...')` returns 2035 and hides
+    // the date branch. A past HTTP-date is clamped to 0 rather than left negative.
+    const asNumber = Number(retryAfter.trim());
+    if (retryAfter.trim() !== '' && Number.isFinite(asNumber)) {
+      info.retryAfter = Math.max(0, asNumber);
     } else {
-      // HTTP-date format
       const parsed = new Date(retryAfter);
       if (!isNaN(parsed.getTime())) {
-        info.retryAfter = Math.ceil((parsed.getTime() - Date.now()) / 1000);
+        info.retryAfter = Math.max(0, Math.ceil((parsed.getTime() - Date.now()) / 1000));
       }
     }
   }
 
   return info;
+}
+
+/**
+ * Interpret an `X-RateLimit-Reset` / `RateLimit-Reset` value as an absolute
+ * reset time. Three formats occur in the wild:
+ *
+ * - IETF `RateLimit-Reset` draft: delta seconds until reset (`60` = 60s from now).
+ * - Vendor `X-RateLimit-Reset` (GitHub etc.): absolute epoch seconds (or ms).
+ * - ISO-8601 date string.
+ *
+ * The IETF (unprefixed) header is always a delta. For vendor headers we
+ * classify by magnitude, because delta seconds (single digits up to ~days) and
+ * an epoch (~1.7e9 seconds / ~1.7e12 ms) sit ~9 orders of magnitude apart:
+ *
+ *   >= 1e12  epoch milliseconds
+ *   >= 1e9   epoch seconds (any real epoch since 2001, even a stale one)
+ *   <  1e9   delta seconds - `x-ratelimit-reset: 60` is "60s from now", not 1970
+ *
+ * We classify on magnitude alone (not past-vs-future) so a stale-but-valid epoch
+ * stays an epoch. `Number()` (not `parseInt`) is used so an ISO date
+ * discriminates as NaN and the date branch is actually reachable (see #251).
+ */
+const EPOCH_MS_THRESHOLD = 1_000_000_000_000; // ~2001 in ms
+const EPOCH_SECONDS_THRESHOLD = 1_000_000_000; // ~2001 in seconds
+
+function parseResetHeader(headerName: string, rawValue: string): Date | undefined {
+  const value = rawValue.trim();
+  if (value === '') return undefined;
+
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber)) {
+    // IETF draft header carries delta seconds, never an epoch.
+    if (headerName === 'ratelimit-reset') {
+      return new Date(Date.now() + asNumber * 1000);
+    }
+    if (asNumber >= EPOCH_MS_THRESHOLD) {
+      return new Date(asNumber);
+    }
+    if (asNumber >= EPOCH_SECONDS_THRESHOLD) {
+      return new Date(asNumber * 1000);
+    }
+    return new Date(Date.now() + asNumber * 1000);
+  }
+
+  // ISO-8601 / HTTP date string.
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
 function findHeader(headers: Record<string, string>, candidates: string[]): string | undefined {

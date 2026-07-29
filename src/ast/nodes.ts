@@ -62,12 +62,31 @@ export interface CircuitBreakerSourceConfig {
   successThreshold?: number;
   /** Time window in seconds for counting failures (default: 60) */
   failureWindow?: number;
+  /**
+   * Open when this percentage of requests in the window failed, instead of on
+   * an absolute count. Necessary for bulk runs: a fixed `failureThreshold`
+   * that suits a handful of requests sits permanently open at thousands per
+   * second, where a few failures are ordinary background noise.
+   */
+  failureRate?: number;
+  /** Requests needed in the window before failureRate applies (default: 20) */
+  minimumRequests?: number;
 }
 
 export interface RateLimitSourceConfig {
   strategy?: 'pause' | 'throttle' | 'fail'; // Default: 'pause'
   maxWait?: number; // Max seconds to wait (default: 300)
   fallbackRpm?: number; // Fallback requests per minute if no headers
+  /** Model of the server's limiter, to pace under it rather than react to 429s. */
+  model?: RateLimitModelConfig;
+}
+
+// model: { type: tokenBucket, capacity: 5000, refill: 300, safety: 0.9 }
+export interface RateLimitModelConfig {
+  type: 'tokenBucket';
+  capacity: number; // burst tolerance (tokens a full bucket holds)
+  refill: number; // sustained rate (tokens per second)
+  safety?: number; // pace at safety * refill for headroom (default 1.0)
 }
 
 export interface AuthConfig {
@@ -84,6 +103,23 @@ export interface StoreDefinition {
   name: string;
   storeType: 'nosql' | 'sql' | 'memory' | 'file' | 'postgrest';
   target: string; // collection/table name
+  /** Optional write batching for high-throughput fan-out (see BatchConfig). */
+  batch?: BatchConfig;
+}
+
+// store x: postgrest("t") { batch: 500 }
+// store x: postgrest("t") { batch: { size: 500, maxDelay: 200, durability: relaxed } }
+export interface BatchConfig {
+  /** Flush once this many buffered writes accumulate. */
+  size: number;
+  /** Also flush a partial buffer this long (ms) after the first buffered write. */
+  maxDelay?: number;
+  /**
+   * `strict` (default): a write is durable before its loop iteration completes.
+   * `relaxed`: writes return immediately and flush in the background - faster,
+   * but a crash loses whatever is still buffered.
+   */
+  durability?: 'strict' | 'relaxed';
 }
 
 // Schedule configuration for missions
@@ -242,6 +278,12 @@ export interface MatchArm {
   /** Schema name to match against, or '_' for wildcard */
   schema: string;
   /**
+   * HTTP status to match against the last response's status, written as the
+   * bare number (`404 -> skip`). Deliberately the same vocabulary as the
+   * fetch's `allow` list, so there is no schema name to invent and keep in sync.
+   */
+  status?: number;
+  /**
    * When true the arm was written as `[Schema]` and matches only when the value
    * is an array whose every element satisfies `schema`.
    */
@@ -270,6 +312,12 @@ export interface FetchStep {
   paginate?: PaginationConfig;
   until?: Expression; // Condition to stop pagination
   retry?: RetryConfig;
+  /**
+   * Response statuses to treat as data rather than failure. An allowed status
+   * returns normally - it is not retried and does not trip the circuit breaker
+   * - so a `match` arm can dispatch on the same number that allowed it.
+   */
+  allow?: number[];
   // Incremental sync
   since?: SinceConfig;
   /**
@@ -308,6 +356,22 @@ export interface PaginationConfig {
   param: string; // Query param name: "page", "offset", "cursor"
   pageSize: number;
   cursorPath?: string; // For cursor pagination: where to find next cursor in response
+  /**
+   * Dotted path to the array holding the records in each response (e.g. "data"
+   * or "result.items"). When omitted the runtime falls back to picking the first
+   * array-valued key, which guesses wrong on `{warnings: [], data: [...]}`
+   * envelopes - declare this whenever the response wraps its records.
+   */
+  itemsPath?: string;
+  /**
+   * Cap on pages fetched in one run before pagination stops as *truncated*
+   * (memory/runaway safety). Overrides the runtime default. When this cap fires
+   * the result is flagged truncated so a sync checkpoint will not advance past
+   * the records that were never fetched.
+   */
+  maxPages?: number;
+  /** Cap on total items accumulated in one run before stopping as truncated. */
+  maxItems?: number;
 }
 
 export interface RetryConfig {
@@ -333,6 +397,20 @@ export interface ForStep {
    * writing the same key are last-writer-wins.
    */
   concurrency?: number;
+  /**
+   * What a failing iteration does to the rest of the loop. Defaults to
+   * `continue`: a bulk fan-out is mostly items that can fail on their own
+   * terms (an id that no longer exists, a socket reset, one 500 that outlived
+   * its retries), and stopping the run for any of them makes large jobs
+   * impossible to finish. `abort` restores strict fail-fast.
+   */
+  onError?: LoopErrorPolicy;
+}
+
+export interface LoopErrorPolicy {
+  action: 'continue' | 'abort';
+  /** Store to record each failed item in, for a later sweep. */
+  queue?: string;
 }
 
 // map invoice -> StandardInvoice { id: .InvoiceID, ... }

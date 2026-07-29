@@ -12,80 +12,10 @@ import {
   COMPLEX_DSL,
   EXPRESSION_HEAVY_DSL,
   MATCH_HEAVY_DSL,
+  STORE_ONLY_DSL,
+  COMPLEX_STORE_DSL,
   generateLargeDSL,
 } from './fixtures.js';
-
-// DSL for benchmarking with pre-populated stores (no network)
-const STORE_ONLY_DSL = `
-mission "store-processing"
-  store input in memory
-  store output in memory
-
-  action process
-    for item in input where item.active == true
-      map item -> {
-        id: item.id,
-        fullName: item.firstName + " " + item.lastName,
-        score: item.value * 2,
-        category: match item.tier
-          when "A" then "premium"
-          when "B" then "standard"
-          else "basic"
-        end
-      }
-      validate
-        assume id is string
-        assume score is number
-      store mapped in output with key: mapped.id
-    end
-`;
-
-const COMPLEX_STORE_DSL = `
-mission "complex-store-processing"
-  store users in memory
-  store orders in memory
-  store reports in memory
-
-  action processUsers
-    for user in users where user.active == true
-      map user -> {
-        userId: user.id,
-        displayName: user.firstName + " " + user.lastName,
-        tier: match user.score
-          when score >= 90 then "platinum"
-          when score >= 70 then "gold"
-          when score >= 50 then "silver"
-          else "bronze"
-        end,
-        eligible: user.verified == true and user.age >= 18
-      }
-      validate
-        assume userId is string
-        assume displayName is string
-      store mapped in reports with key: mapped.userId
-    end
-
-  action processOrders
-    for order in orders
-      for report in reports where report.userId == order.userId
-        map { order: order, report: report } -> {
-          orderId: order.id,
-          userId: order.userId,
-          total: order.amount * 100,
-          discount: match report.tier
-            when "platinum" then order.amount * 0.2
-            when "gold" then order.amount * 0.15
-            when "silver" then order.amount * 0.1
-            else order.amount * 0.05
-          end,
-          status: order.status
-        }
-        store mapped in reports with key: mapped.orderId, partial: true
-      end
-    end
-
-  run processUsers then processOrders
-`;
 
 // Generate test data for stores
 function generateUsers(count: number): Record<string, unknown>[] {
@@ -163,6 +93,9 @@ export async function runE2EBenchmarks(): Promise<void> {
   parseSuite.print();
 
   // Execution benchmarks with pre-populated stores
+  // These fixtures declare no source and issue no fetch, so they run for real
+  // rather than under dryRun - which skips every store write, and so would
+  // benchmark store processing without the stores.
   const execSuite = new BenchmarkSuite('Execute (with pre-populated stores)');
 
   // Small dataset (100 items)
@@ -180,7 +113,6 @@ export async function runE2EBenchmarks(): Promise<void> {
       const outputStore = new MemoryStore('output');
 
       await execute(STORE_ONLY_DSL, {
-        dryRun: true,
         stores: {
           input: inputStore,
           output: outputStore,
@@ -205,7 +137,6 @@ export async function runE2EBenchmarks(): Promise<void> {
       const outputStore = new MemoryStore('output');
 
       await execute(STORE_ONLY_DSL, {
-        dryRun: true,
         stores: {
           input: inputStore,
           output: outputStore,
@@ -231,7 +162,6 @@ export async function runE2EBenchmarks(): Promise<void> {
       }
 
       await execute(COMPLEX_STORE_DSL, {
-        dryRun: true,
         stores: {
           users: usersStore,
           orders: ordersStore,
@@ -257,7 +187,6 @@ export async function runE2EBenchmarks(): Promise<void> {
       }
 
       await execute(COMPLEX_STORE_DSL, {
-        dryRun: true,
         stores: {
           users: usersStore,
           orders: ordersStore,

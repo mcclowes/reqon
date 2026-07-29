@@ -31,7 +31,9 @@ reqon ./missions/customer-sync/
 | Option | Description |
 |--------|-------------|
 | `--dry-run` | Run without making actual HTTP requests |
-| `--verbose` | Enable detailed logging output |
+| `--verbose` | Alias for `--log-level info` — shows a live progress line |
+| `--log-level <level>` | Log verbosity: `debug`, `info`, `warn`, `error` (default: quiet) |
+| `--log-format <fmt>` | Log output format: `text` (default) or `json` (JSON Lines) |
 | `--dev` | Development mode: let `sql`/`nosql` stores fall back to local JSON files |
 | `--auth <file>` | Path to a JSON file containing authentication credentials |
 | `--env <file>` | Path to a .env file (default: .env in the current directory) |
@@ -59,17 +61,43 @@ reqon sync-data.vague --dry-run
 
 ### Verbose output
 
-Get detailed execution logs:
+`--verbose` is an alias for `--log-level info`. Rather than narrating every
+item, it prints a single progress line, throttled to at most once every two
+seconds (or every 1,000 items), driven by loop and fetch events:
 
 ```bash
 reqon sync-data.vague --verbose
 ```
 
-Output includes:
-- HTTP request/response details
-- Pagination progress
-- Store operation counts
-- Timing information
+```
+12,431/500,000 (2.5%) · 87 req/s · p50 112ms · 3 retries · 0 failed · ETA 1h33m
+```
+
+Each console line is stamped with the elapsed time since the run started
+(`+1234ms`).
+
+### Log level and format
+
+`--log-level` is the real verbosity knob:
+
+```bash
+reqon sync-data.vague --log-level debug   # progress line + per-item narration
+reqon sync-data.vague --log-level warn    # warnings and errors only, no progress
+```
+
+- `debug` — everything, including per-request narration (`Fetched GET /users`,
+  incremental-sync and pagination detail) with structured context.
+- `info` — the throttled progress line and mission lifecycle events (what
+  `--verbose` selects). Per-item narration is hidden.
+- `warn` / `error` — resilience warnings and failures only; no progress line.
+
+Use `--log-format json` to emit newline-delimited JSON (JSON Lines) instead of
+human-readable text, for log aggregation. Progress ticks are emitted as
+`{"type":"progress", ...}` objects:
+
+```bash
+reqon sync-data.vague --log-level info --log-format json
+```
 
 ### Authentication
 
@@ -288,7 +316,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - run: npm install
       - run: npx reqon ./missions/sync.vague --auth ./credentials.json
         env:
@@ -298,7 +326,7 @@ jobs:
 ### Docker
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install

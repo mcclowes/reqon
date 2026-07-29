@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { HttpClient, BearerAuthProvider, OAuth2AuthProvider, parseRetryAfterMs } from './http.js';
+import {
+  HttpClient,
+  BearerAuthProvider,
+  OAuth2AuthProvider,
+  BasicAuthProvider,
+  ApiKeyAuthProvider,
+  parseRetryAfterMs,
+} from './http.js';
+import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
 
 describe('parseRetryAfterMs', () => {
   const MAX = 60_000;
@@ -198,6 +206,60 @@ describe('HttpClient', () => {
 
       expect(capturedHeaders['Authorization']).toBe('Bearer test-token');
     });
+
+    it('sends HTTP Basic auth from a BasicAuthProvider (#200)', async () => {
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        auth: new BasicAuthProvider('alice', 's3cret'),
+      });
+      let capturedHeaders: Record<string, string> = {};
+      globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      await client.request({ method: 'GET', path: '/users' });
+
+      const expected = `Basic ${Buffer.from('alice:s3cret').toString('base64')}`;
+      expect(capturedHeaders['Authorization']).toBe(expected);
+    });
+
+    it('sends an API key in a header from an ApiKeyAuthProvider (#200)', async () => {
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        auth: new ApiKeyAuthProvider('key-123'),
+      });
+      let capturedHeaders: Record<string, string> = {};
+      globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      await client.request({ method: 'GET', path: '/users' });
+
+      expect(capturedHeaders['X-API-Key']).toBe('key-123');
+    });
+
+    it('sends an API key in a query param when configured (#200)', async () => {
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        auth: new ApiKeyAuthProvider('key-123', { name: 'apikey', location: 'query' }),
+      });
+      let capturedUrl = '';
+      let capturedHeaders: Record<string, string> = {};
+      globalThis.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+        capturedUrl = url.toString();
+        capturedHeaders = Object.fromEntries(Object.entries(init?.headers || {}));
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      await client.request({ method: 'GET', path: '/users', query: { page: '1' } });
+
+      expect(capturedUrl).toContain('apikey=key-123');
+      expect(capturedUrl).toContain('page=1');
+      // A query-param key must not also leak into an Authorization header.
+      expect(capturedHeaders['Authorization']).toBeUndefined();
+    });
   });
 
   describe('calculateDelay', () => {
@@ -354,6 +416,78 @@ describe('HttpClient', () => {
       // Restore fake timers for remaining tests
       vi.useFakeTimers();
     });
+
+    it('cancels an abandoned response body on retry so sockets are not leaked (#253)', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      let callCount = 0;
+      const cancelSpies: Array<ReturnType<typeof vi.fn>> = [];
+      globalThis.fetch = vi.fn(async () => {
+        callCount++;
+        if (callCount < 2) {
+          const res = new Response(JSON.stringify({ error: 'boom' }), { status: 500 });
+          const spy = vi.fn(async () => undefined);
+          // The retry path must release the unread body rather than leaving it
+          // for GC to reclaim the socket.
+          if (res.body) res.body.cancel = spy;
+          cancelSpies.push(spy);
+          return res;
+        }
+        return new Response(JSON.stringify({ data: 'ok' }), { status: 200 });
+      });
+
+      const requestPromise = client.request(
+        { method: 'GET', path: '/users' },
+        { maxAttempts: 3, backoff: 'constant', initialDelay: 100 }
+      );
+      await vi.advanceTimersByTimeAsync(150);
+      await requestPromise;
+
+      expect(cancelSpies).toHaveLength(1);
+      expect(cancelSpies[0]).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('circuit breaker integration (#254)', () => {
+    it('reports 4xx failures to the breaker so a configured status can trip it', async () => {
+      vi.useRealTimers();
+      const breaker = new CircuitBreaker({
+        failureStatusCodes: [403],
+        failureThreshold: 3,
+        failureWindow: 60_000,
+      });
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        sourceName: 'api',
+        circuitBreaker: breaker,
+      });
+
+      globalThis.fetch = vi.fn(
+        async () => new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 })
+      );
+
+      // A revoked key 403ing every request must accumulate toward the threshold.
+      for (let i = 0; i < 3; i++) {
+        await expect(
+          client.request(
+            { method: 'GET', path: '/users' },
+            { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+          )
+        ).rejects.toThrow(/HTTP 403/);
+      }
+
+      expect(breaker.getStatus('api').isOpen).toBe(true);
+
+      // The next request is fast-failed by the open breaker instead of looping.
+      await expect(
+        client.request(
+          { method: 'GET', path: '/users' },
+          { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+        )
+      ).rejects.toThrow(CircuitBreakerError);
+
+      vi.useFakeTimers();
+    });
   });
 
   describe('idempotency / non-idempotent retries', () => {
@@ -442,6 +576,122 @@ describe('HttpClient', () => {
 
       expect(callCount).toBe(2);
       expect(result.status).toBe(200);
+    });
+  });
+
+  describe('response body release on retry paths (#253)', () => {
+    /** A Response whose body reports whether it was ever read or cancelled. */
+    function trackedResponse(status: number, headers?: Record<string, string>) {
+      let released = false;
+      const stream = new ReadableStream({
+        cancel() {
+          released = true;
+        },
+      });
+      return { response: new Response(stream, { status, headers }), wasReleased: () => released };
+    }
+
+    it('releases the body of a 429 before retrying', async () => {
+      const first = trackedResponse(429, { 'Retry-After': '1' });
+      const responses = [first.response, new Response('{}', { status: 200 })];
+      globalThis.fetch = vi.fn(async () => responses.shift()!);
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      const promise = client.request(
+        { method: 'GET', path: '/x' },
+        { maxAttempts: 2, backoff: 'constant', initialDelay: 10 }
+      );
+      await vi.advanceTimersByTimeAsync(1500);
+      await promise;
+
+      expect(first.wasReleased()).toBe(true);
+    });
+
+    it('releases the body of a retried 5xx', async () => {
+      const first = trackedResponse(500);
+      const responses = [first.response, new Response('{}', { status: 200 })];
+      globalThis.fetch = vi.fn(async () => responses.shift()!);
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      const promise = client.request(
+        { method: 'GET', path: '/x' },
+        { maxAttempts: 2, backoff: 'constant', initialDelay: 10 }
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      await promise;
+
+      expect(first.wasReleased()).toBe(true);
+    });
+
+    it('releases the body of a 401 before retrying with a refreshed token', async () => {
+      const first = trackedResponse(401);
+      const responses = [first.response, new Response('{}', { status: 200 })];
+      globalThis.fetch = vi.fn(async () => responses.shift()!);
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        auth: {
+          getToken: async () => 'token',
+          refreshToken: vi.fn(async () => 'fresh-token'),
+        },
+      });
+
+      await client.request(
+        { method: 'GET', path: '/x' },
+        { maxAttempts: 2, backoff: 'constant', initialDelay: 1 }
+      );
+
+      expect(first.wasReleased()).toBe(true);
+    });
+  });
+
+  describe('circuit breaker sees 4xx (#254)', () => {
+    it('trips the breaker on repeated 403s instead of hammering forever', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 3 });
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        circuitBreaker: breaker,
+        sourceName: 'api',
+      });
+      globalThis.fetch = vi.fn(async () => new Response('denied', { status: 403 }));
+
+      for (let i = 0; i < 3; i++) {
+        await expect(
+          client.request(
+            { method: 'GET', path: '/x' },
+            { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+          )
+        ).rejects.toThrow(/403/);
+      }
+
+      await expect(
+        client.request(
+          { method: 'GET', path: '/x' },
+          { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+        )
+      ).rejects.toThrow(/Circuit breaker open/);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not count data-shaped 4xx like 404 toward the threshold', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 3 });
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        circuitBreaker: breaker,
+        sourceName: 'api',
+      });
+      globalThis.fetch = vi.fn(async () => new Response('missing', { status: 404 }));
+
+      for (let i = 0; i < 5; i++) {
+        await expect(
+          client.request(
+            { method: 'GET', path: '/x' },
+            { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+          )
+        ).rejects.toThrow(/404/);
+      }
+
+      // Still reaching the network: the breaker never opened.
+      expect(globalThis.fetch).toHaveBeenCalledTimes(5);
     });
   });
 
@@ -604,6 +854,72 @@ describe('OAuth2AuthProvider', () => {
     globalThis.fetch = originalFetch;
   });
 
+  describe('refresh response validation (#255)', () => {
+    const originalFetch = globalThis.fetch;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+      vi.useRealTimers();
+    });
+
+    const makeProvider = () =>
+      new OAuth2AuthProvider({
+        accessToken: 'old-token',
+        refreshToken: 'refresh-1',
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+      });
+
+    it('throws the provider-supplied reason on a failed refresh, keeping the old token', async () => {
+      const provider = makeProvider();
+      globalThis.fetch = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ error: 'invalid_grant', error_description: 'refresh token expired' }),
+            { status: 400 }
+          )
+      );
+
+      await expect(provider.refreshToken()).rejects.toThrow(/invalid_grant/);
+      // The session must not be destroyed: "Bearer undefined" is worse than a 401.
+      expect(await provider.getToken()).toBe('old-token');
+    });
+
+    it('throws when a 2xx refresh response carries no access_token', async () => {
+      const provider = makeProvider();
+      globalThis.fetch = vi.fn(
+        async () => new Response(JSON.stringify({ token_type: 'Bearer' }), { status: 200 })
+      );
+
+      await expect(provider.refreshToken()).rejects.toThrow(/access_token/);
+      expect(await provider.getToken()).toBe('old-token');
+    });
+
+    it('refreshes proactively before an expires_in lifetime lapses', async () => {
+      const provider = makeProvider();
+      let calls = 0;
+      globalThis.fetch = vi.fn(async () => {
+        calls++;
+        return new Response(JSON.stringify({ access_token: `token-${calls}`, expires_in: 3600 }), {
+          status: 200,
+        });
+      });
+
+      await provider.refreshToken();
+      expect(await provider.getToken()).toBe('token-1');
+
+      // Past 80% of the 3600s lifetime the provider refreshes ahead of the 401.
+      await vi.advanceTimersByTimeAsync(3000 * 1000);
+      expect(await provider.getToken()).toBe('token-2');
+      expect(calls).toBe(2);
+    });
+  });
+
   it('coalesces concurrent refreshes into a single network call (single-flight)', async () => {
     const originalFetch = globalThis.fetch;
     const provider = new OAuth2AuthProvider({
@@ -659,5 +975,38 @@ describe('OAuth2AuthProvider', () => {
     expect(callCount).toBe(2);
 
     globalThis.fetch = originalFetch;
+  });
+});
+
+describe('BasicAuthProvider (#200)', () => {
+  it('base64-encodes username:password into a Basic header', async () => {
+    const provider = new BasicAuthProvider('alice', 'p@ss:word');
+    const contribution = await provider.applyAuth();
+    const expected = Buffer.from('alice:p@ss:word').toString('base64');
+    expect(contribution.headers?.['Authorization']).toBe(`Basic ${expected}`);
+    expect(await provider.getToken()).toBe(expected);
+  });
+});
+
+describe('ApiKeyAuthProvider (#200)', () => {
+  it('defaults to the X-API-Key header', async () => {
+    const provider = new ApiKeyAuthProvider('secret-key');
+    const contribution = await provider.applyAuth();
+    expect(contribution.headers).toEqual({ 'X-API-Key': 'secret-key' });
+    expect(contribution.query).toBeUndefined();
+  });
+
+  it('uses a custom header name', async () => {
+    const provider = new ApiKeyAuthProvider('secret-key', { name: 'Api-Token' });
+    const contribution = await provider.applyAuth();
+    expect(contribution.headers).toEqual({ 'Api-Token': 'secret-key' });
+  });
+
+  it('places the key in a query param when location is query', async () => {
+    const provider = new ApiKeyAuthProvider('secret-key', { location: 'query' });
+    const contribution = await provider.applyAuth();
+    // Default query param name is api_key.
+    expect(contribution.query).toEqual({ api_key: 'secret-key' });
+    expect(contribution.headers).toBeUndefined();
   });
 });

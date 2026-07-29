@@ -9,6 +9,7 @@ import type {
   SourceConfig,
   AuthConfig,
   RateLimitSourceConfig,
+  RateLimitModelConfig,
   CircuitBreakerSourceConfig,
 } from '../ast/nodes.js';
 import { ReqonExpressionParser } from './expressions.js';
@@ -110,6 +111,28 @@ export class SourceParser extends ReqonExpressionParser {
     return pool;
   }
 
+  /**
+   * `pause` doubles as a step keyword, so it arrives as PAUSE rather than an
+   * identifier. Accepting it here keeps the default strategy writable - the
+   * same keyword-in-option-context handling `key`, `upsert` and friends get.
+   */
+  /**
+   * Accepts the strategy as a quoted string ("pause"), a bare identifier
+   * (throttle, fail), or the `pause` keyword token — `pause` is reserved by the
+   * lexer, so unquoted it never arrives as a plain identifier.
+   */
+  private parseRateLimitStrategy(): 'pause' | 'throttle' | 'fail' {
+    const token = this.consumeAny(
+      [TokenType.STRING, TokenType.IDENTIFIER, ReqonTokenType.PAUSE],
+      'Expected strategy'
+    );
+
+    if (token.value !== 'pause' && token.value !== 'throttle' && token.value !== 'fail') {
+      throw this.error(`Unknown rate limit strategy: ${token.value}`);
+    }
+    return token.value;
+  }
+
   protected parseRateLimitConfig(): RateLimitSourceConfig {
     this.consume(TokenType.LBRACE, "Expected '{'");
 
@@ -121,13 +144,7 @@ export class SourceParser extends ReqonExpressionParser {
 
       switch (key) {
         case 'strategy':
-          // Accept the strategy as a quoted string ("pause"), a bare identifier
-          // (throttle, fail), or the `pause` keyword token — `pause` is reserved
-          // by the lexer, so unquoted it never arrives as a plain identifier.
-          config.strategy = this.consumeAny(
-            [TokenType.STRING, TokenType.IDENTIFIER, ReqonTokenType.PAUSE],
-            'Expected strategy'
-          ).value as 'pause' | 'throttle' | 'fail';
+          config.strategy = this.parseRateLimitStrategy();
           break;
         case 'maxWait':
           config.maxWait = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
@@ -137,6 +154,9 @@ export class SourceParser extends ReqonExpressionParser {
             this.consume(TokenType.NUMBER, 'Expected number').value,
             10
           );
+          break;
+        case 'model':
+          config.model = this.parseRateLimitModel();
           break;
         default:
           throw this.error(`Unknown rate limit option: ${key}`);
@@ -148,6 +168,50 @@ export class SourceParser extends ReqonExpressionParser {
     this.consume(TokenType.RBRACE, "Expected '}'");
 
     return config;
+  }
+
+  /** `model: { type: tokenBucket, capacity: N, refill: N, safety?: N }`. */
+  protected parseRateLimitModel(): RateLimitModelConfig {
+    this.consume(TokenType.LBRACE, "Expected '{'");
+
+    let type: string | undefined;
+    let capacity: number | undefined;
+    let refill: number | undefined;
+    let safety: number | undefined;
+
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      const key = this.consume(TokenType.IDENTIFIER, 'Expected model option').value;
+      this.consume(TokenType.COLON, "Expected ':'");
+      switch (key) {
+        case 'type':
+          type = this.consumeAny(
+            [TokenType.STRING, TokenType.IDENTIFIER],
+            'Expected model type'
+          ).value;
+          break;
+        case 'capacity':
+          capacity = parseInt(this.consume(TokenType.NUMBER, 'Expected number').value, 10);
+          break;
+        case 'refill':
+          refill = parseFloat(this.consume(TokenType.NUMBER, 'Expected number').value);
+          break;
+        case 'safety':
+          safety = parseFloat(this.consume(TokenType.NUMBER, 'Expected number').value);
+          break;
+        default:
+          throw this.error(`Unknown model option: ${key}`);
+      }
+      this.match(TokenType.COMMA);
+    }
+    this.consume(TokenType.RBRACE, "Expected '}'");
+
+    if (type !== 'tokenBucket') {
+      throw this.error(`Unknown model type: ${type ?? '(none)'} (expected tokenBucket)`);
+    }
+    if (capacity === undefined) throw this.error('model requires a capacity');
+    if (refill === undefined) throw this.error('model requires a refill');
+
+    return { type, capacity, refill, ...(safety !== undefined && { safety }) };
   }
 
   protected parseCircuitBreakerConfig(): CircuitBreakerSourceConfig {
@@ -174,6 +238,18 @@ export class SourceParser extends ReqonExpressionParser {
           break;
         case 'successThreshold':
           config.successThreshold = parseInt(
+            this.consume(TokenType.NUMBER, 'Expected number').value,
+            10
+          );
+          break;
+        case 'failureRate':
+          // A proportion, not a count: parseInt would floor 0.25 to 0, which
+          // the breaker reads as "rate mode disabled" and silently falls back
+          // to the absolute threshold this setting exists to replace.
+          config.failureRate = parseFloat(this.consume(TokenType.NUMBER, 'Expected number').value);
+          break;
+        case 'minimumRequests':
+          config.minimumRequests = parseInt(
             this.consume(TokenType.NUMBER, 'Expected number').value,
             10
           );

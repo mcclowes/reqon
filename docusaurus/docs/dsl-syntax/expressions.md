@@ -125,6 +125,10 @@ sum([1, 2, 3])      // 6 (array of numbers)
 first([1, 2, 3])    // 1
 last([1, 2, 3])     // 3
 
+// Number sequence: start-inclusive, end-exclusive
+range(3)            // [0, 1, 2]
+range(1, 4)         // [1, 2, 3]
+
 // Rounding
 round(3.7)          // 4
 floor(3.7)          // 3
@@ -136,6 +140,16 @@ now()
 // Environment variable (name must be a string literal)
 env("API_KEY")
 ```
+
+`range()` materialises the whole array, because a `for` loop consumes an array. That makes it the way to drive a bulk fetch over contiguous ids without writing an input file first:
+
+```vague
+for id in range(1, 500001) concurrency 192 {
+  get "/entry/{id}/" { source: API }
+}
+```
+
+It's capped at 20,000,000 items, so a mistaken bound fails loudly instead of exhausting memory.
 
 There are no string, date, object, or higher-order array functions (no `lowercase`, `split`, `parseDate`, `map`, `filter`, `keys`, and so on). Build derived values from operators and these functions, or shape data upstream.
 

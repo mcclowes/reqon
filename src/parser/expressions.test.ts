@@ -390,6 +390,28 @@ describe('ReqonExpressionParser', () => {
         expect(expr.arms[1].pattern).toMatchObject({ type: 'Identifier', name: '_' });
       }
     });
+
+    it('parses a member-path subject (issue #282)', () => {
+      // parsePrimary stopped at the bare identifier, so the trailing `.tier`
+      // was mismatched against the expected `{`. The subject now uses the full
+      // expression parser, matching the statement form.
+      const expr = parseExpr('match report.tier { "platinum" => 0.2, _ => 0.05 }');
+
+      expect(expr.type).toBe('MatchExpression');
+      if (expr.type === 'MatchExpression') {
+        expect(expr.value).toMatchObject({ type: 'QualifiedName', parts: ['report', 'tier'] });
+        expect(expr.arms).toHaveLength(2);
+      }
+    });
+
+    it('parses a subscripted subject', () => {
+      const expr = parseExpr('match items[0] { _ => "x" }');
+
+      expect(expr.type).toBe('MatchExpression');
+      if (expr.type === 'MatchExpression') {
+        expect(expr.value.type).toBe('IndexExpression');
+      }
+    });
   });
 
   describe('any of expressions', () => {

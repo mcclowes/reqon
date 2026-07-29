@@ -115,6 +115,8 @@ export interface FetchCompletePayload {
   path: string;
   statusCode: number;
   recordCount: number;
+  /** Wall-clock latency of the request (all pages) in ms, when measured. */
+  ms?: number;
   pagesFetched?: number;
   bytesReceived?: number;
   fromCache?: boolean;
@@ -143,6 +145,19 @@ export interface FetchHeartbeatPayload {
   pagesProcessed: number;
   itemsFetched: number;
   hasMore: boolean;
+}
+
+/**
+ * A paginated fetch stopped early because a safety cap fired, so the result is a
+ * partial view of the source. Emitted so downstream truncation handling (a
+ * skipped sync checkpoint) is visible in observability, not just the debug log.
+ */
+export interface FetchTruncatedPayload {
+  source: string;
+  path: string;
+  reason: 'page-cap' | 'item-cap';
+  pagesFetched: number;
+  itemsFetched: number;
 }
 
 // ============================================================================
@@ -314,6 +329,7 @@ export type EventType =
   | 'fetch.retry'
   | 'fetch.error'
   | 'fetch.heartbeat'
+  | 'fetch.truncated'
   // Data operations
   | 'data.transform'
   | 'data.validate'
@@ -323,6 +339,7 @@ export type EventType =
   | 'loop.iteration'
   | 'loop.complete'
   | 'loop.heartbeat'
+  | 'loop.item.failed'
   // Match operations
   | 'match.attempt'
   | 'match.result'

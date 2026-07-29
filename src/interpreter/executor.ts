@@ -39,7 +39,7 @@ import { createContext, childContext, setVariable } from './context.js';
 import { createHash } from 'node:crypto';
 import { evaluate } from './evaluator.js';
 import type { StoreAdapter } from '../stores/types.js';
-import { SourceManager, type AuthConfig } from './source-manager.js';
+import { SourceManager, type AuthConfig, type SourceManagerConfig } from './source-manager.js';
 import { StoreManager } from './store-manager.js';
 import { AdaptiveRateLimiter } from '../auth/rate-limiter.js';
 import { CircuitBreaker, type CircuitBreakerCallbacks } from '../auth/circuit-breaker.js';
@@ -69,7 +69,7 @@ import {
   QueueSignal,
 } from './step-handlers/index.js';
 import type { WebhookServer } from '../webhook/index.js';
-import type { EventEmitter, StepType, StructuredLogger } from '../observability/index.js';
+import type { EventEmitter, StepType, StructuredLogger, LogLevel } from '../observability/index.js';
 import { createStructuredLogger } from '../observability/index.js';
 import type {
   DebugController,
@@ -79,7 +79,7 @@ import type {
   DebugCommand,
 } from '../debug/index.js';
 import type { ControlServer } from '../control/index.js';
-import { PauseSignal } from './signals.js';
+import { PauseSignal, isTolerated } from './signals.js';
 import {
   type TraceStore,
   type TraceRecorder,
@@ -122,6 +122,8 @@ export interface ExecutionResult {
   traceId?: string;
   /** Pause ID if execution was paused */
   pauseId?: string;
+  /** Items skipped by a loop's onError policy rather than failing the run. */
+  toleratedFailures?: { action: string; index: number; error: string }[];
 }
 
 export interface ExecutionError {
@@ -191,11 +193,14 @@ export interface ExecutorConfig {
   verbose?: boolean;
   // Mission file directory (for resolving relative paths like OAS specs)
   missionDir?: string;
+  // Override the HTTP stack behind proxy pools (agent + its paired fetch)
+  proxyAgentFactory?: SourceManagerConfig['proxyAgentFactory'];
+  proxyFetchFactory?: SourceManagerConfig['proxyFetchFactory'];
   // Rate limit callbacks (optional)
   rateLimitCallbacks?: RateLimitCallbacks;
   // Circuit breaker callbacks (optional)
   circuitBreakerCallbacks?: CircuitBreakerCallbacks;
-  // Development mode - use file stores instead of sql/nosql (default: true)
+  // Development mode - let sql/nosql fall back to file stores (default: false)
   developmentMode?: boolean;
   // Base directory for file stores (default: '.reqon-data')
   dataDir?: string;
@@ -236,6 +241,19 @@ export interface ExecutorConfig {
    * backfills. Defaults to the handler's built-in cap.
    */
   backfillMaxItemsPerRun?: number;
+  /**
+   * Default cap on pages fetched per (non-backfill) paginated run before
+   * pagination stops as *truncated*. A per-step `paginate.maxPages` overrides
+   * this. Truncation is surfaced (never silently advances a sync checkpoint).
+   * Defaults to the handler's built-in cap (100).
+   */
+  maxPaginationPages?: number;
+  /**
+   * Default cap on total items accumulated per paginated run before stopping as
+   * truncated. A per-step `paginate.maxItems` overrides this. Defaults to the
+   * handler's built-in cap (100_000).
+   */
+  maxPaginationItems?: number;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -248,6 +266,12 @@ export class MissionExecutor {
   private config: ExecutorConfig;
   private ctx: ExecutionContext;
   private errors: ExecutionError[] = [];
+  /**
+   * Items a loop skipped past rather than failing the run on. Surfaced in the
+   * result because continuing is the default: a mission where every request
+   * 401s would otherwise report success having stored nothing.
+   */
+  private toleratedFailures: { action: string; index: number; error: string }[] = [];
   private actionsRun: string[] = [];
   /** Monotonic key generator for queued values lacking an id. */
   private queueCounter = 0;
@@ -287,7 +311,12 @@ export class MissionExecutor {
 
     // Initialize managers (logger set after verbose callbacks configured)
     this.sourceManager = new SourceManager(
-      { auth: config.auth, missionDir: config.missionDir },
+      {
+        auth: config.auth,
+        missionDir: config.missionDir,
+        proxyAgentFactory: config.proxyAgentFactory,
+        proxyFetchFactory: config.proxyFetchFactory,
+      },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
     this.storeManager = new StoreManager({
@@ -371,20 +400,32 @@ export class MissionExecutor {
     this.eventEmitter = config.eventEmitter;
     this.executionLog = config.executionLog;
 
-    // Initialize logger if verbose or provided
+    // Initialize logger if verbose or provided. `verbose` alone maps to the
+    // info level (the progress line); per-item narration lives at debug, which
+    // callers opt into with an explicit debug-level logger.
     if (config.logger) {
       this.logger = config.logger;
     } else if (config.verbose) {
       this.logger = createStructuredLogger({
         prefix: 'Reqon',
-        level: 'debug',
+        level: 'info',
         context: {},
       });
     }
 
     // Update managers with log function now that logger is configured
     this.sourceManager = new SourceManager(
-      { auth: config.auth, missionDir: config.missionDir, log: (msg) => this.log(msg) },
+      {
+        auth: config.auth,
+        missionDir: config.missionDir,
+        proxyAgentFactory: config.proxyAgentFactory,
+        proxyFetchFactory: config.proxyFetchFactory,
+        log: (msg) => this.log(msg),
+        // Surface in-client retries as events so the progress line can count them.
+        onRetry: this.eventEmitter
+          ? (info) => this.eventEmitter!.emit('fetch.retry', info)
+          : undefined,
+      },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
     this.storeManager = new StoreManager({
@@ -537,6 +578,10 @@ export class MissionExecutor {
         await this.logEvent({ type: 'mission.failed', error: (error as Error).message });
       }
     } finally {
+      // Flush stores first so a batching (or batch-mode file) store writes its
+      // final partial batch before we tear anything down. A strict-durability
+      // failure here rejects, surfacing rather than silently dropping records.
+      await this.storeManager.closeStores(this.ctx);
       // Release proxy sockets however the run ended. A daemon executing
       // scheduled missions would otherwise accumulate one agent pool per run.
       await this.sourceManager.closeProxyPools();
@@ -544,6 +589,9 @@ export class MissionExecutor {
 
     const duration = Date.now() - startTime;
     const isPaused = this.executionState?.status === 'paused';
+    // Errors a loop tolerated are reported as skipped items, not mission
+    // failures - otherwise the default `continue` policy could never succeed.
+    this.errors = this.errors.filter((e) => !isTolerated(e.details));
     const success = this.errors.length === 0 && !isPaused;
 
     // Emit onExecutionComplete callback - count stages in a single pass
@@ -607,6 +655,7 @@ export class MissionExecutor {
       state: this.executionState,
       traceId: this.traceRecorder ? this.executionState?.id : undefined,
       pauseId: this.currentPauseId,
+      toleratedFailures: this.toleratedFailures,
     };
   }
 
@@ -1331,7 +1380,8 @@ export class MissionExecutor {
       missionName: this.missionName,
       executionId: this.executionState?.id,
       dryRun: this.config.dryRun,
-      log: (msg) => this.log(msg),
+      // Per-request narration sits at debug, below the info-level progress line.
+      log: (msg, context) => this.log(msg, context, 'debug'),
       emit: this.eventEmitter
         ? (type, payload) => this.eventEmitter!.emit(type, payload)
         : undefined,
@@ -1340,6 +1390,10 @@ export class MissionExecutor {
         this.executionLog && this.logExecutionId && stepId
           ? { executionId: this.logExecutionId, stepId }
           : undefined,
+      // Non-backfill pagination caps (memory/runaway safety). A cap firing marks
+      // the result truncated so the sync checkpoint below is skipped.
+      maxPaginationPages: this.config.maxPaginationPages,
+      maxPaginationItems: this.config.maxPaginationItems,
       // Resumable backfill: seed pagination from the log and record each page.
       pagination:
         step.backfill && this.executionLog && this.logExecutionId && stepId
@@ -1366,9 +1420,26 @@ export class MissionExecutor {
     const fetchStartedAt = new Date();
     const result = await fetchHandler.execute(step);
     ctx.response = result.data;
+    ctx.responseStatus = result.status;
+
+    // A truncated result is a partial view of the source: pagination stopped at
+    // a safety cap with more records unfetched. Advancing the sync watermark now
+    // would step it past those records, which the next incremental run would
+    // never ask for again — permanent, silent data loss (#246). Skip the
+    // checkpoint; the truncation is already surfaced via the fetch.truncated
+    // event. The next run re-fetches from the same watermark.
+    if (result.truncated && result.checkpointKey && this.syncStore) {
+      this.log(
+        `Sync checkpoint '${result.checkpointKey}' NOT advanced: paginated fetch was truncated ` +
+          `(${result.truncated.reason}, ${result.truncated.itemsFetched} items over ` +
+          `${result.truncated.pagesFetched} pages). Raise the pagination cap or use backfill.`,
+        undefined,
+        'warn'
+      );
+    }
 
     // Defer the sync checkpoint until the fetched data is durably stored.
-    if (result.checkpointKey && this.syncStore) {
+    if (!result.truncated && result.checkpointKey && this.syncStore) {
       const key = result.checkpointKey;
       const data = result.data;
       this.scopeFor(ctx).pendingCheckpoints.push(async () => {
@@ -1427,7 +1498,8 @@ export class MissionExecutor {
   ): Promise<void> {
     const handler = new ForHandler({
       ctx,
-      log: (msg) => this.log(msg),
+      // Per-item loop narration sits at debug, below the info-level progress line.
+      log: (msg, context) => this.log(msg, context, 'debug'),
       emit: this.eventEmitter
         ? (type, payload) => this.eventEmitter!.emit(type, payload)
         : undefined,
@@ -1443,6 +1515,9 @@ export class MissionExecutor {
         : undefined,
       checkPause: this.config.controlServer ? () => this.checkPause() : undefined,
       handleQueue: (signal) => this.handleQueue(signal),
+      onItemFailed: (info) => {
+        this.toleratedFailures.push(info);
+      },
     });
     await handler.execute(step);
   }
@@ -1686,9 +1761,9 @@ export class MissionExecutor {
     await handler.execute(step);
   }
 
-  private log(message: string): void {
+  private log(message: string, context?: Record<string, unknown>, level: LogLevel = 'info'): void {
     if (this.logger) {
-      this.logger.info(message);
+      this.logger[level](message, context);
     } else if (this.config.verbose) {
       console.log(`[Reqon] ${message}`);
     }

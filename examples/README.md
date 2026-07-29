@@ -10,6 +10,8 @@ This directory contains examples demonstrating Reqon's features for declarative 
 | [petstore](./petstore/) | OpenAPI spec integration | OAS operationId, cursor pagination |
 | [xero](./xero/) | OAuth2 invoice sync | OAuth2, hydration, **match steps**, **flow control** |
 | [github-sync](./github-sync/) | Multi-file mission | **Folder structure**, **parallel execution**, schema matching |
+| [multi-source-sync](./multi-source-sync/) | Several sources, separate stores | Multi-source fan-out, per-source auth |
+| [mock-server-demo](./mock-server-demo/) | Local mock server run | End-to-end run with no external API |
 | [error-handling](./error-handling/) | Comprehensive error handling | **All flow control directives**, dead letter queues |
 | [temporal-comparison](./temporal-comparison/) | E-commerce reconciliation | Multi-source, **parallel execution**, rate limiting |
 | [incremental-sync](./incremental-sync/) | Efficient delta syncing | **`since: lastSync`**, checkpoint management, soft deletes |
@@ -122,9 +124,13 @@ See: [github-sync](./github-sync/)
 source API { auth: none }           # Public API
 source API { auth: bearer }         # Bearer token
 source API { auth: oauth2 }         # OAuth2
-source API { auth: basic }          # Basic auth
-source API { auth: api_key }        # API key
+source API { auth: basic }          # Basic auth    — parses, NOT applied at runtime
+source API { auth: api_key }        # API key       — parses, NOT applied at runtime
 ```
+
+Only `bearer` and `oauth2` build an auth provider. `basic` and `api_key` parse
+without error but attach nothing, so those requests go out **unauthenticated**.
+If your API accepts the key as a bearer token, use `bearer`.
 
 ### Pagination Strategies
 ```vague
@@ -205,15 +211,42 @@ Everyday operators for working with fetched data:
 
 See: [data-enrichment](./data-enrichment/)
 
+### Built-in Functions
+Available in expressions (`let`, `map`, `store`, `where`, `match`):
+
+| Group | Functions |
+|-------|-----------|
+| Arrays | `length(a)`, `count(a)`, `sum(a)`, `first(a)`, `last(a)`, `range(end)` / `range(start, end)` |
+| Numbers | `abs(n)`, `round(n)`, `floor(n)`, `ceil(n)`, `max(a, b, …)`, `min(a, b, …)`, `parseNumber(x)` |
+| Strings | `concat(a, b, …)` (also `+` for concatenation) |
+| Time | `now()` (ISO string), `timestamp()` (epoch ms — use for date math), `fromUnix(seconds)` |
+| Env | `env("VAR_NAME")` |
+
+Two gotchas worth knowing:
+
+- **`now()` is a string**, so `now() - 86400000` throws. Use `timestamp()`
+  (epoch milliseconds) for any date arithmetic; keep `now()` for ISO timestamps
+  and keys.
+- **A store is not a value in an expression.** There is no `store[key]` lookup or
+  `exists()`, and `length(store)` / `sum(store.field)` don't work. Read a store
+  only by iterating it with `for x in store where …`, and join across stores by
+  nesting `for` loops.
+
 ### Store Types
-Multiple storage backends:
 ```vague
-store structured: sql("table")       # SQL database
-store flexible: nosql("collection")  # NoSQL database
 store temp: memory("cache")          # In-memory
-store export: file("output")         # File system
-store api: postgrest("table")        # PostgreSQL via PostgREST
+store export: file("output")         # JSON files under .reqon-data/
+store api: postgrest("table")        # PostgreSQL via PostgREST or Supabase
+
+store structured: sql("table")       # No standalone adapter — see below
+store flexible: nosql("collection")  # No implementation — see below
 ```
+
+`sql` and `nosql` aren't database adapters. `sql` only works if you wire up a
+PostgREST backend for it; `nosql` has no implementation at all. Both throw unless
+you opt into the local JSON fallback with `--dev`, so run the `database-sync`
+example with `--dev`. For production storage, use `postgrest`.
+
 See: [database-sync](./database-sync/), [postgrest-sync](./postgrest-sync/), [file-export](./file-export/)
 
 ### HTTP Methods (CRUD Operations)

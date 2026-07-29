@@ -58,13 +58,35 @@ export class StoreManager {
       // In dev mode the type is already resolved to 'file'; this only matters
       // if a raw sql/nosql type reaches the factory.
       allowFileFallback: developmentMode,
+      // AST uses `maxDelay`; the store layer uses `maxDelayMs`.
+      batch: store.batch
+        ? {
+            size: store.batch.size,
+            maxDelayMs: store.batch.maxDelay,
+            durability: store.batch.durability,
+          }
+        : undefined,
     });
 
     ctx.stores.set(store.name, adapter);
     ctx.storeTypes.set(store.name, storeType);
 
+    const batchInfo = store.batch ? `, batch ${store.batch.size}` : '';
     const typeInfo = storeType !== store.storeType ? ` <- ${store.storeType}` : '';
-    this.log(`Initialized store: ${store.name} (${storeType}${typeInfo})`);
+    this.log(`Initialized store: ${store.name} (${storeType}${typeInfo}${batchInfo})`);
+  }
+
+  /**
+   * Flush and close every store, so a batching or batch-mode file store writes
+   * its final partial batch. Called however the run ends.
+   */
+  async closeStores(ctx: ExecutionContext): Promise<void> {
+    const closable = ctx.stores as Map<string, StoreAdapter & { close?: () => unknown }>;
+    await Promise.all(
+      Array.from(closable.values()).map(async (store) => {
+        if (typeof store.close === 'function') await store.close();
+      })
+    );
   }
 
   /**

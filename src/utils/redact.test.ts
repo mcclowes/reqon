@@ -38,6 +38,31 @@ describe('redactSecrets', () => {
     a.self = a;
     expect(() => redactSecrets(a)).not.toThrow();
   });
+
+  it('redacts a shared object reference reached by more than one path', () => {
+    const creds = { token: 'sk-abc' };
+    const out = redactSecrets({ a: creds, b: creds }) as {
+      a: { token: string };
+      b: { token: string };
+    };
+    // Both paths must resolve to redacted copies — the second visit must not
+    // leak the original cleartext object.
+    expect(out.a.token).toBe(REDACTED);
+    expect(out.b.token).toBe(REDACTED);
+    // The redacted copy is not the untouched input object.
+    expect(out.b).not.toBe(creds);
+    expect(creds.token).toBe('sk-abc'); // input still unmutated
+  });
+
+  it('redacts secrets inside a cyclic object rather than leaking the original', () => {
+    const a: Record<string, unknown> = { token: 'sk-cycle' };
+    a.self = a;
+    const out = redactSecrets(a) as Record<string, unknown>;
+    expect(out.token).toBe(REDACTED);
+    // The cycle resolves back to the redacted copy, not the raw input.
+    expect(out.self).toBe(out);
+    expect((out.self as Record<string, unknown>).token).toBe(REDACTED);
+  });
 });
 
 describe('isSensitiveKey', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { ReqonLexer } from './lexer/index.js';
 import { ReqonParser } from './parser/parser.js';
@@ -13,11 +13,31 @@ const parseExample = (...segments: string[]) =>
   ).parse();
 
 /**
+ * Every shipped example is documented as runnable, so a parse failure is a
+ * broken doc. This is the gate that keeps that claim honest — it walks the
+ * directory rather than naming files, so a new example is covered on arrival.
+ */
+describe('every shipped example parses', () => {
+  const exampleFiles = readdirSync(examplesDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .flatMap((d) =>
+      readdirSync(join(examplesDir, d.name))
+        .filter((f) => f.endsWith('.vague') || f.endsWith('.reqon'))
+        .map((f) => [d.name, f] as const)
+    );
+
+  it('finds the examples directory', () => {
+    expect(exampleFiles.length).toBeGreaterThan(20);
+  });
+
+  it.for(exampleFiles)('%s/%s', ([dir, file]) => {
+    expect(() => parseExample(dir, file)).not.toThrow();
+  });
+});
+
+/**
  * The FPL example is the reference for proxy pools and loop concurrency, so it
- * has to stay parseable and keep saying what the docs claim it says.
- *
- * Scoped to this example on purpose: most other shipped examples don't parse
- * today for unrelated reasons (see issue #222).
+ * has to keep saying what the docs claim it says, not merely parse.
  */
 describe('fpl-sharded example', () => {
   const dir = join(import.meta.dirname, '..', 'examples', 'fpl-sharded');
@@ -39,12 +59,63 @@ describe('fpl-sharded example', () => {
     expect(mission.sources[0].config.proxy).toHaveLength(4);
   });
 
-  it('fans the manager loop out concurrently', () => {
+  it('fans the manager loop out at the heavy-endpoint concurrency', () => {
     const mission = parse('managers.vague').statements[0];
     if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
     const loop = mission.actions[0].steps.find((s): s is ForStep => s.type === 'ForStep');
 
-    expect(loop?.concurrency).toBe(8);
+    // /entry/{id}/ is ~100ms; 192 in flight is what reaches the model's pace.
+    expect(loop?.concurrency).toBe(192);
+  });
+
+  it('generates the first 100k ids in-mission with range()', () => {
+    const mission = parse('managers.vague').statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
+    const loop = mission.actions[0].steps.find((s): s is ForStep => s.type === 'ForStep');
+
+    expect(loop?.collection.type).toBe('CallExpression');
+    const call = loop?.collection as { callee: string; arguments: Array<{ value: number }> };
+    expect(call.callee).toBe('range');
+    expect(call.arguments[1].value).toBe(100001);
+  });
+
+  it('paces under the measured token-bucket ceiling and resumes on failure', () => {
+    const mission = parse('managers.vague').statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
+
+    // FPL is headerless, so the run models its limiter at the measured ceiling
+    // and lets 429 feedback self-calibrate; checkpoint makes a crash resumable.
+    const model = mission.sources[0].config.rateLimit?.model;
+    expect(model?.type).toBe('tokenBucket');
+    expect(model?.refill).toBe(1800);
+    expect(mission.checkpoint?.mode).toBe('on-failure');
+  });
+});
+
+/**
+ * The bulk pull generates its own ids with range() instead of reading a shard
+ * file, so there's no orchestrator and no 500k-line input to hand-write.
+ */
+describe('fpl-sharded first-500k bulk example', () => {
+  const dir = join(import.meta.dirname, '..', 'examples', 'fpl-sharded');
+  const parse = (file: string) =>
+    new ReqonParser(new ReqonLexer(readFileSync(join(dir, file), 'utf8')).tokenize()).parse();
+
+  it('parses the bulk mission', () => {
+    expect(() => parse('first-500k.vague')).not.toThrow();
+  });
+
+  it('iterates a numeric range in-mission, not a store', () => {
+    const mission = parse('first-500k.vague').statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('Expected a mission');
+    const loop = mission.actions[0].steps.find((s): s is ForStep => s.type === 'ForStep');
+
+    expect(loop?.collection.type).toBe('CallExpression');
+    // range(1, 500001) -> the first 500,000 managers.
+    const call = loop?.collection as { callee: string; arguments: Array<{ value: number }> };
+    expect(call.callee).toBe('range');
+    expect(call.arguments[1].value).toBe(500001);
+    expect(loop?.concurrency).toBe(192);
   });
 });
 

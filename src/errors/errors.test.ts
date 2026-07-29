@@ -302,7 +302,7 @@ describe('Integration with parser', () => {
     } catch (e) {
       expect(e).toBeInstanceOf(ParseError);
       const error = e as ParseError;
-      expect(error.location.line).toBeGreaterThan(0);
+      expect(error.location?.line).toBeGreaterThan(0);
       expect(error.context?.source).toBe(source);
       expect(error.context?.filePath).toBe('test.reqon');
 

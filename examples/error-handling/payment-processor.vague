@@ -259,19 +259,15 @@ mission ProcessPayments {
   // ============================================================
 
   action GenerateReport {
-    map response -> report {
-      processed: length(processed_payments),
-      failed: length(failed_payments),
-      fraud_flagged: length(fraud_review_queue),
-      queued_for_retry: length(dead_letter_queue),
+    // Record a run-completion marker. Per-queue totals (how many payments were
+    // processed, failed, fraud-flagged, or dead-lettered) would need to count
+    // store contents, which isn't expressible inline — a store isn't
+    // array-valued in an expression, so length(store) doesn't work. Downstream
+    // tooling derives those counts from the stores written by the actions above.
+    store {
+      report: "payment_run_complete",
       completed_at: now()
-    }
-
-    validate report {
-      assume .processed >= 0
-    }
-
-    store response -> processed_payments {
+    } -> processed_payments {
       key: "report_" + now()
     }
   }

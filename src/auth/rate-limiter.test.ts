@@ -60,6 +60,111 @@ describe('AdaptiveRateLimiter', () => {
     });
   });
 
+  describe('proxy lane keys', () => {
+    it('applies the source config to a lane key', async () => {
+      limiter.configure('api', { strategy: 'fail' });
+      const resetAt = new Date(Date.now() + 60000);
+      limiter.recordResponse('api@proxy-a', { remaining: 0, limit: 100, resetAt });
+
+      await expect(limiter.waitForCapacity('api@proxy-a')).rejects.toThrow(RateLimitError);
+    });
+  });
+
+  describe('throttle pacing', () => {
+    it('paces requests across different endpoints on the same lane', async () => {
+      // 60rpm = one request per second. A sharded fan-out hits a different
+      // interpolated path every time, so pacing has to be lane-wide to bite.
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+
+      await limiter.waitForCapacity('api', '/entry/1/history/');
+
+      let resolved = false;
+      const second = limiter.waitForCapacity('api', '/entry/2/history/').then(() => {
+        resolved = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(500);
+      expect(resolved).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(600);
+      await second;
+      expect(resolved).toBe(true);
+    });
+
+    it('spaces concurrent callers instead of releasing them as a batch', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+
+      const start = Date.now();
+      const releasedAt: number[] = [];
+      const inFlight = Array.from({ length: 4 }, (_, i) =>
+        limiter.waitForCapacity('api', `/entry/${i}/history/`).then(() => {
+          releasedAt.push(Date.now() - start);
+        })
+      );
+
+      await vi.advanceTimersByTimeAsync(5000);
+      await Promise.all(inFlight);
+
+      expect(releasedAt).toEqual([0, 1000, 2000, 3000]);
+    });
+
+    it('spaces callers freed by a 429 backoff instead of stampeding (#252)', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+      // A 429 backs the whole lane off; all four callers queue on the slow path.
+      limiter.recordResponse('api', { retryAfter: 2 }, '/entry/1/history/');
+
+      const start = Date.now();
+      const releasedAt: number[] = [];
+      const inFlight = Array.from({ length: 4 }, (_, i) =>
+        limiter.waitForCapacity('api', `/entry/${i}/history/`).then(() => {
+          releasedAt.push(Date.now() - start);
+        })
+      );
+
+      await vi.advanceTimersByTimeAsync(6000);
+      await Promise.all(inFlight);
+
+      // The backoff lifts at ~2s. Without a slot reservation on the wait path all
+      // four would release together at 2000; each must claim a spaced slot.
+      expect(releasedAt).toEqual([2000, 3000, 4000, 5000]);
+    });
+
+    it('gives each proxy lane its own budget', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+
+      const start = Date.now();
+      const releasedAt: number[] = [];
+      const inFlight = ['proxy-a', 'proxy-b', 'proxy-c'].map((label) =>
+        limiter.waitForCapacity(`api@${label}`, '/entry/1/history/').then(() => {
+          releasedAt.push(Date.now() - start);
+        })
+      );
+
+      await vi.advanceTimersByTimeAsync(2000);
+      await Promise.all(inFlight);
+
+      // Separate lanes, separate budgets - all three go straight out.
+      expect(releasedAt).toEqual([0, 0, 0]);
+    });
+  });
+
+  describe('429 backoff', () => {
+    it('backs off the whole lane after a 429 on one endpoint', async () => {
+      // A 429 is the server objecting to this client, not to this URL. Keeping
+      // the backoff per-path lets a fan-out walk straight through it.
+      limiter.recordResponse('api', { retryAfter: 30 }, '/entry/1/history/');
+
+      expect(await limiter.canProceed('api', '/entry/2/history/')).toBe(false);
+    });
+
+    it('keeps lane backoff separate per proxy', async () => {
+      limiter.recordResponse('api@proxy-a', { retryAfter: 30 }, '/entry/1/history/');
+
+      expect(await limiter.canProceed('api@proxy-a', '/entry/2/history/')).toBe(false);
+      expect(await limiter.canProceed('api@proxy-b', '/entry/2/history/')).toBe(true);
+    });
+  });
+
   describe('recordResponse', () => {
     it('records remaining quota', () => {
       limiter.recordResponse('api', { remaining: 75, limit: 100 });
@@ -332,6 +437,45 @@ describe('AdaptiveRateLimiter', () => {
     });
   });
 
+  describe('malformed header resilience (#251)', () => {
+    it('keeps pacing a lane after a malformed remaining header', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+      limiter.recordResponse(
+        'api',
+        parseRateLimitHeaders({
+          'x-ratelimit-remaining': 'unknown',
+          'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 60),
+        })
+      );
+
+      await limiter.waitForCapacity('api'); // claims the first slot
+
+      const delay = limiter.getThrottleDelay('api');
+      expect(Number.isFinite(delay)).toBe(true);
+      expect(delay).toBeGreaterThan(0); // the next slot is still in the future
+    });
+  });
+
+  describe('backoff release (#252)', () => {
+    it('spaces queued callers out when a 429 backoff lifts, instead of stampeding', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60, maxWait: 60 });
+      limiter.recordResponse('api', { rejected: true, retryAfter: 2 });
+
+      const finishedAt: number[] = [];
+      const waiters = [
+        limiter.waitForCapacity('api').then(() => finishedAt.push(Date.now())),
+        limiter.waitForCapacity('api').then(() => finishedAt.push(Date.now())),
+      ];
+      await vi.advanceTimersByTimeAsync(15_000);
+      await Promise.all(waiters);
+
+      // fallbackRpm 60 → one slot per second: the second caller must exit at
+      // least ~1s after the first, not on the same tick.
+      expect(finishedAt).toHaveLength(2);
+      expect(Math.abs(finishedAt[1] - finishedAt[0])).toBeGreaterThanOrEqual(900);
+    });
+  });
+
   describe('default configuration', () => {
     it('uses pause strategy by default', async () => {
       // Not configured, should use defaults
@@ -467,6 +611,52 @@ describe('parseRateLimitHeaders', () => {
     const info = parseRateLimitHeaders(headers);
 
     expect(info.resetAt).toBeInstanceOf(Date);
+    // The ISO branch must actually parse the date, not fall through to 1970 (#251).
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+  });
+
+  it('discards a malformed numeric header rather than storing NaN (#251)', () => {
+    const info = parseRateLimitHeaders({
+      'x-ratelimit-remaining': 'unknown',
+      'x-ratelimit-limit': 'n/a',
+    });
+
+    expect(info.remaining).toBeUndefined();
+    expect(info.limit).toBeUndefined();
+  });
+
+  it('treats IETF RateLimit-Reset as delta seconds from now (#251)', () => {
+    const info = parseRateLimitHeaders({ 'RateLimit-Reset': '60' });
+
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+    const deltaMs = (info.resetAt as Date).getTime() - Date.now();
+    expect(deltaMs).toBeGreaterThan(55_000);
+    expect(deltaMs).toBeLessThanOrEqual(60_000);
+  });
+
+  it('does not read a small vendor reset value as a 1970 epoch (#251)', () => {
+    // Some vendors send x-ratelimit-reset as a small delta, not a full epoch.
+    const info = parseRateLimitHeaders({ 'X-RateLimit-Reset': '60' });
+
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+  });
+
+  it('clamps a past Retry-After HTTP-date to zero (#251)', () => {
+    const past = new Date(Date.now() - 60_000).toUTCString();
+    const info = parseRateLimitHeaders({ 'Retry-After': past });
+
+    expect(info.retryAfter).toBe(0);
+  });
+
+  it('keeps the throttle alive after a malformed header (#251)', () => {
+    const rl = new AdaptiveRateLimiter();
+    rl.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+    rl.recordResponse('api', {});
+    expect(rl.getThrottleDelay('api')).toBeGreaterThanOrEqual(0);
+
+    rl.recordResponse('api', parseRateLimitHeaders({ 'x-ratelimit-remaining': 'unknown' }));
+    // Previously NaN poisoned the pacing math and the lane never throttled again.
+    expect(Number.isNaN(rl.getThrottleDelay('api'))).toBe(false);
   });
 });
 

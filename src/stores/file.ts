@@ -3,13 +3,7 @@ import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { StoreAdapter, StoreFilter } from './types.js';
 import { applyStoreFilter } from './types.js';
-import {
-  ensureDirectory,
-  readJsonFile,
-  serialize,
-  writeFileAtomic,
-  writeFileAtomicSync,
-} from '../utils/file.js';
+import { ensureDirectory, readJsonFile, serialize, writeFileAtomic } from '../utils/file.js';
 import { safeJoin } from '../utils/path.js';
 import { deepMerge } from '../utils/deep-merge.js';
 
@@ -47,6 +41,10 @@ export class FileStore implements StoreAdapter {
   private initError: Error | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingWrite: Promise<void> | null = null;
+  /** Tail of the write chain; keeps disk writes from overlapping. */
+  private writeChain: Promise<void> = Promise.resolve();
+  /** A queued write that has not started serialising yet, so it can be shared. */
+  private coalescedWrite: Promise<void> | null = null;
 
   /**
    * Create a FileStore with async initialization (recommended).
@@ -140,19 +138,44 @@ export class FileStore implements StoreAdapter {
     }, this.options.debounceMs);
   }
 
-  private async writeToDisk(): Promise<void> {
+  /**
+   * Queue a write behind any that are already running.
+   *
+   * A write serialises the whole map, so concurrent callers must not overlap:
+   * two writes started from different states rename over the same target, and
+   * whichever lands second wins regardless of which state is newer. Under
+   * `for ... concurrency N` that silently drops keys the map still reports as
+   * stored.
+   *
+   * Callers that arrive before a queued write starts serialising share it -
+   * their mutation is already in the map, so that write will include it.
+   */
+  private writeToDisk(): Promise<void> {
+    if (this.coalescedWrite) {
+      return this.coalescedWrite;
+    }
+
+    const write = this.writeChain
+      .catch(() => {})
+      .then(() => {
+        // Cleared before serialising, so anything mutating after this point
+        // queues a fresh write rather than assuming this one covers it.
+        this.coalescedWrite = null;
+        return this.serializeToDisk();
+      });
+
+    this.coalescedWrite = write;
+    this.writeChain = write.catch(() => {});
+    return write;
+  }
+
+  private async serializeToDisk(): Promise<void> {
+    // Cleared before the snapshot: a mutation landing mid-write re-marks the
+    // store dirty instead of being masked when this write completes.
+    this.dirty = false;
     const obj = Object.fromEntries(this.data);
     const content = serialize(obj, this.options.pretty);
     await writeFileAtomic(this.filePath, content);
-    this.dirty = false;
-  }
-
-  /** Synchronous write for flush/close operations */
-  private writeToDiskSync(): void {
-    const obj = Object.fromEntries(this.data);
-    const content = serialize(obj, this.options.pretty);
-    writeFileAtomicSync(this.filePath, content);
-    this.dirty = false;
   }
 
   async get(key: string): Promise<Record<string, unknown> | null> {
@@ -224,26 +247,39 @@ export class FileStore implements StoreAdapter {
   }
 
   /**
-   * Flush pending changes to disk (needed in 'batch' or 'debounce' mode)
-   * Uses synchronous I/O to ensure data is written before process exits
+   * Flush pending changes to disk (needed in 'batch' or 'debounce' mode).
+   *
+   * Quiesces the async write chain before writing: a synchronous write here
+   * would jump the queue, and an in-flight write finishing later would rename
+   * older data over the newer state.
    */
-  flush(): void {
+  async flush(): Promise<void> {
     // Cancel any pending debounce timer
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
+    // Nothing was ever written if init never ran or failed.
+    if (this.initialized === null) return;
+    await this.initialized.catch(() => {});
+    if (this.initError) return;
+    // Writes queued behind us may extend the chain while we drain it.
+    let tail;
+    do {
+      tail = this.writeChain;
+      await tail;
+    } while (tail !== this.writeChain);
     if (this.dirty) {
-      this.writeToDiskSync();
+      await this.writeToDisk();
     }
   }
 
   /**
-   * Close the store, ensuring all pending changes are written to disk.
-   * Should be called before the process exits to prevent data loss in batch mode.
+   * Close the store, ensuring all pending changes are durably on disk (#259).
+   * Should be awaited before the process exits to prevent data loss.
    */
-  close(): void {
-    this.flush();
+  async close(): Promise<void> {
+    await this.flush();
   }
 
   /**

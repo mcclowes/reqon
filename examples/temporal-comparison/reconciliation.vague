@@ -47,7 +47,8 @@ mission OrderReconciliation {
   store payments: sql("reconciled_payments")
   store shipments: sql("reconciled_shipments")
   store discrepancies: sql("audit_discrepancies")
-  store sync_state: sql("sync_checkpoints")
+  // Incremental-sync checkpoints are managed by `since: lastSync` (see the
+  // fetch actions below), so there is no manual checkpoint store.
 
   // ============================================================
   // SCHEMAS - Unified data models
@@ -106,14 +107,16 @@ mission OrderReconciliation {
   // ============================================================
 
   action SyncShopifyOrders {
-    // Get last sync timestamp for incremental sync
+    // `since: lastSync` handles incremental sync: it reads this action's saved
+    // checkpoint, injects it as the `updated_at_min` query param, and advances
+    // the checkpoint on success. No manual checkpoint store needed.
     get "/orders.json" {
       source: Shopify,
       body: {
         "status": "any",
-        "updated_at_min": sync_state.get("shopify_orders_last_sync"),
         "limit": 250
       },
+      since: lastSync { param: "updated_at_min", format: iso },
       paginate: cursor(page_info, 250, "link.next"),
       until: response.orders.length == 0,
       retry: {
@@ -154,10 +157,7 @@ mission OrderReconciliation {
       },
 
       store response -> orders { key: .order_id, upsert: true }
-    },
-
-    // Update checkpoint
-    store { "shopify_orders_last_sync": now() } -> sync_state { key: "shopify_orders_last_sync" }
+    }
   }
 
   // ============================================================
@@ -169,9 +169,10 @@ mission OrderReconciliation {
       source: Stripe,
       body: {
         "limit": 100,
-        "created[gte]": sync_state.get("stripe_payments_last_sync"),
         "expand[]": "data.charges"
       },
+      // Stripe expects a Unix timestamp for created[gte]
+      since: lastSync { param: "created[gte]", format: unix },
       paginate: cursor(starting_after, 100, "data[-1].id"),
       until: response.has_more == false,
       retry: {
@@ -199,9 +200,7 @@ mission OrderReconciliation {
       },
 
       store response -> payments { key: .payment_id, upsert: true }
-    },
-
-    store { "stripe_payments_last_sync": now() } -> sync_state { key: "stripe_payments_last_sync" }
+    }
   }
 
   // ============================================================
@@ -213,9 +212,9 @@ mission OrderReconciliation {
       source: ShipStation,
       body: {
         "pageSize": 500,
-        "createDateStart": sync_state.get("shipstation_last_sync"),
         "sortBy": "CreateDate"
       },
+      since: lastSync { param: "createDateStart", format: iso },
       paginate: page(page, 500),
       until: response.shipments.length == 0,
       retry: {
@@ -243,9 +242,7 @@ mission OrderReconciliation {
       },
 
       store response -> shipments { key: .shipment_id, upsert: true }
-    },
-
-    store { "shipstation_last_sync": now() } -> sync_state { key: "shipstation_last_sync" }
+    }
   }
 
   // ============================================================
@@ -253,72 +250,37 @@ mission OrderReconciliation {
   // ============================================================
 
   action ValidateReconciliation {
-    // Check for orders without payments. `validate ... or { ... }` asserts the
-    // constraint and, on failure, runs the fallback block instead of aborting
-    // the mission — here recording a discrepancy and carrying on.
-    for order in orders where .payment_status == "pending" and .created_at < now() - 259200000 {
-      let payment_exists = any of payments where .order_id == order.order_id,
+    // These checks cross-reference records that DO exist across stores, using a
+    // nested `for ... in <store> where ...` join. (Detecting the *absence* of a
+    // matching record — e.g. an order with no payment at all — needs an anti-join
+    // the DSL can't express inline today, so those checks are omitted rather than
+    // written in a way that silently flags every order.)
 
-      validate order {
-        assume payment_exists == true
-      } or {
-        store {
-          id: "disc_" + order.order_id + "_no_payment",
-          order_id: order.order_id,
-          type: "missing_payment",
-          severity: "high",
-          description: "Order older than 3 days has no matching Stripe payment",
-          shopify_value: order.total_amount,
-          stripe_value: null,
-          shipstation_value: null,
-          detected_at: now()
-        } -> discrepancies { key: .id, upsert: true }
-      }
-    },
-
-    // Check for payment/order amount mismatches
+    // Check for payment/order amount mismatches. `validate ... or { ... }`
+    // asserts the amounts agree and, on failure, runs the fallback block instead
+    // of aborting the mission — here recording a discrepancy and carrying on.
     for order in orders {
       for payment in payments where .order_id == order.order_id {
-        match order {
-          _ where payment.amount < order.total_amount - 0.01 or payment.amount > order.total_amount + 0.01 -> {
-            store {
-              id: "disc_" + order.order_id + "_amount_mismatch",
-              order_id: order.order_id,
-              type: "amount_mismatch",
-              severity: match true {
-                abs(order.total_amount - payment.amount) > 100 => "critical",
-                abs(order.total_amount - payment.amount) > 10 => "high",
-                _ => "medium"
-              },
-              description: "Order total does not match payment total",
-              shopify_value: order.total_amount,
-              stripe_value: payment.amount,
-              shipstation_value: null,
-              detected_at: now()
-            } -> discrepancies { key: .id, upsert: true }
-          }
+        validate payment {
+          assume .amount >= order.total_amount - 0.01
+          assume .amount <= order.total_amount + 0.01
+        } or {
+          store {
+            id: "disc_" + order.order_id + "_amount_mismatch",
+            order_id: order.order_id,
+            type: "amount_mismatch",
+            severity: match true {
+              abs(order.total_amount - payment.amount) > 100 => "critical",
+              abs(order.total_amount - payment.amount) > 10 => "high",
+              _ => "medium"
+            },
+            description: "Order total does not match payment total",
+            shopify_value: order.total_amount,
+            stripe_value: payment.amount,
+            shipstation_value: null,
+            detected_at: now()
+          } -> discrepancies { key: .id, upsert: true }
         }
-      }
-    },
-
-    // Check for shipped orders without shipment records
-    for order in orders where .fulfillment_status == "shipped" {
-      let shipment_exists = any of shipments where .order_id == order.order_id,
-
-      validate order {
-        assume shipment_exists == true
-      } or {
-        store {
-          id: "disc_" + order.order_id + "_no_shipment",
-          order_id: order.order_id,
-          type: "missing_shipment_record",
-          severity: "medium",
-          description: "Shopify shows fulfilled but no ShipStation shipment found",
-          shopify_value: order.fulfillment_status,
-          stripe_value: null,
-          shipstation_value: null,
-          detected_at: now()
-        } -> discrepancies { key: .id, upsert: true }
       }
     },
 

@@ -47,7 +47,7 @@ transform ToUnifiedOrder {
     source: "shopify",
     external_id: .id,
     customer_ref: .customer.id,
-    amount: parseDecimal(.total_price),  // Parse string to decimal
+    amount: parseNumber(.total_price),   // Parse the string price to a number
     currency: .currency,
     status: match .financial_status {
       "paid" => "paid",
@@ -56,7 +56,7 @@ transform ToUnifiedOrder {
       "partially_refunded" => "partial_refund",
       _ => "unknown"
     },
-    created_at: parseDate(.created_at),
+    created_at: .created_at,              // Already an ISO-8601 string
     synced_at: now()
   }
 

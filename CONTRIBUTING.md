@@ -6,9 +6,11 @@ Thank you for your interest in contributing to Reqon! This guide will help you g
 
 ### Prerequisites
 
-- Node.js 18 or higher
+- Node.js 22 or higher (CI runs 22 and 24)
 - npm
-- [Vague](https://github.com/mcclowes/vague) cloned as a sibling directory (required for local development)
+
+[Vague](https://github.com/mcclowes/vague) is a published npm dependency
+(`vague-lang`); you no longer need it checked out as a sibling directory.
 
 ### Setup
 
@@ -18,27 +20,25 @@ Thank you for your interest in contributing to Reqon! This guide will help you g
    cd reqon
    ```
 
-2. Clone Vague as a sibling directory:
-   ```bash
-   cd ..
-   git clone https://github.com/mcclowes/vague.git
-   cd reqon
-   ```
-
-3. Install dependencies:
+2. Install dependencies:
    ```bash
    npm install
    ```
 
-4. Build the project:
+3. Build the project:
    ```bash
    npm run build
    ```
 
-5. Run tests to verify setup:
+4. Run tests to verify setup:
    ```bash
    npm run test:run
    ```
+
+Some suites need optional peer dependencies, all of which are installed as dev
+dependencies: `better-sqlite3` (SQLite execution log), `pg` (Postgres execution
+log — `npm run test:pg` also needs a running Postgres), and `undici` (egress
+proxy pools).
 
 ## Development Workflow
 
@@ -48,27 +48,51 @@ Thank you for your interest in contributing to Reqon! This guide will help you g
 |---------|-------------|
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run dev` | Watch mode compilation |
+| `npm run typecheck` | Type-check without emitting |
 | `npm run test` | Run tests in watch mode |
 | `npm run test:run` | Run tests once |
 | `npm run test:coverage` | Run tests with coverage report |
+| `npm run test:crash` | Crash-injection durability suite |
+| `npm run test:pg` | Postgres execution-log tests (needs a Postgres) |
+| `npm run lint` | ESLint over `src/` |
+| `npm run format` | Prettier write over `src/` |
+| `npm run bench` | Performance benchmarks |
+
+CI gates on `typecheck`, `lint`, `test:run`, `test:crash`, and `test:pg`. The
+pre-commit hook runs lint-staged (eslint + prettier) and the full test suite, but
+not `typecheck` - vitest compiles with esbuild, which strips types without
+checking them. Run `npm run typecheck` yourself before pushing.
 
 ### Project Structure
 
 ```
 src/
 ├── ast/           # Extended AST nodes (missions, actions, steps)
-├── auth/          # Rate limiting and authentication providers
+├── auth/          # Rate limiting, circuit breaker, credentials, auth providers
+├── benchmark/     # Performance benchmarks
+├── config/        # Runtime configuration and constants
+├── control/       # Control server for pause/resume and status queries
+├── debug/         # CLI debugger and debug controller
+├── durability/    # Crash-injection tests for durable execution
 ├── errors/        # Structured error classes
 ├── execution/     # Execution state management and persistence
-├── interpreter/   # Runtime execution (context, evaluator, executor)
+├── execution-log/ # Append-only event log (file/sqlite/postgres stores)
+├── interpreter/   # Runtime execution (context, evaluator, executor, step handlers)
 ├── lexer/         # Reqon keywords (uses Vague's lexer via plugin)
+├── loader/        # Mission loader (single file or folder of action files)
+├── mcp/           # Model Context Protocol server
 ├── oas/           # OpenAPI spec integration
+├── observability/ # Structured events, logging, OpenTelemetry
 ├── parser/        # Parser for mission/action/fetch/store syntax
-├── scheduler/     # Cron scheduling for missions
-├── stores/        # Store adapters (memory, file, postgrest)
+├── pause/         # Resource-free long pauses
+├── scheduler/     # Cron/interval scheduling for missions
+├── stores/        # Store adapters (memory, file, postgrest) + batching wrapper
 ├── sync/          # Incremental sync checkpointing
+├── trace/         # Time-travel debugging
 ├── utils/         # Shared utilities
+├── webhook/       # Webhook server for async callbacks
 ├── index.ts       # Main exports
+├── plugin.ts      # Vague plugin integration
 └── cli.ts         # CLI entry point
 ```
 

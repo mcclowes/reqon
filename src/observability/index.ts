@@ -51,7 +51,14 @@ export type {
 export { ObservabilityEmitter, createEmitter } from './events.js';
 
 // Logger
-export type { LogEntry, Span, LogOutput, StructuredLogger, CreateLoggerOptions } from './logger.js';
+export type {
+  LogEntry,
+  Span,
+  LogOutput,
+  StructuredLogger,
+  CreateLoggerOptions,
+  ConsoleTimeMode,
+} from './logger.js';
 
 export {
   ConsoleOutput,
@@ -60,6 +67,11 @@ export {
   EventOutput,
   createStructuredLogger,
 } from './logger.js';
+
+// Progress reporting
+export type { ProgressSnapshot, ProgressReporterOptions } from './progress.js';
+
+export { ProgressReporter, formatProgressLine, formatCount, formatDuration } from './progress.js';
 
 // OpenTelemetry
 export type {
