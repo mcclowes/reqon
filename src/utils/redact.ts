@@ -19,12 +19,28 @@ export function isSensitiveKey(key: string): boolean {
 }
 
 /**
+ * Only plain objects (and arrays) are safe to walk with `Object.entries`.
+ * A class instance - `Date`, `RegExp`, `Buffer`, `Map`, ... - has no own
+ * enumerable data properties, so recursing into it would collapse it to `{}`.
+ */
+function isPlainObject(value: object): boolean {
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+/**
  * Return a deep copy of `value` with any credential-looking properties
  * replaced by {@link REDACTED}. Non-objects are returned unchanged. Cycles are
  * handled, and the input is never mutated.
  */
 export function redactSecrets<T>(value: T, seen: WeakMap<object, unknown> = new WeakMap()): T {
   if (value === null || typeof value !== 'object') return value;
+
+  // Pass class instances (Date, RegExp, Buffer, Map, Set, ...) through
+  // unchanged. Recursing into a Date via Object.entries enumerates no own data
+  // properties and collapses it to `{}`, silently corrupting every timestamp in
+  // a trace snapshot or structured log that passes through redaction (#263).
+  if (!Array.isArray(value) && !isPlainObject(value as object)) return value;
 
   // Return the redacted copy already made for this object, not the original.
   // Using a WeakMap (rather than a WeakSet) means a shared or cyclic reference

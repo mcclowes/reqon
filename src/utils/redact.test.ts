@@ -54,6 +54,20 @@ describe('redactSecrets', () => {
     expect(creds.token).toBe('sk-abc'); // input still unmutated
   });
 
+  it('passes Date values through unchanged instead of collapsing them to {} (#263)', () => {
+    const when = new Date('2026-01-01T00:00:00.000Z');
+    const out = redactSecrets({ when, token: 'sk-1' }) as { when: Date; token: string };
+    expect(out.when).toBeInstanceOf(Date);
+    expect(out.when.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(out.token).toBe(REDACTED);
+  });
+
+  it('passes other class instances (RegExp) through unchanged (#263)', () => {
+    const out = redactSecrets({ pattern: /ab+c/i }) as { pattern: RegExp };
+    expect(out.pattern).toBeInstanceOf(RegExp);
+    expect(out.pattern.source).toBe('ab+c');
+  });
+
   it('redacts secrets inside a cyclic object rather than leaking the original', () => {
     const a: Record<string, unknown> = { token: 'sk-cycle' };
     a.self = a;

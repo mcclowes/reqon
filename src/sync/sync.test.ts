@@ -118,6 +118,30 @@ describe('MemorySyncStore', () => {
     expect(all).toHaveLength(2);
   });
 
+  it('never moves a checkpoint backwards (#257)', async () => {
+    const newer = new Date('2026-06-01T00:00:00.000Z');
+    const older = new Date('2026-05-01T00:00:00.000Z');
+
+    await store.recordSync({ key: 'K', syncedAt: newer });
+    // A reordered page / backdated record yields an older candidate; it must not
+    // rewind the watermark.
+    await store.recordSync({ key: 'K', syncedAt: older, cursor: 'c2' });
+
+    const checkpoint = await store.getCheckpoint('K');
+    expect(checkpoint?.syncedAt.getTime()).toBe(newer.getTime());
+    expect((await store.getLastSync('K')).getTime()).toBe(newer.getTime());
+  });
+
+  it('still advances a checkpoint forward (#257)', async () => {
+    const older = new Date('2026-05-01T00:00:00.000Z');
+    const newer = new Date('2026-06-01T00:00:00.000Z');
+
+    await store.recordSync({ key: 'K', syncedAt: older });
+    await store.recordSync({ key: 'K', syncedAt: newer });
+
+    expect((await store.getLastSync('K')).getTime()).toBe(newer.getTime());
+  });
+
   it('clears specific checkpoint', async () => {
     await store.recordSync({ key: 'A', syncedAt: new Date() });
     await store.recordSync({ key: 'B', syncedAt: new Date() });
@@ -174,6 +198,17 @@ describe('FileSyncStore', () => {
     expect(checkpoint).not.toBeNull();
     expect(checkpoint?.syncedAt.getTime()).toBe(syncedAt.getTime());
     expect(checkpoint?.recordCount).toBe(50);
+  });
+
+  it('does not persist a backwards checkpoint (#257)', async () => {
+    const newer = new Date('2026-06-01T00:00:00.000Z');
+    const older = new Date('2026-05-01T00:00:00.000Z');
+
+    await store.recordSync({ key: 'k', syncedAt: newer });
+    await store.recordSync({ key: 'k', syncedAt: older });
+
+    const reopened = new FileSyncStore('test-mission', TEST_DIR);
+    expect((await reopened.getLastSync('k')).getTime()).toBe(newer.getTime());
   });
 });
 

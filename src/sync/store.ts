@@ -4,6 +4,25 @@ import { EPOCH } from './state.js';
 import { ensureParentDirectory, writeJsonFile, readJsonFile, restoreDates } from '../utils/file.js';
 
 /**
+ * A sync watermark is monotonic by definition, so a checkpoint may never move
+ * `syncedAt` backwards (#257). Reordered pages, a backdated record (an import or
+ * correction), or clock skew between API shards can all produce a candidate
+ * older than the current watermark; clamp it so an incremental sync can't rewind
+ * and re-fetch - or, worse, under a `set` store, overwrite newer local state
+ * with an older version. Enforced here at the store boundary so no caller can
+ * bypass it.
+ */
+export function clampMonotonicSync(
+  existing: SyncCheckpoint | undefined,
+  candidate: SyncCheckpoint
+): SyncCheckpoint {
+  if (existing && existing.syncedAt.getTime() > candidate.syncedAt.getTime()) {
+    return { ...candidate, syncedAt: existing.syncedAt };
+  }
+  return candidate;
+}
+
+/**
  * Sync store interface - persists sync checkpoints
  */
 export interface SyncStore {
@@ -79,7 +98,8 @@ export class FileSyncStore implements SyncStore {
 
   async recordSync(checkpoint: SyncCheckpoint): Promise<void> {
     await this.initialized;
-    this.checkpoints.set(checkpoint.key, checkpoint);
+    const clamped = clampMonotonicSync(this.checkpoints.get(checkpoint.key), checkpoint);
+    this.checkpoints.set(clamped.key, clamped);
     await this.persist();
   }
 
@@ -117,7 +137,8 @@ export class MemorySyncStore implements SyncStore {
   }
 
   async recordSync(checkpoint: SyncCheckpoint): Promise<void> {
-    this.checkpoints.set(checkpoint.key, { ...checkpoint });
+    const clamped = clampMonotonicSync(this.checkpoints.get(checkpoint.key), checkpoint);
+    this.checkpoints.set(clamped.key, { ...clamped });
   }
 
   async list(): Promise<SyncCheckpoint[]> {
