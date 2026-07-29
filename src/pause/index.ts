@@ -28,3 +28,7 @@ export { LogBackedPauseStore } from './log-store.js';
 // Manager
 export type { PauseManagerConfig, CreatePauseOptions, PauseStatus } from './manager.js';
 export { PauseManager, createPauseManager } from './manager.js';
+
+// Orchestrator - routes webhook/timeout triggers into resumes
+export type { PauseOrchestratorConfig } from './orchestrator.js';
+export { PauseOrchestrator, createPauseOrchestrator } from './orchestrator.js';

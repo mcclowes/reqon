@@ -39,6 +39,10 @@ export class WebhookServer {
   private config: Required<WebhookServerConfig>;
   private store: WebhookStore;
   private callbacks: WebhookServerCallbacks;
+  // Listeners subscribed after construction (e.g. a PauseOrchestrator wiring
+  // itself to a server it didn't create). Kept separate from `callbacks` so
+  // subscribing never clobbers the constructor-provided callback.
+  private eventListeners = new Set<(event: WebhookEvent) => void>();
   private server?: Server;
   // Multiple concurrent waiters may await the same registration; each gets its
   // own entry so a second waiter can't clobber the first's timer/promise.
@@ -189,6 +193,20 @@ export class WebhookServer {
   }
 
   /**
+   * Look up a registration by its path.
+   */
+  async getRegistrationByPath(path: string): Promise<WebhookRegistration | undefined> {
+    return this.store.getRegistrationByPath(path);
+  }
+
+  /**
+   * Get the events delivered to a registration so far.
+   */
+  async getEvents(registrationId: string): Promise<WebhookEvent[]> {
+    return this.store.getEvents(registrationId);
+  }
+
+  /**
    * Wait for webhook events
    */
   async waitForEvents(registrationId: string, timeout?: number): Promise<WaitResult> {
@@ -269,9 +287,26 @@ export class WebhookServer {
   }
 
   /**
-   * Get the server port
+   * Subscribe to every delivered webhook event. Returns an unsubscribe
+   * function. Listener errors are swallowed so one bad subscriber can't break
+   * request handling or other subscribers.
+   */
+  onEvent(listener: (event: WebhookEvent) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => {
+      this.eventListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Get the server port. While running this is the actual bound port (so
+   * `port: 0` resolves to the OS-assigned one), otherwise the configured port.
    */
   getPort(): number {
+    const address = this.server?.address();
+    if (address && typeof address === 'object') {
+      return address.port;
+    }
     return this.config.port;
   }
 
@@ -398,6 +433,7 @@ export class WebhookServer {
     const event: WebhookEvent = {
       id: randomUUID(),
       registrationId: registration.id,
+      path,
       receivedAt: new Date(),
       method,
       headers: this.extractHeaders(req),
@@ -415,6 +451,13 @@ export class WebhookServer {
 
     this.log(`Webhook received: ${path} (${receivedEvents}/${registration.expectedEvents})`);
     this.callbacks.onWebhookReceived?.(event);
+    for (const listener of this.eventListeners) {
+      try {
+        listener(event);
+      } catch {
+        // Subscriber errors must not affect the HTTP response or other listeners.
+      }
+    }
 
     // Check if all expected events received
     if (receivedEvents >= registration.expectedEvents) {

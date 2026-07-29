@@ -6,13 +6,15 @@ sidebar_position: 4
 
 Pause steps enable resource-free long pauses in mission execution, allowing workflows to wait for hours, days, or weeks without holding resources.
 
-:::warning You drive the resume
-A pause records its deadline and resume triggers, then stops the run. The shipped
-runtime does **not** poll for expired pauses or route inbound webhooks into paused
-runs — nothing calls `PauseManager.startMonitoring()` or `PauseManager.handleWebhook()`
-for you. A paused run resumes when you re-run it with `--resume <executionId>`, or
-when you drive [`PauseManager`](#programmatic-api) yourself. Read `resumeOn:` as
-recorded intent, not as an automatic dispatcher.
+:::info Something must be listening
+A pause records its deadline and resume triggers, then stops the run. For a trigger
+to fire on its own, a live component has to watch for it: use
+[`executeWithResume`](#executewithresume-run-to-completion) (which stays up, routes
+inbound webhooks into the paused run, polls deadlines, and re-executes until the
+mission finishes), or wire a [`PauseOrchestrator`](#pauseorchestrator-automatic-triggers)
+into your own host. Both need the durable execution log — replaying past a pause is
+log-based. Without one of these (for example a plain CLI run that exits after
+pausing), a paused run resumes only when you re-run it with `--resume <executionId>`.
 :::
 
 ## Basic usage
@@ -81,7 +83,7 @@ pause {
 }
 ```
 
-With a webhook server configured, Reqon registers a listener at `{webhook-base-url}/approved` and records the trigger on the pause. A POST to that endpoint does not by itself resume the run — see the warning above; call `PauseManager.handleWebhook()` from your own handler, or re-run with `--resume`.
+With a webhook server configured, Reqon registers a listener at `{webhook-base-url}/approved` and records the trigger on the pause. Under `executeWithResume` (or a running `PauseOrchestrator`), a POST to that endpoint resumes the run with the payload available as `response`. Without one, the delivery is recorded but nothing re-runs the mission — resume it with `--resume`.
 
 ### Multiple triggers
 
@@ -143,14 +145,14 @@ When a pause step executes:
 
 ### Resume process
 
-When a resume is driven (`--resume <executionId>`, `execute(…, { resumeFrom })`, or a `PauseManager` call):
+When a resume is driven (a trigger firing under `executeWithResume`/`PauseOrchestrator`, `--resume <executionId>`, `execute(…, { resumeFrom })`, or a `PauseManager` call):
 
 1. Pause state is loaded from the store (or folded out of the execution log)
 2. Execution context is restored
 3. Execution continues from the step after the pause
 4. Pause state is cleaned up
 
-Nothing fires this on a timer. There is no background process watching deadlines.
+A `PauseOrchestrator` watches deadlines on a poll and routes inbound webhooks; without one running, nothing fires triggers in the background.
 
 ## Use cases
 
@@ -277,6 +279,52 @@ mission DataPipelineWithReview {
 
 ## Programmatic API
 
+### executeWithResume: run to completion
+
+The simplest way to get end-to-end pause behaviour. It executes the mission, and
+whenever the run suspends on a pause it waits for a trigger (inbound webhook or
+expired deadline), then re-executes with `resumeFrom` — looping until the mission
+finishes:
+
+```typescript
+import { executeWithResume, FileExecutionLog, WebhookServer } from 'reqon-dsl';
+
+const webhookServer = new WebhookServer({ port: 3000 });
+await webhookServer.start();
+
+const result = await executeWithResume(source, {
+  executionLog: new FileExecutionLog('.reqon-data/log'),  // required
+  webhookServer,                                          // needed for webhook triggers
+});
+// A POST to http://localhost:3000/approved resumes the paused run;
+// so does the pause's deadline expiring. `result` is the finished run.
+```
+
+### PauseOrchestrator: automatic triggers
+
+For hosts that manage their own execution loop, `PauseOrchestrator` is the wiring
+between the webhook server, the pause store, and your resume logic. It routes
+inbound webhooks to the waiting pause on that path, polls for expired deadlines
+(including a sweep at startup, so pauses that expired while nothing was running
+resume immediately), and re-registers webhook paths lost to a restart:
+
+```typescript
+import { PauseOrchestrator, LogBackedPauseStore, execute } from 'reqon-dsl';
+
+const orchestrator = new PauseOrchestrator({
+  store: new LogBackedPauseStore(executionLog),
+  webhookServer,
+  pollInterval: 60000,
+  resume: async (pause) => {
+    await execute(source, { executionLog, webhookServer, resumeFrom: pause.executionId });
+  },
+});
+
+await orchestrator.start();
+// ... later
+orchestrator.stop();
+```
+
 ### PauseManager
 
 ```typescript
@@ -341,12 +389,12 @@ A pause that hasn't been triggered yet leaves the execution in the `paused` stat
 reqon mission.vague --resume exec_abc123
 ```
 
-There's no `reqon pauses` subcommand, and no trigger fires on its own. To inspect or resume individual pauses, use the `PauseManager` API shown above — including `startMonitoring()` if you want deadline polling.
+There's no `reqon pauses` subcommand, and the CLI exits after a pause rather than waiting for triggers. For automatic trigger-driven resumes, run under `executeWithResume` or a `PauseOrchestrator` (see above). To inspect or resume individual pauses, use the `PauseManager` API.
 
 ## Best practices
 
 1. **Set reasonable durations** - Don't pause for longer than necessary
-2. **Own the resume path** - Decide up front what re-runs the mission: a `PauseManager` you drive, or an external scheduler calling `--resume`
+2. **Own the resume path** - Decide up front what re-runs the mission: `executeWithResume`, a `PauseOrchestrator` in your host, or an external scheduler calling `--resume`
 3. **Combine with checkpoint** - For full durability across pauses
 4. **Monitor active pauses** - Set up alerts for long-running pauses
 5. **Clean up completed pauses** - Remove old pause state periodically
