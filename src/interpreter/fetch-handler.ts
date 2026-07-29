@@ -263,17 +263,24 @@ export class FetchHandler {
     // re-fetched next run rather than skipped on clock skew.
     let syncedAt = fallbackTime ?? new Date();
 
-    // If updateFrom is specified, extract the timestamp from response
+    // If updateFrom is specified, extract the timestamp from response. A
+    // top-level array is walked for its newest timestamp — pages aren't
+    // guaranteed newest-last, and silently falling back to wall-clock time
+    // here would defeat the point of updateFrom.
     if (step.since?.updateFrom && data && typeof data === 'object') {
-      const extracted = extractNestedValue(data as Record<string, unknown>, step.since.updateFrom);
-      if (extracted instanceof Date) {
+      const extracted = Array.isArray(data)
+        ? maxTimestamp(data, step.since.updateFrom)
+        : toTimestamp(extractNestedValue(data as Record<string, unknown>, step.since.updateFrom));
+      if (extracted) {
         syncedAt = extracted;
-      } else if (typeof extracted === 'string' || typeof extracted === 'number') {
-        const parsed = new Date(extracted);
-        if (!isNaN(parsed.getTime())) {
-          syncedAt = parsed;
-        }
       }
+    }
+
+    // A watermark never moves backwards. The sync stores enforce this too;
+    // clamping here keeps the returned value and emitted events honest.
+    const previous = await this.deps.syncStore.getLastSync(key);
+    if (previous instanceof Date && previous > syncedAt) {
+      syncedAt = previous;
     }
 
     // Count records if response is an array
@@ -625,4 +632,25 @@ export class FetchHandler {
     // Fallback to simple placeholder
     return { _dryRun: true, _message: 'No OAS schema available for mock generation' };
   }
+}
+
+/** Parse a value extracted from response data into a valid Date, or undefined. */
+function toTimestamp(value: unknown): Date | undefined {
+  if (value instanceof Date) return isNaN(value.getTime()) ? undefined : value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return undefined;
+}
+
+/** Newest `path` timestamp across an array response's items. */
+function maxTimestamp(items: unknown[], path: string): Date | undefined {
+  let max: Date | undefined;
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const candidate = toTimestamp(extractNestedValue(item as Record<string, unknown>, path));
+    if (candidate && (!max || candidate > max)) max = candidate;
+  }
+  return max;
 }

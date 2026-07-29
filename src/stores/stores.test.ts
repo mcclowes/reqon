@@ -110,7 +110,7 @@ describe('FileStore', () => {
     expect(await beforeFlush.get('item-1')).toBeNull();
 
     // After flush, changes are persisted
-    batchStore.flush();
+    await batchStore.flush();
     const afterFlush = new FileStore('batch-test', { baseDir: TEST_DIR });
     expect(await afterFlush.get('item-1')).toEqual({ id: '1' });
   });
