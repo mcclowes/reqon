@@ -322,7 +322,11 @@ export class FetchParser extends ScheduleParser {
     let timeout: number | undefined;
 
     while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
-      const key = this.consume(TokenType.IDENTIFIER, 'Expected retry option').value;
+      // `timeout` lexes as a keyword, not an identifier — without this branch
+      // the documented `retry { timeout: N }` option was unparseable.
+      const key = this.check(ReqonTokenType.TIMEOUT)
+        ? this.advance().value
+        : this.consume(TokenType.IDENTIFIER, 'Expected retry option').value;
       this.consume(TokenType.COLON, "Expected ':'");
 
       switch (key) {

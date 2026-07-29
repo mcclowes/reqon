@@ -146,17 +146,39 @@ function findItemsArray(
   }
 
   // Search for array field
-  for (const key of Object.keys(data)) {
-    if (Array.isArray(data[key])) {
-      cache.set(cacheKey, key);
-      warnGuessedItemsField(key, cacheKey);
-      return data[key] as unknown[];
-    }
+  const pick = pickItemsField(data);
+  if (pick !== undefined) {
+    cache.set(cacheKey, pick);
+    warnGuessedItemsField(pick, cacheKey);
+    return data[pick] as unknown[];
   }
 
   // Cache negative result
   cache.set(cacheKey, null);
   return undefined;
+}
+
+/** Field names APIs conventionally hold their records in, preferred when guessing. */
+const LIKELY_ITEM_FIELDS = new Set(['data', 'items', 'results', 'records', 'entries', 'rows']);
+
+/**
+ * Choose which array-valued key most plausibly holds the records: a
+ * conventional record field with content, then any non-empty array, then a
+ * conventional field even when empty, then the first array. A bare
+ * "first array key wins" guess locks onto the empty `errors` of an
+ * `{errors: [], data: [...]}` envelope and reports a clean zero-record run
+ * (#250); preferring content and convention picks `data`.
+ */
+function pickItemsField(data: Record<string, unknown>): string | undefined {
+  const arrayKeys = Object.keys(data).filter((key) => Array.isArray(data[key]));
+  return (
+    arrayKeys.find(
+      (key) => LIKELY_ITEM_FIELDS.has(key.toLowerCase()) && (data[key] as unknown[]).length > 0
+    ) ??
+    arrayKeys.find((key) => (data[key] as unknown[]).length > 0) ??
+    arrayKeys.find((key) => LIKELY_ITEM_FIELDS.has(key.toLowerCase())) ??
+    arrayKeys[0]
+  );
 }
 
 /** Fields we've already warned about, so the guess is reported once, not per page. */
@@ -201,8 +223,9 @@ function extractItemsFromResponse(
  * Note: This now only clears the global compatibility cache, not instance caches.
  */
 export function clearPaginationCache(): void {
-  // No-op - caches are now instance-level
-  // Individual strategies should call clearCache() if needed
+  // Item-array caches are instance-level (strategies call clearCache()); the
+  // once-per-key guess-warning dedupe is module state, so reset it here.
+  warnedGuessKeys.clear();
 }
 
 /**
@@ -301,13 +324,11 @@ export class CursorPaginationStrategy implements PaginationStrategy {
     } else if (this.cachedArrayField !== null && Array.isArray(data[this.cachedArrayField])) {
       items = data[this.cachedArrayField] as unknown[];
     } else {
-      for (const key of Object.keys(data)) {
-        if (Array.isArray(data[key])) {
-          items = data[key] as unknown[];
-          this.cachedArrayField = key;
-          warnGuessedItemsField(key, `cursor:${this.config.param}`);
-          break;
-        }
+      const pick = pickItemsField(data);
+      if (pick !== undefined) {
+        items = data[pick] as unknown[];
+        this.cachedArrayField = pick;
+        warnGuessedItemsField(pick, `cursor:${this.config.param}`);
       }
     }
 

@@ -247,7 +247,7 @@ export class HttpClient {
           }
           return {
             status: response.status,
-            data: await this.parseResponseBody<T>(response, url, req.method),
+            data: await this.parseResponseBody<T>(response, url, req.method, timeout),
             headers: responseHeaders,
           };
         }
@@ -318,7 +318,7 @@ export class HttpClient {
           ) {
             this.config.circuitBreaker.recordFailure(requestLane, undefined, response.status);
           }
-          const snippet = await this.safeReadSnippet(response);
+          const snippet = await this.safeReadSnippet(response, timeout);
           throw new FetchError(
             `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}` +
               (snippet ? `: ${snippet}` : ''),
@@ -326,7 +326,7 @@ export class HttpClient {
           );
         }
 
-        const data = await this.parseResponseBody<T>(response, url, req.method);
+        const data = await this.parseResponseBody<T>(response, url, req.method, timeout);
 
         // Record success in circuit breaker
         if (this.config.circuitBreaker && requestLane && response.status < 500) {
@@ -413,13 +413,18 @@ export class HttpClient {
    * Parse a successful (2xx) response body. Handles empty/204 responses,
    * returns non-JSON content as raw text, and caps the buffered size.
    */
-  private async parseResponseBody<T>(response: Response, url: string, method: string): Promise<T> {
+  private async parseResponseBody<T>(
+    response: Response,
+    url: string,
+    method: string,
+    timeoutMs?: number
+  ): Promise<T> {
     // No-content responses have no body to parse.
     if (response.status === 204 || response.status === 205) {
       return null as T;
     }
 
-    const text = await this.readCappedText(response, url, method);
+    const text = await this.readCappedText(response, url, method, timeoutMs);
     if (text.trim() === '') {
       return null as T;
     }
@@ -442,32 +447,60 @@ export class HttpClient {
     }
   }
 
-  /** Read a response body to text, rejecting once it exceeds MAX_RESPONSE_BYTES. */
-  private async readCappedText(response: Response, url: string, method: string): Promise<string> {
+  /**
+   * Read a response body to text, rejecting once it exceeds MAX_RESPONSE_BYTES
+   * or `timeoutMs`. The per-attempt timeout in fetchWithTimeout only covers
+   * time-to-headers — fetch resolves when headers arrive — so a server that
+   * sends headers and then stalls the body forever would otherwise hang the
+   * run with no timer running. The timeout error carries no statusCode, so the
+   * retry loop treats a stalled body like a network fault and retries it.
+   */
+  private async readCappedText(
+    response: Response,
+    url: string,
+    method: string,
+    timeoutMs?: number
+  ): Promise<string> {
     const body = response.body;
     if (!body) {
       return await response.text();
     }
     const reader = body.getReader();
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        size += value.byteLength;
-        if (size > MAX_RESPONSE_BYTES) {
-          await reader.cancel();
-          throw new FetchError(`Response body exceeds ${MAX_RESPONSE_BYTES} bytes`, {
-            url,
-            method,
-            statusCode: response.status,
-          });
+    let timedOut = false;
+    const timer =
+      timeoutMs && timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            // Cancelling resolves the pending read() with done: true.
+            void reader.cancel().catch(() => {});
+          }, timeoutMs)
+        : undefined;
+    try {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (timedOut) {
+          throw new FetchError(`Response body timed out after ${timeoutMs}ms`, { url, method });
         }
-        chunks.push(Buffer.from(value));
+        if (done) break;
+        if (value) {
+          size += value.byteLength;
+          if (size > MAX_RESPONSE_BYTES) {
+            await reader.cancel();
+            throw new FetchError(`Response body exceeds ${MAX_RESPONSE_BYTES} bytes`, {
+              url,
+              method,
+              statusCode: response.status,
+            });
+          }
+          chunks.push(Buffer.from(value));
+        }
       }
+      return Buffer.concat(chunks).toString('utf-8');
+    } finally {
+      if (timer) clearTimeout(timer);
     }
-    return Buffer.concat(chunks).toString('utf-8');
   }
 
   /**
@@ -490,10 +523,13 @@ export class HttpClient {
    * snippet lands in exception messages that get persisted to execution state
    * and served over /status, so an API echoing a token in its error body must
    * be scrubbed here, before truncation can cut a secret's closing quote (#263).
+   * Bounded by `timeoutMs`: an error body that never finishes yields an empty
+   * snippet rather than hanging the error path.
    */
-  private async safeReadSnippet(response: Response): Promise<string> {
+  private async safeReadSnippet(response: Response, timeoutMs?: number): Promise<string> {
     try {
-      const text = redactText((await response.text()).trim());
+      const raw = await this.readCappedText(response, '', '', timeoutMs);
+      const text = redactText(raw.trim());
       return text.length > 200 ? `${text.slice(0, 200)}…` : text;
     } catch {
       return '';
