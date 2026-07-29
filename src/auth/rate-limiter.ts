@@ -359,6 +359,19 @@ export class AdaptiveRateLimiter implements RateLimiter {
     // Emit resumed event
     const waitedSeconds = Math.floor((Date.now() - startTime) / 1000);
     this.callbacks.onResumed?.({ source, endpoint, waitedSeconds });
+
+    // Reserve a slot on the same terms as the fast path. The invariant is "every
+    // caller that proceeds has claimed a slot", and only the fast path upheld it:
+    // N callers freed by the same 429-backoff tick would otherwise fire together,
+    // straight back into the limit we just hit. `pacing` was pushed past the
+    // backoff for exactly this, but nothing on the wait path read it until now
+    // (#252).
+    if (config.strategy === 'throttle') {
+      const delay = this.reserveSlot(source, endpoint);
+      if (delay > 0) {
+        await sleep(delay);
+      }
+    }
   }
 
   /**

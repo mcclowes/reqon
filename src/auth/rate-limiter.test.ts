@@ -108,6 +108,27 @@ describe('AdaptiveRateLimiter', () => {
       expect(releasedAt).toEqual([0, 1000, 2000, 3000]);
     });
 
+    it('spaces callers freed by a 429 backoff instead of stampeding (#252)', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+      // A 429 backs the whole lane off; all four callers queue on the slow path.
+      limiter.recordResponse('api', { retryAfter: 2 }, '/entry/1/history/');
+
+      const start = Date.now();
+      const releasedAt: number[] = [];
+      const inFlight = Array.from({ length: 4 }, (_, i) =>
+        limiter.waitForCapacity('api', `/entry/${i}/history/`).then(() => {
+          releasedAt.push(Date.now() - start);
+        })
+      );
+
+      await vi.advanceTimersByTimeAsync(6000);
+      await Promise.all(inFlight);
+
+      // The backoff lifts at ~2s. Without a slot reservation on the wait path all
+      // four would release together at 2000; each must claim a spaced slot.
+      expect(releasedAt).toEqual([2000, 3000, 4000, 5000]);
+    });
+
     it('gives each proxy lane its own budget', async () => {
       limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
 
