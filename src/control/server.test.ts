@@ -205,6 +205,38 @@ describe('ControlServer', () => {
       expect(data.execution.stages).toHaveLength(2);
     });
 
+    it('redacts secrets from execution errors and metadata before serving them', async () => {
+      await server.start();
+
+      const state: ExecutionState = {
+        id: 'exec_leaky',
+        mission: 'Leaky',
+        status: 'failed',
+        startedAt: new Date(),
+        stages: [{ action: 'A', status: 'failed', attempt: 0 }],
+        errors: [
+          {
+            stageIndex: 0,
+            action: 'A',
+            step: 'fetch',
+            message: 'HTTP 401: {"error": "denied", "api_key": "sk-live-STATUS"}',
+            timestamp: new Date(),
+            attempt: 1,
+          },
+        ],
+        metadata: { token: 'sk-live-META', requestedBy: 'ops' },
+      };
+      server.updateState(state);
+
+      const res = await fetch(`http://localhost:${TEST_PORT}/status`);
+      const body = await res.text();
+
+      expect(body).not.toContain('sk-live-STATUS');
+      expect(body).not.toContain('sk-live-META');
+      expect(body).toContain('denied');
+      expect(body).toContain('ops');
+    });
+
     it('returns live progress when set', async () => {
       await server.start();
 

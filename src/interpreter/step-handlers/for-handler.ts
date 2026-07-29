@@ -7,6 +7,7 @@ import type { ExecutionContext } from '../context.js';
 import { StepError } from '../../errors/index.js';
 import { SkipSignal, QueueSignal, markTolerated } from '../signals.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { CONCURRENCY_DEFAULTS } from '../../config/constants.js';
 import type { DebugController, DebugSnapshot, DebugLocation } from '../../debug/index.js';
 
 /** Heartbeat interval for loop iterations */
@@ -30,6 +31,12 @@ export interface ForHandlerDeps extends StepHandlerDeps {
   handleQueue?: (signal: QueueSignal) => Promise<void>;
   /** Reports an item the loop tolerated, so the run can summarise the damage. */
   onItemFailed?: (info: { action: string; index: number; error: string }) => void;
+  /**
+   * Ceiling on iterations in flight, shared with `run [A, B]` parallel stages
+   * so both fan-out mechanisms answer to one limit (#262). A loop declaring
+   * more is clamped, loudly. Defaults to CONCURRENCY_DEFAULTS.MAX_PARALLEL.
+   */
+  maxConcurrency?: number;
 }
 
 /**
@@ -61,7 +68,14 @@ export class ForHandler implements StepHandler<ForStep> {
 
     // A debugger needs deterministic, one-at-a-time stepping, so it wins over
     // any declared concurrency.
-    const concurrency = this.deps.debugController ? 1 : (step.concurrency ?? 1);
+    const requested = this.deps.debugController ? 1 : (step.concurrency ?? 1);
+    const ceiling = this.deps.maxConcurrency ?? CONCURRENCY_DEFAULTS.MAX_PARALLEL;
+    const concurrency = Math.min(requested, ceiling);
+    if (requested > ceiling) {
+      this.deps.log(
+        `Loop concurrency ${requested} exceeds the maximum of ${ceiling}; running ${ceiling} in flight (raise via maxParallel)`
+      );
+    }
     if (concurrency > 1) {
       await this.executeConcurrently(step, filtered, concurrency, originalCount);
       return;
@@ -145,11 +159,18 @@ export class ForHandler implements StepHandler<ForStep> {
     let collection: unknown;
 
     if (step.collection.type === 'Identifier') {
-      const store = this.deps.ctx.stores.get(step.collection.name);
+      const name = step.collection.name;
+      const store = this.deps.ctx.stores.get(name);
       // A store wins; otherwise evaluate the identifier like any expression —
       // that resolves variables AND the special `response` binding. The old
       // direct variable lookup missed `response` and fell back to [], so
       // `for item in response` silently iterated nothing.
+      if (store && this.isVariableInScope(name)) {
+        this.deps.log(
+          `Store '${name}' shadows a variable of the same name; iterating the store. ` +
+            `Rename one of them if you meant the variable.`
+        );
+      }
       collection = store ? await store.list() : evaluate(step.collection, this.deps.ctx);
     } else {
       collection = evaluate(step.collection, this.deps.ctx);
@@ -165,6 +186,14 @@ export class ForHandler implements StepHandler<ForStep> {
     }
 
     return collection;
+  }
+
+  /** True when `name` resolves as a variable in the current scope chain. */
+  private isVariableInScope(name: string): boolean {
+    for (let scope: ExecutionContext | undefined = this.deps.ctx; scope; scope = scope.parent) {
+      if (scope.variables.has(name)) return true;
+    }
+    return false;
   }
 
   /**
@@ -185,6 +214,7 @@ export class ForHandler implements StepHandler<ForStep> {
     let next = 0;
     let processedCount = 0;
     let failedCount = 0;
+    let attemptedCount = 0;
     let firstError: unknown;
 
     const worker = async (): Promise<void> => {
@@ -209,13 +239,15 @@ export class ForHandler implements StepHandler<ForStep> {
           await this.recordFailure(step, items[i], i, error);
         }
 
-        // Heartbeat on completions rather than a loop counter: with workers
-        // interleaving, completions are the only monotonic measure of progress.
-        if (processedCount % LOOP_HEARTBEAT_INTERVAL === 0) {
+        // Heartbeat on attempts, not successes: a run of consecutively-failing
+        // items must still emit liveness and honour pause requests (#262).
+        // Attempts are monotonic even with workers interleaving.
+        attemptedCount++;
+        if (attemptedCount % LOOP_HEARTBEAT_INTERVAL === 0) {
           await this.deps.checkPause?.();
           this.deps.emit?.('loop.heartbeat', {
             variable: step.variable,
-            current: processedCount,
+            current: attemptedCount,
             total: items.length,
             processedCount,
           });

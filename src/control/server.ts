@@ -7,7 +7,11 @@
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { safeEqual } from '../utils/crypto-safe.js';
-import type { ExecutionState, LiveProgress } from '../execution/index.js';
+import {
+  redactExecutionState,
+  type ExecutionState,
+  type LiveProgress,
+} from '../execution/index.js';
 import type {
   ControlServerConfig,
   ControlServerCallbacks,
@@ -253,7 +257,9 @@ export class ControlServer {
     this.callbacks.onStatusQueried?.();
 
     const response: StatusResponse = {
-      execution: this.executionState,
+      // Redact at the serve boundary: error messages carry response-body
+      // snippets, and metadata is caller-provided (#263).
+      execution: this.executionState && redactExecutionState(this.executionState),
       progress: this.liveProgress,
       pauseRequested: this.pauseRequested,
       uptime: Date.now() - this.startTime,

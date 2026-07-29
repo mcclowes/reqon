@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   OffsetPaginationStrategy,
   PageNumberPaginationStrategy,
@@ -554,6 +554,52 @@ describe('Pagination Strategies', () => {
 
       expect(result.items).toEqual([]);
       expect(result.hasMore).toBe(false);
+    });
+
+    it('guesses the non-empty conventional field of an {errors: [], data: [...]} envelope', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const config: PaginationConfig = { type: 'offset', param: 'offset', pageSize: 2 };
+      const strategy = new OffsetPaginationStrategy(config);
+      const ctx: PaginationContext = { page: 0, pageSize: 2 };
+
+      // No itemsPath declared. `errors` precedes `data`; a first-array-key
+      // guess reports a clean zero-record page (#250).
+      const response = { errors: [], data: [{ id: 1 }, { id: 2 }] };
+      const result = strategy.extractResults(response, ctx);
+
+      expect(result.items).toEqual([{ id: 1 }, { id: 2 }]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('guessed'));
+      warn.mockRestore();
+    });
+
+    it('prefers any non-empty array over an empty one when guessing', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const config: PaginationConfig = { type: 'offset', param: 'offset', pageSize: 2 };
+      const strategy = new OffsetPaginationStrategy(config);
+      const ctx: PaginationContext = { page: 0, pageSize: 2 };
+
+      const response = { meta: [], things: [{ id: 1 }] };
+      expect(strategy.extractResults(response, ctx).items).toEqual([{ id: 1 }]);
+      warn.mockRestore();
+    });
+
+    it('guesses the data field of an envelope for cursor pagination too', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const config: PaginationConfig = {
+        type: 'cursor',
+        param: 'cursor',
+        pageSize: 2,
+        cursorPath: 'meta.next',
+      };
+      const strategy = new CursorPaginationStrategy(config);
+      const ctx: PaginationContext = { page: 0, pageSize: 2 };
+
+      const response = { errors: [], data: [{ id: 1 }], meta: { next: 'abc' } };
+      const result = strategy.extractResults(response, ctx);
+
+      expect(result.items).toEqual([{ id: 1 }]);
+      expect(result.nextCursor).toBe('abc');
+      warn.mockRestore();
     });
 
     it('honours itemsPath for cursor pagination', () => {

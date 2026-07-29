@@ -764,6 +764,58 @@ describe('HttpClient', () => {
       vi.useFakeTimers();
     });
 
+    it('scrubs secrets echoed in an error body before they reach the error message (#263)', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      globalThis.fetch = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'invalid grant', access_token: 'sk-live-ECHOED' }), {
+            status: 400,
+          })
+      );
+
+      try {
+        await client.request(
+          { method: 'GET', path: '/oauth' },
+          { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+        );
+        expect.unreachable('request should have thrown');
+      } catch (error) {
+        expect((error as Error).message).not.toContain('sk-live-ECHOED');
+        expect((error as Error).message).toContain('invalid grant');
+      } finally {
+        vi.useFakeTimers();
+      }
+    });
+
+    it('times out reading a body that never finishes instead of hanging (#264)', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      globalThis.fetch = vi.fn(async () => {
+        const stall = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"items": ['));
+            // never closes — headers arrived, the body stalls forever
+          },
+        });
+        return new Response(stall, {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+
+      try {
+        await expect(
+          client.request(
+            { method: 'GET', path: '/stall' },
+            { maxAttempts: 1, backoff: 'constant', initialDelay: 1, timeout: 100 }
+          )
+        ).rejects.toThrow(/body timed out/i);
+      } finally {
+        vi.useFakeTimers();
+      }
+    });
+
     it('returns null for a 204 No Content response', async () => {
       const client = new HttpClient({ baseUrl: 'https://api.example.com' });
       globalThis.fetch = vi.fn(async () => new Response(null, { status: 204 }));

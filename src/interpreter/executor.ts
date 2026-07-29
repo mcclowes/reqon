@@ -42,6 +42,7 @@ import type { StoreAdapter } from '../stores/types.js';
 import { SourceManager, type AuthConfig, type SourceManagerConfig } from './source-manager.js';
 import { StoreManager } from './store-manager.js';
 import { AdaptiveRateLimiter } from '../auth/rate-limiter.js';
+import { CONCURRENCY_DEFAULTS } from '../config/constants.js';
 import { CircuitBreaker, type CircuitBreakerCallbacks } from '../auth/circuit-breaker.js';
 import type { RateLimiter, RateLimitCallbacks } from '../auth/types.js';
 import {
@@ -254,13 +255,16 @@ export interface ExecutorConfig {
    * handler's built-in cap (100_000).
    */
   maxPaginationItems?: number;
+  /**
+   * Ceiling on branches in flight for both `run [A, B]` parallel stages and
+   * `for ... concurrency N` loops. A loop asking for more is clamped to this
+   * (loudly). Defaults to CONCURRENCY_DEFAULTS.MAX_PARALLEL.
+   */
+  maxParallel?: number;
 }
 
 // AuthConfig is now exported from source-manager.ts
 export { type AuthConfig } from './source-manager.js';
-
-/** Max parallel-stage actions running concurrently (bounds fan-out). */
-const MAX_PARALLEL_ACTIONS = 8;
 
 export class MissionExecutor {
   private config: ExecutorConfig;
@@ -1011,7 +1015,7 @@ export class MissionExecutor {
    * Execute a `run [A, B, ...]` stage.
    *
    * Failure semantics are **complete-then-fail**: every branch runs to
-   * completion (bounded by MAX_PARALLEL_ACTIONS in flight), then the stage
+   * completion (bounded by maxParallel in flight), then the stage
    * fails if any branch failed. There is no cancellation of siblings and no
    * rollback — a branch that committed store writes keeps them even if another
    * branch failed. Each branch gets its own action scope (step counter +
@@ -1064,11 +1068,11 @@ export class MissionExecutor {
     this.log(`Executing parallel stage: ${stageName}`);
 
     try {
-      // Execute all actions in parallel, bounded to MAX_PARALLEL_ACTIONS in
+      // Execute all actions in parallel, bounded to maxParallel in
       // flight. allSettled semantics: every started branch runs to completion.
       const results = await this.settleWithLimit(
         actionDefs.map((action) => () => this.executeAction(action)),
-        MAX_PARALLEL_ACTIONS
+        this.maxParallel()
       );
 
       // Check for failures
@@ -1535,6 +1539,11 @@ export class MissionExecutor {
     }
   }
 
+  /** One fan-out ceiling for parallel stages and loop concurrency alike (#262). */
+  private maxParallel(): number {
+    return this.config.maxParallel ?? CONCURRENCY_DEFAULTS.MAX_PARALLEL;
+  }
+
   private async executeFor(
     step: ForStep,
     actionName: string,
@@ -1542,6 +1551,7 @@ export class MissionExecutor {
   ): Promise<void> {
     const handler = new ForHandler({
       ctx,
+      maxConcurrency: this.maxParallel(),
       // Per-item loop narration sits at debug, below the info-level progress line.
       log: (msg, context) => this.log(msg, context, 'debug'),
       emit: this.eventEmitter

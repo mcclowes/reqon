@@ -7,6 +7,8 @@
  * - Progress visibility
  */
 
+import { redactSecrets, redactText } from '../utils/redact.js';
+
 export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'paused';
 
 export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
@@ -168,6 +170,34 @@ export function createExecutionState(options: CreateExecutionOptions): Execution
     })),
     errors: [],
     metadata: options.metadata,
+  };
+}
+
+/**
+ * Copy of `state` safe to write to disk or serve over HTTP. Error messages can
+ * embed response-body snippets and URLs with tokens in query params, and
+ * metadata / checkpoint variables are caller-provided objects; none of that is
+ * guaranteed clean upstream, so redaction happens at the boundary where the
+ * state leaves the process (#263). A checkpoint variable that held a raw
+ * credential comes back as '[REDACTED]' on resume — visibly, by design: re-read
+ * credentials from auth config or the environment, not from persisted state.
+ */
+export function redactExecutionState(state: ExecutionState): ExecutionState {
+  return {
+    ...state,
+    stages: state.stages.map((s) =>
+      s.error === undefined ? s : { ...s, error: redactText(s.error) }
+    ),
+    errors: state.errors.map((e) => ({ ...e, message: redactText(e.message) })),
+    ...(state.metadata ? { metadata: redactSecrets(state.metadata) } : {}),
+    ...(state.checkpoint?.variables
+      ? {
+          checkpoint: {
+            ...state.checkpoint,
+            variables: redactSecrets(state.checkpoint.variables),
+          },
+        }
+      : {}),
   };
 }
 

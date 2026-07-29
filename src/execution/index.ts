@@ -16,6 +16,7 @@ export {
   canResume,
   getProgress,
   getExecutionSummary,
+  redactExecutionState,
 } from './state.js';
 
 export type { ExecutionStore } from './store.js';

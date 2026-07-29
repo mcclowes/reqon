@@ -49,6 +49,32 @@ describe('ReqonParser', () => {
     }
   });
 
+  it('parses a retry config with a per-attempt timeout', () => {
+    const source = `
+      mission Timed {
+        source API { auth: none, base: "https://api.example.com" }
+        store items: memory("items")
+        action Fetch {
+          get "/items" {
+            retry: { maxAttempts: 2, backoff: constant, initialDelay: 5, timeout: 250 }
+          }
+          store response -> items { key: .id }
+        }
+        run Fetch
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('expected mission');
+
+    const fetchStep = mission.actions[0].steps[0];
+    if (fetchStep.type !== 'FetchStep') throw new Error('expected fetch step');
+    // `timeout` is a lexer keyword; the retry parser must still accept it as an
+    // option key — this was silently unparseable before the hostile-API fixture.
+    expect(fetchStep.retry).toMatchObject({ maxAttempts: 2, timeout: 250 });
+  });
+
   it('parses fetch with pagination', () => {
     const source = `
       mission PaginatedFetch {
