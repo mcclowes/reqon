@@ -7,6 +7,7 @@ import {
   ApiKeyAuthProvider,
   parseRetryAfterMs,
 } from './http.js';
+import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
 
 describe('parseRetryAfterMs', () => {
   const MAX = 60_000;
@@ -413,6 +414,78 @@ describe('HttpClient', () => {
       expect(globalThis.fetch).toHaveBeenCalledTimes(3);
 
       // Restore fake timers for remaining tests
+      vi.useFakeTimers();
+    });
+
+    it('cancels an abandoned response body on retry so sockets are not leaked (#253)', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      let callCount = 0;
+      const cancelSpies: Array<ReturnType<typeof vi.fn>> = [];
+      globalThis.fetch = vi.fn(async () => {
+        callCount++;
+        if (callCount < 2) {
+          const res = new Response(JSON.stringify({ error: 'boom' }), { status: 500 });
+          const spy = vi.fn(async () => undefined);
+          // The retry path must release the unread body rather than leaving it
+          // for GC to reclaim the socket.
+          if (res.body) res.body.cancel = spy;
+          cancelSpies.push(spy);
+          return res;
+        }
+        return new Response(JSON.stringify({ data: 'ok' }), { status: 200 });
+      });
+
+      const requestPromise = client.request(
+        { method: 'GET', path: '/users' },
+        { maxAttempts: 3, backoff: 'constant', initialDelay: 100 }
+      );
+      await vi.advanceTimersByTimeAsync(150);
+      await requestPromise;
+
+      expect(cancelSpies).toHaveLength(1);
+      expect(cancelSpies[0]).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('circuit breaker integration (#254)', () => {
+    it('reports 4xx failures to the breaker so a configured status can trip it', async () => {
+      vi.useRealTimers();
+      const breaker = new CircuitBreaker({
+        failureStatusCodes: [403],
+        failureThreshold: 3,
+        failureWindow: 60_000,
+      });
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        sourceName: 'api',
+        circuitBreaker: breaker,
+      });
+
+      globalThis.fetch = vi.fn(
+        async () => new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 })
+      );
+
+      // A revoked key 403ing every request must accumulate toward the threshold.
+      for (let i = 0; i < 3; i++) {
+        await expect(
+          client.request(
+            { method: 'GET', path: '/users' },
+            { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+          )
+        ).rejects.toThrow(/HTTP 403/);
+      }
+
+      expect(breaker.getStatus('api').isOpen).toBe(true);
+
+      // The next request is fast-failed by the open breaker instead of looping.
+      await expect(
+        client.request(
+          { method: 'GET', path: '/users' },
+          { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+        )
+      ).rejects.toThrow(CircuitBreakerError);
+
       vi.useFakeTimers();
     });
   });

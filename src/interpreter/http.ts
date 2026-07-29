@@ -280,6 +280,7 @@ export class HttpClient {
             parseRetryAfterMs(response.headers.get('Retry-After'), maxDelay) ??
             this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
           this.notifyRetry(req, attempt, maxAttempts, '429', delay);
+          await this.drainBody(response);
           await sleep(delay);
           continue;
         }
@@ -294,6 +295,7 @@ export class HttpClient {
           if (retriable && attempt < maxAttempts) {
             const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
             this.notifyRetry(req, attempt, maxAttempts, `${response.status}`, delay);
+            await this.drainBody(response);
             await sleep(delay);
             continue;
           }
@@ -309,6 +311,7 @@ export class HttpClient {
           attempt < maxAttempts
         ) {
           hasRefreshed = true;
+          await this.drainBody(response);
           await this.config.auth.refreshToken();
           // Rebuild headers with the refreshed token (preserving the idempotency
           // key). Only header-based schemes refresh, so the URL query is stable.
@@ -321,6 +324,20 @@ export class HttpClient {
         // 429/401-refresh cases handled above) or a 5xx that exhausted retries.
         // Returning it as `data` would let map/store persist an API error body.
         if (response.status >= 400) {
+          // Report a 4xx to the breaker so it observes the outcome: this releases
+          // a half-open probe slot and lets a configured `failureStatusCodes`
+          // count auth failures (a revoked key 403ing every request) toward the
+          // threshold instead of looping forever (#254). Whether it *counts*
+          // stays governed by config. 5xx was already recorded above; recording
+          // it here too would double-count, so this is 4xx-only.
+          if (
+            this.config.circuitBreaker &&
+            requestLane &&
+            response.status >= 400 &&
+            response.status < 500
+          ) {
+            this.config.circuitBreaker.recordFailure(requestLane, undefined, response.status);
+          }
           const snippet = await this.safeReadSnippet(response);
           throw new FetchError(
             `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}` +
@@ -471,6 +488,21 @@ export class HttpClient {
       }
     }
     return Buffer.concat(chunks).toString('utf-8');
+  }
+
+  /**
+   * Release an unread response body before abandoning a response on a retry or
+   * refresh path. In the fetch API the body is a resource with an ownership
+   * contract: if you won't read it, cancel it. Undici otherwise holds the socket
+   * until GC, so a retry-heavy run leaks connections and exhausts the pool,
+   * surfacing as unexplained timeouts rather than as a leak (#253).
+   */
+  private async drainBody(response: Response): Promise<void> {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Best-effort: an already-consumed or errored body has nothing to leak.
+    }
   }
 
   /** Read a short snippet of a body for an error message (best-effort). */
