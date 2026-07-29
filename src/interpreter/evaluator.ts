@@ -487,11 +487,25 @@ export function interpolatePath(path: string, ctx: ExecutionContext, current?: u
       value = isRecord(value) ? value[part] : undefined;
     }
 
+    // An unresolved placeholder must fail loudly rather than interpolate to ''.
+    // `/users/{id}` collapsing to `/users/` is a silently broken URL, and on a
+    // permissive API `DELETE /users/` is a collection delete, not a no-op (#260).
+    // There is no case where the author meant "put nothing here".
+    if (value === undefined || value === null) {
+      const inScope = isRecord(current) ? Object.keys(current) : [];
+      const scopeHint = inScope.length
+        ? ` Fields on the current record: ${inScope.join(', ')}.`
+        : '';
+      throw new EvaluatorError(`Path parameter {${expr}} did not resolve to a value.${scopeHint}`, {
+        expression: expr,
+      });
+    }
+
     // URL-encode each interpolated value so a path param can't inject path
     // segments, query strings, or fragments into the request target. Path params
     // are single segments, so encoding (which escapes '/', '?', '#', etc.) is the
     // correct treatment.
-    return encodeURIComponent(String(value ?? ''));
+    return encodeURIComponent(String(value));
   });
 }
 

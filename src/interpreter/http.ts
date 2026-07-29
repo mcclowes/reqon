@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { RetryConfig } from '../ast/nodes.js';
 import type { RateLimiter } from '../auth/types.js';
 import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
@@ -279,6 +280,7 @@ export class HttpClient {
             parseRetryAfterMs(response.headers.get('Retry-After'), maxDelay) ??
             this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
           this.notifyRetry(req, attempt, maxAttempts, '429', delay);
+          await this.drainBody(response);
           await sleep(delay);
           continue;
         }
@@ -293,6 +295,7 @@ export class HttpClient {
           if (retriable && attempt < maxAttempts) {
             const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
             this.notifyRetry(req, attempt, maxAttempts, `${response.status}`, delay);
+            await this.drainBody(response);
             await sleep(delay);
             continue;
           }
@@ -308,6 +311,7 @@ export class HttpClient {
           attempt < maxAttempts
         ) {
           hasRefreshed = true;
+          await this.drainBody(response);
           await this.config.auth.refreshToken();
           // Rebuild headers with the refreshed token (preserving the idempotency
           // key). Only header-based schemes refresh, so the URL query is stable.
@@ -320,6 +324,20 @@ export class HttpClient {
         // 429/401-refresh cases handled above) or a 5xx that exhausted retries.
         // Returning it as `data` would let map/store persist an API error body.
         if (response.status >= 400) {
+          // Report a 4xx to the breaker so it observes the outcome: this releases
+          // a half-open probe slot and lets a configured `failureStatusCodes`
+          // count auth failures (a revoked key 403ing every request) toward the
+          // threshold instead of looping forever (#254). Whether it *counts*
+          // stays governed by config. 5xx was already recorded above; recording
+          // it here too would double-count, so this is 4xx-only.
+          if (
+            this.config.circuitBreaker &&
+            requestLane &&
+            response.status >= 400 &&
+            response.status < 500
+          ) {
+            this.config.circuitBreaker.recordFailure(requestLane, undefined, response.status);
+          }
           const snippet = await this.safeReadSnippet(response);
           throw new FetchError(
             `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}` +
@@ -470,6 +488,21 @@ export class HttpClient {
       }
     }
     return Buffer.concat(chunks).toString('utf-8');
+  }
+
+  /**
+   * Release an unread response body before abandoning a response on a retry or
+   * refresh path. In the fetch API the body is a resource with an ownership
+   * contract: if you won't read it, cancel it. Undici otherwise holds the socket
+   * until GC, so a retry-heavy run leaks connections and exhausts the pool,
+   * surfacing as unexplained timeouts rather than as a leak (#253).
+   */
+  private async drainBody(response: Response): Promise<void> {
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Best-effort: an already-consumed or errored body has nothing to leak.
+    }
   }
 
   /** Read a short snippet of a body for an error message (best-effort). */
@@ -688,12 +721,60 @@ export class OAuth2AuthProvider implements AuthProvider {
       }),
     });
 
-    const data = (await response.json()) as { access_token: string; refresh_token?: string };
-    this.accessToken = data.access_token;
-    if (data.refresh_token) {
-      this.refreshTokenValue = data.refresh_token;
+    // A failed refresh (e.g. 400 invalid_grant on an expired refresh token) has
+    // no access_token. Without this check `accessToken` becomes undefined and
+    // every later request sends `Bearer undefined`, turning an expired-token
+    // condition into a confusing 401 loop. Surface the real reason instead (#255).
+    if (!response.ok) {
+      throw new Error(`OAuth2 token refresh failed: ${await describeOAuthError(response)}`);
+    }
+
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch {
+      throw new Error(
+        `OAuth2 token refresh failed: token endpoint returned a non-JSON body (HTTP ${response.status})`
+      );
+    }
+
+    // Validate rather than cast. This data crosses a trust boundary; `as` only
+    // silences the compiler, it doesn't check that access_token is really there.
+    const parsed = OAuth2TokenResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new Error('OAuth2 token refresh failed: response did not contain a valid access_token');
+    }
+
+    this.accessToken = parsed.data.access_token;
+    if (parsed.data.refresh_token) {
+      this.refreshTokenValue = parsed.data.refresh_token;
     }
 
     return this.accessToken;
   }
+}
+
+/** Shape of a successful RFC 6749 token response (only the fields we consume). */
+const OAuth2TokenResponseSchema = z.object({
+  access_token: z.string().min(1),
+  refresh_token: z.string().min(1).optional(),
+  expires_in: z.number().optional(),
+  token_type: z.string().optional(),
+});
+
+/**
+ * Extract a human-readable reason from an OAuth2 error response. Providers put
+ * the real cause in the `error` / `error_description` fields (RFC 6749 §5.2);
+ * fall back to the status line when the body isn't the expected JSON.
+ */
+async function describeOAuthError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string; error_description?: string };
+    if (body?.error) {
+      return body.error_description ? `${body.error} (${body.error_description})` : body.error;
+    }
+  } catch {
+    // Non-JSON body; fall through to the status line.
+  }
+  return `HTTP ${response.status}`;
 }

@@ -108,6 +108,27 @@ describe('AdaptiveRateLimiter', () => {
       expect(releasedAt).toEqual([0, 1000, 2000, 3000]);
     });
 
+    it('spaces callers freed by a 429 backoff instead of stampeding (#252)', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+      // A 429 backs the whole lane off; all four callers queue on the slow path.
+      limiter.recordResponse('api', { retryAfter: 2 }, '/entry/1/history/');
+
+      const start = Date.now();
+      const releasedAt: number[] = [];
+      const inFlight = Array.from({ length: 4 }, (_, i) =>
+        limiter.waitForCapacity('api', `/entry/${i}/history/`).then(() => {
+          releasedAt.push(Date.now() - start);
+        })
+      );
+
+      await vi.advanceTimersByTimeAsync(6000);
+      await Promise.all(inFlight);
+
+      // The backoff lifts at ~2s. Without a slot reservation on the wait path all
+      // four would release together at 2000; each must claim a spaced slot.
+      expect(releasedAt).toEqual([2000, 3000, 4000, 5000]);
+    });
+
     it('gives each proxy lane its own budget', async () => {
       limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
 
@@ -551,6 +572,52 @@ describe('parseRateLimitHeaders', () => {
     const info = parseRateLimitHeaders(headers);
 
     expect(info.resetAt).toBeInstanceOf(Date);
+    // The ISO branch must actually parse the date, not fall through to 1970 (#251).
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+  });
+
+  it('discards a malformed numeric header rather than storing NaN (#251)', () => {
+    const info = parseRateLimitHeaders({
+      'x-ratelimit-remaining': 'unknown',
+      'x-ratelimit-limit': 'n/a',
+    });
+
+    expect(info.remaining).toBeUndefined();
+    expect(info.limit).toBeUndefined();
+  });
+
+  it('treats IETF RateLimit-Reset as delta seconds from now (#251)', () => {
+    const info = parseRateLimitHeaders({ 'RateLimit-Reset': '60' });
+
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+    const deltaMs = (info.resetAt as Date).getTime() - Date.now();
+    expect(deltaMs).toBeGreaterThan(55_000);
+    expect(deltaMs).toBeLessThanOrEqual(60_000);
+  });
+
+  it('does not read a small vendor reset value as a 1970 epoch (#251)', () => {
+    // Some vendors send x-ratelimit-reset as a small delta, not a full epoch.
+    const info = parseRateLimitHeaders({ 'X-RateLimit-Reset': '60' });
+
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+  });
+
+  it('clamps a past Retry-After HTTP-date to zero (#251)', () => {
+    const past = new Date(Date.now() - 60_000).toUTCString();
+    const info = parseRateLimitHeaders({ 'Retry-After': past });
+
+    expect(info.retryAfter).toBe(0);
+  });
+
+  it('keeps the throttle alive after a malformed header (#251)', () => {
+    const rl = new AdaptiveRateLimiter();
+    rl.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+    rl.recordResponse('api', {});
+    expect(rl.getThrottleDelay('api')).toBeGreaterThanOrEqual(0);
+
+    rl.recordResponse('api', parseRateLimitHeaders({ 'x-ratelimit-remaining': 'unknown' }));
+    // Previously NaN poisoned the pacing math and the lane never throttled again.
+    expect(Number.isNaN(rl.getThrottleDelay('api'))).toBe(false);
   });
 });
 

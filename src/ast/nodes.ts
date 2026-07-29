@@ -357,6 +357,13 @@ export interface PaginationConfig {
   pageSize: number;
   cursorPath?: string; // For cursor pagination: where to find next cursor in response
   /**
+   * Dotted path to the array holding the records in each response (e.g. "data"
+   * or "result.items"). When omitted the runtime falls back to picking the first
+   * array-valued key, which guesses wrong on `{warnings: [], data: [...]}`
+   * envelopes - declare this whenever the response wraps its records.
+   */
+  itemsPath?: string;
+  /**
    * Cap on pages fetched in one run before pagination stops as *truncated*
    * (memory/runaway safety). Overrides the runtime default. When this cap fires
    * the result is flagged truncated so a sync checkpoint will not advance past

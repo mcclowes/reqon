@@ -90,6 +90,59 @@ describe('ReqonParser', () => {
     }
   });
 
+  it('parses an itemsPath argument on pagination (#250)', () => {
+    const source = `
+      mission Items {
+        source API { auth: none, base: "https://api.example.com" }
+        store items: memory("items")
+        action FetchAll {
+          get "/items" {
+            paginate: offset(page, 50, "data")
+          }
+          store response -> items { key: .id }
+        }
+        run FetchAll
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0];
+
+    if (mission.type === 'MissionDefinition') {
+      const fetchStep = mission.actions[0].steps[0];
+      if (fetchStep.type === 'FetchStep') {
+        expect(fetchStep.paginate?.itemsPath).toBe('data');
+      }
+    }
+  });
+
+  it('parses cursorPath and itemsPath together (#250)', () => {
+    const source = `
+      mission Items {
+        source API { auth: none, base: "https://api.example.com" }
+        store items: memory("items")
+        action FetchAll {
+          get "/items" {
+            paginate: cursor(after, 50, "meta.next", "data")
+          }
+          store response -> items { key: .id }
+        }
+        run FetchAll
+      }
+    `;
+
+    const program = parse(source);
+    const mission = program.statements[0];
+
+    if (mission.type === 'MissionDefinition') {
+      const fetchStep = mission.actions[0].steps[0];
+      if (fetchStep.type === 'FetchStep') {
+        expect(fetchStep.paginate?.cursorPath).toBe('meta.next');
+        expect(fetchStep.paginate?.itemsPath).toBe('data');
+      }
+    }
+  });
+
   it('parses the backfill fetch option', () => {
     const source = `
       mission B {
