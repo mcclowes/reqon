@@ -177,6 +177,52 @@ describe('FileSyncStore', () => {
   });
 });
 
+/**
+ * A watermark is monotonic by definition: recording an older syncedAt must
+ * never rewind it, or a `set`-mode store can overwrite newer local state with
+ * an older version on the next incremental sync (#257). `clear` remains the
+ * explicit way to reset a checkpoint.
+ */
+describe.each([
+  ['MemorySyncStore', () => new MemorySyncStore()],
+  ['FileSyncStore', () => new FileSyncStore('monotonic-mission', TEST_DIR)],
+])('%s watermark monotonicity', (_name, makeStore) => {
+  beforeEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    rmSync(TEST_DIR, { recursive: true, force: true });
+  });
+
+  it('ignores a checkpoint older than the existing watermark', async () => {
+    const store = makeStore();
+    await store.recordSync({ key: 'A', syncedAt: new Date('2026-02-01T00:00:00Z') });
+    await store.recordSync({ key: 'A', syncedAt: new Date('2026-01-01T00:00:00Z'), cursor: 'c9' });
+
+    expect((await store.getLastSync('A')).toISOString()).toBe('2026-02-01T00:00:00.000Z');
+    // The stale record is dropped whole, not merged field-by-field.
+    expect((await store.getCheckpoint('A'))?.cursor).toBeUndefined();
+  });
+
+  it('advances the watermark for a newer checkpoint', async () => {
+    const store = makeStore();
+    await store.recordSync({ key: 'A', syncedAt: new Date('2026-01-01T00:00:00Z') });
+    await store.recordSync({ key: 'A', syncedAt: new Date('2026-02-01T00:00:00Z') });
+
+    expect((await store.getLastSync('A')).toISOString()).toBe('2026-02-01T00:00:00.000Z');
+  });
+
+  it('still resets via clear', async () => {
+    const store = makeStore();
+    await store.recordSync({ key: 'A', syncedAt: new Date('2026-02-01T00:00:00Z') });
+    await store.clear('A');
+    await store.recordSync({ key: 'A', syncedAt: new Date('2026-01-01T00:00:00Z') });
+
+    expect((await store.getLastSync('A')).toISOString()).toBe('2026-01-01T00:00:00.000Z');
+  });
+});
+
 describe('Parser: since config', () => {
   function parse(source: string) {
     const lexer = new ReqonLexer(source);

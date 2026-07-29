@@ -140,7 +140,7 @@ describe('FileStore', () => {
       expect(Object.keys(parsedBefore)).toHaveLength(0);
 
       // After flush, data should be persisted
-      store.flush();
+      await store.flush();
 
       const contentAfter = readFileSync(filePath, 'utf-8');
       const parsedAfter = JSON.parse(contentAfter);

@@ -897,4 +897,47 @@ describe('FetchHandler', () => {
       expect(deps.log).toHaveBeenCalledWith(expect.stringContaining('Incremental sync:'));
     });
   });
+
+  describe('recordCheckpoint', () => {
+    const sinceStep = (updateFrom?: string): FetchStep => ({
+      type: 'FetchStep',
+      source: 'api',
+      method: 'GET',
+      path: { type: 'Literal', value: '/events', dataType: 'string' } as Expression,
+      since: { type: 'lastSync', ...(updateFrom ? { updateFrom } : {}) },
+    });
+
+    it('walks a top-level array response for the newest updateFrom timestamp', async () => {
+      const data = [
+        { id: 1, updated_at: '2026-01-05T00:00:00Z' },
+        { id: 2, updated_at: '2026-03-01T00:00:00Z' },
+        { id: 3, updated_at: '2026-02-01T00:00:00Z' },
+      ];
+
+      const syncedAt = await new FetchHandler(deps).recordCheckpoint(
+        'k',
+        sinceStep('updated_at'),
+        data,
+        new Date('2026-07-01T00:00:00Z')
+      );
+
+      expect(syncedAt?.toISOString()).toBe('2026-03-01T00:00:00.000Z');
+    });
+
+    it('never records a checkpoint older than the existing watermark', async () => {
+      mockSyncStore.getLastSync = vi.fn(async () => new Date('2026-05-01T00:00:00Z'));
+
+      const syncedAt = await new FetchHandler(deps).recordCheckpoint(
+        'k',
+        sinceStep('updated_at'),
+        { updated_at: '2026-04-01T00:00:00Z' },
+        new Date('2026-07-01T00:00:00Z')
+      );
+
+      expect(syncedAt?.toISOString()).toBe('2026-05-01T00:00:00.000Z');
+      expect(mockSyncStore.recordSync).toHaveBeenCalledWith(
+        expect.objectContaining({ syncedAt: new Date('2026-05-01T00:00:00Z') })
+      );
+    });
+  });
 });

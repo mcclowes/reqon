@@ -278,6 +278,8 @@ export class ForHandler implements StepHandler<ForStep> {
       item,
       error: message,
       ...(status !== undefined ? { status } : {}),
+      action: this.deps.actionName,
+      index,
       failedAt: new Date().toISOString(),
     });
   }
