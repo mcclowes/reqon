@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { RetryConfig } from '../ast/nodes.js';
 import type { RateLimiter } from '../auth/types.js';
-import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
+import { parseRateLimitHeaders, parseRetryAfterMs } from '../auth/rate-limiter.js';
 import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
 import { laneKey } from '../auth/lane.js';
 import { sleep } from '../utils/async.js';
@@ -9,30 +9,9 @@ import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
 import type { ProxyPool } from './proxy.js';
 
-/**
- * Parse a `Retry-After` header into a delay in ms, clamped to `maxDelayMs`.
- * The header may be delta-seconds (`120`) or an HTTP-date; a date in the past or
- * an unparseable value yields 0 and `undefined` respectively. Clamping stops a
- * hostile/broken server from pinning the client for hours, and the date branch
- * stops `parseInt` from turning a date into `NaN` → `sleep(NaN)` → a tight loop.
- */
-export function parseRetryAfterMs(
-  value: string | null | undefined,
-  maxDelayMs: number
-): number | undefined {
-  if (!value) return undefined;
-  const trimmed = value.trim();
-  const seconds = Number(trimmed);
-  let ms: number;
-  if (trimmed !== '' && Number.isFinite(seconds)) {
-    ms = seconds * 1000;
-  } else {
-    const when = Date.parse(trimmed);
-    if (Number.isNaN(when)) return undefined;
-    ms = when - Date.now();
-  }
-  return Math.min(Math.max(ms, 0), maxDelayMs);
-}
+// Re-exported for compatibility: the parser lives with the other header
+// parsing in auth/rate-limiter.ts so both consumers share one implementation.
+export { parseRetryAfterMs };
 
 /** Maximum buffered response body size (10 MiB) before the request is rejected. */
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
@@ -660,6 +639,9 @@ export class ApiKeyAuthProvider implements AuthProvider {
   }
 }
 
+/** Refresh ahead of expiry at this fraction of the token's lifetime. */
+const PROACTIVE_REFRESH_FRACTION = 0.8;
+
 // OAuth2 auth provider (simplified)
 export class OAuth2AuthProvider implements AuthProvider {
   private accessToken: string;
@@ -669,6 +651,8 @@ export class OAuth2AuthProvider implements AuthProvider {
   private clientSecret?: string;
   /** Single-flight guard: coalesces concurrent refreshes into one in-flight request */
   private refreshPromise: Promise<string> | null = null;
+  /** Epoch ms after which getToken refreshes proactively (from `expires_in`). */
+  private refreshAfter?: number;
 
   constructor(config: {
     accessToken: string;
@@ -685,7 +669,26 @@ export class OAuth2AuthProvider implements AuthProvider {
   }
 
   async getToken(): Promise<string> {
+    // Refresh ahead of a known expiry: a reactive-only refresh costs a wasted
+    // request plus a retry on every expiry. Failure falls back to the current
+    // token — the 401 path remains the place real refresh errors surface.
+    if (this.shouldProactivelyRefresh()) {
+      try {
+        return await this.refreshToken();
+      } catch {
+        return this.accessToken;
+      }
+    }
     return this.accessToken;
+  }
+
+  private shouldProactivelyRefresh(): boolean {
+    return (
+      this.refreshAfter !== undefined &&
+      Date.now() >= this.refreshAfter &&
+      !!this.refreshTokenValue &&
+      !!this.tokenEndpoint
+    );
   }
 
   async refreshToken(): Promise<string> {
@@ -748,6 +751,9 @@ export class OAuth2AuthProvider implements AuthProvider {
     this.accessToken = parsed.data.access_token;
     if (parsed.data.refresh_token) {
       this.refreshTokenValue = parsed.data.refresh_token;
+    }
+    if (parsed.data.expires_in !== undefined && Number.isFinite(parsed.data.expires_in)) {
+      this.refreshAfter = Date.now() + parsed.data.expires_in * 1000 * PROACTIVE_REFRESH_FRACTION;
     }
 
     return this.accessToken;

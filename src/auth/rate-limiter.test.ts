@@ -437,6 +437,45 @@ describe('AdaptiveRateLimiter', () => {
     });
   });
 
+  describe('malformed header resilience (#251)', () => {
+    it('keeps pacing a lane after a malformed remaining header', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+      limiter.recordResponse(
+        'api',
+        parseRateLimitHeaders({
+          'x-ratelimit-remaining': 'unknown',
+          'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 60),
+        })
+      );
+
+      await limiter.waitForCapacity('api'); // claims the first slot
+
+      const delay = limiter.getThrottleDelay('api');
+      expect(Number.isFinite(delay)).toBe(true);
+      expect(delay).toBeGreaterThan(0); // the next slot is still in the future
+    });
+  });
+
+  describe('backoff release (#252)', () => {
+    it('spaces queued callers out when a 429 backoff lifts, instead of stampeding', async () => {
+      limiter.configure('api', { strategy: 'throttle', fallbackRpm: 60, maxWait: 60 });
+      limiter.recordResponse('api', { rejected: true, retryAfter: 2 });
+
+      const finishedAt: number[] = [];
+      const waiters = [
+        limiter.waitForCapacity('api').then(() => finishedAt.push(Date.now())),
+        limiter.waitForCapacity('api').then(() => finishedAt.push(Date.now())),
+      ];
+      await vi.advanceTimersByTimeAsync(15_000);
+      await Promise.all(waiters);
+
+      // fallbackRpm 60 → one slot per second: the second caller must exit at
+      // least ~1s after the first, not on the same tick.
+      expect(finishedAt).toHaveLength(2);
+      expect(Math.abs(finishedAt[1] - finishedAt[0])).toBeGreaterThanOrEqual(900);
+    });
+  });
+
   describe('default configuration', () => {
     it('uses pause strategy by default', async () => {
       // Not configured, should use defaults

@@ -82,8 +82,14 @@ export const CIRCUIT_BREAKER_DEFAULTS = {
   SUCCESS_THRESHOLD: 2,
   /** Time window in milliseconds for counting failures */
   FAILURE_WINDOW_MS: 60000,
-  /** HTTP status codes to count as failures */
-  FAILURE_STATUS_CODES: [500, 501, 502, 503, 504] as readonly number[],
+  /**
+   * HTTP status codes to count as failures. 401/403 count by default: an
+   * auth-shaped rejection almost never resolves on its own, and without it a
+   * revoked key can drive a million-request loop that ends "successfully"
+   * with an empty store (#254). Deliberately excludes 429 (the rate limiter's
+   * job) and 404 (data, not an outage).
+   */
+  FAILURE_STATUS_CODES: [401, 403, 500, 501, 502, 503, 504] as readonly number[],
   /** Whether to count network errors as failures */
   COUNT_NETWORK_ERRORS: true,
   /**
