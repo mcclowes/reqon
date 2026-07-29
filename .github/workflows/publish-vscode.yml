@@ -1,0 +1,33 @@
+name: Publish VSCode Extension
+
+# The extension is versioned independently of reqon-dsl (bump the version in
+# vscode-reqon/package.json before dispatching), so it publishes on its own
+# cadence rather than on release tags.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to VS Code Marketplace
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      # Grammar-only injection extension: no dependencies, no build step.
+      # --no-dependencies is required: without node_modules, vsce's npm-based
+      # file collection silently produces an empty VSIX.
+      - name: Publish to VS Code Marketplace
+        run: npx --yes @vscode/vsce publish --no-dependencies
+        working-directory: vscode-reqon
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
