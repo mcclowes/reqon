@@ -665,6 +665,49 @@ describe('OAuth2AuthProvider', () => {
     globalThis.fetch = originalFetch;
   });
 
+  it('throws with the provider error when refresh fails, not Bearer undefined (#255)', async () => {
+    const originalFetch = globalThis.fetch;
+    const provider = new OAuth2AuthProvider({
+      accessToken: 'old-token',
+      refreshToken: 'expired-refresh-token',
+      tokenEndpoint: 'https://auth.example.com/token',
+    });
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          error: 'invalid_grant',
+          error_description: 'Refresh token expired',
+        }),
+        { status: 400 }
+      );
+    });
+
+    await expect(provider.refreshToken()).rejects.toThrow(/invalid_grant/);
+    // The old token must be left intact, never overwritten with undefined.
+    expect(await provider.getToken()).toBe('old-token');
+
+    globalThis.fetch = originalFetch;
+  });
+
+  it('throws when a 200 response has no access_token (#255)', async () => {
+    const originalFetch = globalThis.fetch;
+    const provider = new OAuth2AuthProvider({
+      accessToken: 'old-token',
+      refreshToken: 'refresh-token',
+      tokenEndpoint: 'https://auth.example.com/token',
+    });
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response(JSON.stringify({ token_type: 'bearer' }), { status: 200 });
+    });
+
+    await expect(provider.refreshToken()).rejects.toThrow(/access_token/);
+    expect(await provider.getToken()).toBe('old-token');
+
+    globalThis.fetch = originalFetch;
+  });
+
   it('coalesces concurrent refreshes into a single network call (single-flight)', async () => {
     const originalFetch = globalThis.fetch;
     const provider = new OAuth2AuthProvider({

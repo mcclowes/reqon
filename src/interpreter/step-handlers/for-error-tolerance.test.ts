@@ -90,6 +90,36 @@ describe('for loop error tolerance', () => {
     expect(recorded[0]).toMatchObject({ item: 2, error: 'boom on 2' });
   });
 
+  it('keys dead-letter entries by record identity, not loop index (#256)', async () => {
+    // Two distinct records that both fail at the same loop position must each be
+    // recorded; an index key would collapse them onto one entry.
+    const ctx = createContext();
+    const deps: ForHandlerDeps = {
+      ctx,
+      log: vi.fn(),
+      actionName: 'testAction',
+      executeStep: vi.fn(async () => {
+        throw new Error('always fails');
+      }),
+    };
+    const failures = new MemoryStore('failures');
+    ctx.stores.set('failures', failures);
+    setVariable(ctx, 'items', [{ id: 'a' }, { id: 'b' }]);
+
+    await new ForHandler(deps).execute(
+      loop('items', { onError: { action: 'continue', queue: 'failures' } })
+    );
+
+    const recorded = await failures.list();
+    expect(recorded).toHaveLength(2);
+    expect(recorded).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ item: { id: 'a' } }),
+        expect.objectContaining({ item: { id: 'b' } }),
+      ])
+    );
+  });
+
   it('fails loudly when the named queue store does not exist', async () => {
     const { deps } = failingDeps([1]);
     setVariable(deps.ctx, 'items', [1]);

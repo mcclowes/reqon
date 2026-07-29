@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { ForStep, ActionStep, LoopErrorPolicy } from '../../ast/nodes.js';
 import type { StepHandler, StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
@@ -5,6 +6,7 @@ import { childContext, setVariable, getVariable } from '../context.js';
 import type { ExecutionContext } from '../context.js';
 import { StepError } from '../../errors/index.js';
 import { SkipSignal, QueueSignal, markTolerated } from '../signals.js';
+import { isRecord } from '../../utils/type-guards.js';
 import type { DebugController, DebugSnapshot, DebugLocation } from '../../debug/index.js';
 
 /** Heartbeat interval for loop iterations */
@@ -272,12 +274,23 @@ export class ForHandler implements StepHandler<ForStep> {
     }
 
     const status = (error as { statusCode?: number })?.statusCode;
-    await store.set(String(index), {
+    await store.set(this.deadLetterKey(step, item, index), {
       item,
       error: message,
       ...(status !== undefined ? { status } : {}),
       failedAt: new Date().toISOString(),
     });
+  }
+
+  /**
+   * Key a dead-letter entry by the identity of the failed record, never its
+   * loop position. Index keys silently overwrite each other when two loops share
+   * one `onError queue` store, and across re-runs and resumes (#256) - so the
+   * store whose whole job is not to lose failures loses them. Namespaced by
+   * action + loop variable so two loops can safely share a store.
+   */
+  private deadLetterKey(step: ForStep, item: unknown, index: number): string {
+    return `${this.deps.actionName}:${step.variable}:${recordIdentity(item, index)}`;
   }
 
   /**
@@ -316,4 +329,28 @@ export class ForHandler implements StepHandler<ForStep> {
       throw error;
     }
   }
+}
+
+/**
+ * Derive a stable identity for a failed loop item, preferring a natural key,
+ * then a content hash, and only falling back to position for values that have
+ * neither (null/undefined). Identity is a property of the record; position is a
+ * property of one traversal (#256).
+ */
+function recordIdentity(item: unknown, index: number): string {
+  if (isRecord(item)) {
+    const natural = item.id ?? item._id ?? item.key ?? item.uuid;
+    if (natural !== undefined && natural !== null && natural !== '') {
+      return `id-${String(natural)}`;
+    }
+    return `sha-${hashContent(JSON.stringify(item))}`;
+  }
+  if (item !== undefined && item !== null) {
+    return `val-${hashContent(String(item))}`;
+  }
+  return `idx-${index}`;
+}
+
+function hashContent(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 16);
 }

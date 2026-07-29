@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { RetryConfig } from '../ast/nodes.js';
 import type { RateLimiter } from '../auth/types.js';
 import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
@@ -688,12 +689,60 @@ export class OAuth2AuthProvider implements AuthProvider {
       }),
     });
 
-    const data = (await response.json()) as { access_token: string; refresh_token?: string };
-    this.accessToken = data.access_token;
-    if (data.refresh_token) {
-      this.refreshTokenValue = data.refresh_token;
+    // A failed refresh (e.g. 400 invalid_grant on an expired refresh token) has
+    // no access_token. Without this check `accessToken` becomes undefined and
+    // every later request sends `Bearer undefined`, turning an expired-token
+    // condition into a confusing 401 loop. Surface the real reason instead (#255).
+    if (!response.ok) {
+      throw new Error(`OAuth2 token refresh failed: ${await describeOAuthError(response)}`);
+    }
+
+    let json: unknown;
+    try {
+      json = await response.json();
+    } catch {
+      throw new Error(
+        `OAuth2 token refresh failed: token endpoint returned a non-JSON body (HTTP ${response.status})`
+      );
+    }
+
+    // Validate rather than cast. This data crosses a trust boundary; `as` only
+    // silences the compiler, it doesn't check that access_token is really there.
+    const parsed = OAuth2TokenResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      throw new Error('OAuth2 token refresh failed: response did not contain a valid access_token');
+    }
+
+    this.accessToken = parsed.data.access_token;
+    if (parsed.data.refresh_token) {
+      this.refreshTokenValue = parsed.data.refresh_token;
     }
 
     return this.accessToken;
   }
+}
+
+/** Shape of a successful RFC 6749 token response (only the fields we consume). */
+const OAuth2TokenResponseSchema = z.object({
+  access_token: z.string().min(1),
+  refresh_token: z.string().min(1).optional(),
+  expires_in: z.number().optional(),
+  token_type: z.string().optional(),
+});
+
+/**
+ * Extract a human-readable reason from an OAuth2 error response. Providers put
+ * the real cause in the `error` / `error_description` fields (RFC 6749 §5.2);
+ * fall back to the status line when the body isn't the expected JSON.
+ */
+async function describeOAuthError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string; error_description?: string };
+    if (body?.error) {
+      return body.error_description ? `${body.error} (${body.error_description})` : body.error;
+    }
+  } catch {
+    // Non-JSON body; fall through to the status line.
+  }
+  return `HTTP ${response.status}`;
 }

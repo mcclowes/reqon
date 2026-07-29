@@ -274,11 +274,27 @@ export class FileStore implements StoreAdapter {
   }
 
   /**
-   * Close the store, ensuring all pending changes are written to disk.
-   * Should be called before the process exits to prevent data loss in batch mode.
+   * Close the store, ensuring all pending changes are durably on disk.
+   *
+   * Quiesce the async write chain *first* (#259). A synchronous flush jumps the
+   * async queue, so an async write that was already serialising can complete
+   * after it and rename stale content over the fresh flush - data loss at close,
+   * under exactly the conditions close exists to prevent. Awaiting the chain is
+   * also the only thing that makes close wait for in-flight writes in `immediate`
+   * mode, where `dirty` is never set so `flush()` alone is a no-op.
    */
-  close(): void {
-    this.flush();
+  async close(): Promise<void> {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    // Wait for any write already in flight (and its coalesced followers).
+    await this.writeChain.catch(() => {});
+    // Persist anything the chain didn't cover (batch/debounce accumulate `dirty`).
+    // Async, not sync, so we never mix sync and async I/O against the same file.
+    if (this.dirty) {
+      await this.writeToDisk();
+    }
   }
 
   /**
