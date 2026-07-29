@@ -136,12 +136,14 @@ export async function loadAuthFile(rawPath: string): Promise<Record<string, unkn
     authContent = await readFile(authPath, 'utf-8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(`auth file not found: ${authPath}`);
+      throw new Error(`auth file not found: ${authPath}`, { cause: err });
     }
     if ((err as NodeJS.ErrnoException).code === 'EISDIR') {
-      throw new Error(`auth path is a directory, not a file: ${authPath}`);
+      throw new Error(`auth path is a directory, not a file: ${authPath}`, { cause: err });
     }
-    throw new Error(`could not read auth file ${authPath}: ${(err as Error).message}`);
+    throw new Error(`could not read auth file ${authPath}: ${(err as Error).message}`, {
+      cause: err,
+    });
   }
 
   let rawAuth: unknown;

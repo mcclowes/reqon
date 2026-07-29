@@ -340,7 +340,7 @@ export class WebhookServer {
 
     // Read the request body with a hard size cap to prevent an OOM from a
     // large or slow-drip POST.
-    let rawBody = '';
+    let rawBody: string;
     try {
       rawBody = await this.readBody(req);
     } catch (error) {

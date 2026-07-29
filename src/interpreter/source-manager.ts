@@ -292,7 +292,9 @@ export class SourceManager {
         }
         this.log(`Loaded OAS spec for ${source.name}: ${oasSource.operations.size} operations`);
       } catch (error) {
-        throw new Error(`Failed to load OAS spec for ${source.name}: ${(error as Error).message}`);
+        throw new Error(`Failed to load OAS spec for ${source.name}: ${(error as Error).message}`, {
+          cause: error,
+        });
       }
     }
 

@@ -118,7 +118,7 @@ describe('resumable backfill pagination', () => {
 
   it('a run after completion fetches nothing', async () => {
     const log = new MemoryExecutionLog();
-    let offsets = mockApi();
+    mockApi();
 
     let executionId: string | undefined;
     let done = false;
@@ -134,7 +134,7 @@ describe('resumable backfill pagination', () => {
 
     // Resume once more after the backfill is already complete.
     vi.unstubAllGlobals();
-    offsets = mockApi();
+    const offsets = mockApi();
     await execute(source, {
       executionLog: log,
       resumeFrom: executionId,
