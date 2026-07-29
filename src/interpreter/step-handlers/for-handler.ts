@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { ForStep, ActionStep, LoopErrorPolicy } from '../../ast/nodes.js';
 import type { StepHandler, StepHandlerDeps } from './types.js';
 import { evaluate } from '../evaluator.js';
-import { childContext, setVariable, getVariable } from '../context.js';
+import { childContext, setVariable } from '../context.js';
 import type { ExecutionContext } from '../context.js';
 import { StepError } from '../../errors/index.js';
 import { SkipSignal, QueueSignal, markTolerated } from '../signals.js';
@@ -142,24 +142,26 @@ export class ForHandler implements StepHandler<ForStep> {
   }
 
   private async getCollection(step: ForStep): Promise<unknown[]> {
-    let collection: unknown[];
+    let collection: unknown;
 
     if (step.collection.type === 'Identifier') {
-      // It's a store reference
       const store = this.deps.ctx.stores.get(step.collection.name);
-      if (store) {
-        collection = await store.list();
-      } else {
-        collection = (getVariable(this.deps.ctx, step.collection.name) as unknown[]) ?? [];
-      }
+      // A store wins; otherwise evaluate the identifier like any expression —
+      // that resolves variables AND the special `response` binding. The old
+      // direct variable lookup missed `response` and fell back to [], so
+      // `for item in response` silently iterated nothing.
+      collection = store ? await store.list() : evaluate(step.collection, this.deps.ctx);
     } else {
-      collection = evaluate(step.collection, this.deps.ctx) as unknown[];
+      collection = evaluate(step.collection, this.deps.ctx);
     }
 
     if (!Array.isArray(collection)) {
-      throw new StepError('For loop collection must be an array', 'for', {
-        action: this.deps.actionName,
-      });
+      const name = step.collection.type === 'Identifier' ? ` '${step.collection.name}'` : '';
+      throw new StepError(
+        `For loop collection${name} must be an array, got ${collection === undefined ? 'nothing in scope' : typeof collection}`,
+        'for',
+        { action: this.deps.actionName }
+      );
     }
 
     return collection;

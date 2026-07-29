@@ -387,7 +387,9 @@ describe('ForHandler', () => {
       };
 
       const handler = new ForHandler(deps);
-      await expect(handler.execute(step)).rejects.toThrow('For loop collection must be an array');
+      await expect(handler.execute(step)).rejects.toThrow(
+        "For loop collection 'notAnArray' must be an array"
+      );
     });
 
     it('handles empty collection gracefully', async () => {

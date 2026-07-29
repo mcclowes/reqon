@@ -266,6 +266,8 @@ export class MissionExecutor {
   private config: ExecutorConfig;
   private ctx: ExecutionContext;
   private errors: ExecutionError[] = [];
+  /** Errors already recorded, so outer frames don't record them again. */
+  private recordedErrors = new WeakSet<object>();
   /**
    * Items a loop skipped past rather than failing the run on. Surfaced in the
    * result because continuing is the default: a mission where every request
@@ -298,6 +300,8 @@ export class MissionExecutor {
   private debugController?: DebugController;
   private traceRecorder?: TraceRecorder;
   private traceStore?: TraceStore;
+  /** Execution id the active trace was recorded under (also without persistState). */
+  private traceExecutionId?: string;
   private pauseManager?: PauseManager;
   private pauseStore?: PauseStore;
   private currentStageIndex = 0;
@@ -521,10 +525,13 @@ export class MissionExecutor {
       this.resumingPause = await this.loadResumingPause(alreadyResumedPauseId);
     }
 
-    // Initialize trace recorder if tracing is enabled
-    if (mission.trace && this.traceStore && this.executionState) {
+    // Initialize trace recorder if tracing is enabled. Tracing does not
+    // require persistState: a declared `trace:` that silently did nothing was
+    // exactly the kind of no-op this mission feature exists to expose (#261).
+    if (mission.trace && this.traceStore) {
+      this.traceExecutionId = this.executionState?.id ?? this.logExecutionId;
       this.traceRecorder = createTraceRecorder({
-        executionId: this.executionState.id,
+        executionId: this.traceExecutionId,
         mission: mission.name,
         mode: mission.trace.mode,
         store: this.traceStore,
@@ -533,6 +540,10 @@ export class MissionExecutor {
       });
       this.log(`Tracing enabled (mode: ${mission.trace.mode})`);
     }
+
+    // Tracked independently of executionState: a paused run without
+    // persistState must still be reported as paused, not completed.
+    let suspendedOnPause = false;
 
     try {
       await this.executeMission(mission);
@@ -544,10 +555,10 @@ export class MissionExecutor {
         this.executionState.duration = Date.now() - startTime;
         await this.saveExecutionState();
       }
-      await this.logEvent({ type: 'mission.completed' });
     } catch (error) {
       // PauseSignal is not an error - execution was intentionally paused
       if (error instanceof PauseSignal) {
+        suspendedOnPause = true;
         this.log('Execution paused');
         this.currentPauseId = error.pauseId;
         // State is already set to 'paused' in checkPause() or pause handler
@@ -561,12 +572,15 @@ export class MissionExecutor {
           await this.logEvent({ type: 'pause.created', pauseId: error.pauseId });
         }
       } else {
-        this.errors.push({
-          action: 'mission',
-          step: 'execute',
-          message: (error as Error).message,
-          details: error,
-        });
+        this.recordError(
+          {
+            action: 'mission',
+            step: 'execute',
+            message: (error as Error).message,
+            details: error,
+          },
+          error
+        );
 
         // Mark execution as failed
         if (this.executionState) {
@@ -575,7 +589,6 @@ export class MissionExecutor {
           this.executionState.duration = Date.now() - startTime;
           await this.saveExecutionState();
         }
-        await this.logEvent({ type: 'mission.failed', error: (error as Error).message });
       }
     } finally {
       // Flush stores first so a batching (or batch-mode file) store writes its
@@ -588,11 +601,25 @@ export class MissionExecutor {
     }
 
     const duration = Date.now() - startTime;
-    const isPaused = this.executionState?.status === 'paused';
+    const isPaused = suspendedOnPause || this.executionState?.status === 'paused';
     // Errors a loop tolerated are reported as skipped items, not mission
     // failures - otherwise the default `continue` policy could never succeed.
     this.errors = this.errors.filter((e) => !isTolerated(e.details));
     const success = this.errors.length === 0 && !isPaused;
+
+    // One decision, reported everywhere: the durable log's terminal event
+    // derives from the same computed outcome the result returns, so the log
+    // can never say "failed" about a run that reported success (#261).
+    if (!isPaused) {
+      if (success) {
+        await this.logEvent({ type: 'mission.completed' });
+      } else {
+        await this.logEvent({
+          type: 'mission.failed',
+          error: this.errors[0]?.message ?? 'Unknown error',
+        });
+      }
+    }
 
     // Emit onExecutionComplete callback - count stages in a single pass
     const stageCounts = this.executionState?.stages.reduce(
@@ -653,7 +680,7 @@ export class MissionExecutor {
       stores: this.ctx.stores,
       executionId: this.executionState?.id ?? this.logExecutionId,
       state: this.executionState,
-      traceId: this.traceRecorder ? this.executionState?.id : undefined,
+      traceId: this.traceExecutionId,
       pauseId: this.currentPauseId,
       toleratedFailures: this.toleratedFailures,
     };
@@ -1357,14 +1384,31 @@ export class MissionExecutor {
       });
 
       // AbortError is a controlled abort, still record it
-      this.errors.push({
-        action: actionName,
-        step: step.type,
-        message: (error as Error).message,
-        details: error,
-      });
+      this.recordError(
+        {
+          action: actionName,
+          step: step.type,
+          message: (error as Error).message,
+          details: error,
+        },
+        error
+      );
       throw error;
     }
+  }
+
+  /**
+   * Record an error exactly once, at the innermost frame that saw it. The
+   * exception then propagates through the ForStep frame, the action frame, and
+   * the mission catch — each of which would otherwise record it again, so one
+   * failure landed in ExecutionResult.errors several times (#261).
+   */
+  private recordError(entry: (typeof this.errors)[number], error: unknown): void {
+    if (error !== null && typeof error === 'object') {
+      if (this.recordedErrors.has(error)) return;
+      this.recordedErrors.add(error);
+    }
+    this.errors.push(entry);
   }
 
   private async executeFetch(
@@ -1802,8 +1846,10 @@ export class MissionExecutor {
     }
   }
 
-  private getStepType(stepType: string): StepType {
-    const mapping: Record<string, StepType> = {
+  private getStepType(stepType: ActionStep['type']): StepType {
+    // Total over the step union: a new step type is a compile error here, not
+    // a step silently reported as a fetch in events, traces, and the debugger.
+    const mapping: Record<ActionStep['type'], StepType> = {
       FetchStep: 'fetch',
       ForStep: 'for',
       MapStep: 'map',
@@ -1811,10 +1857,11 @@ export class MissionExecutor {
       StoreStep: 'store',
       MatchStep: 'match',
       LetStep: 'let',
+      ApplyStep: 'apply',
       WebhookStep: 'webhook',
       PauseStep: 'pause',
     };
-    return mapping[stepType] ?? 'fetch';
+    return mapping[stepType];
   }
 
   /** Get the event emitter (for external access) */

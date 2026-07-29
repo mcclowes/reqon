@@ -215,10 +215,20 @@ export class TraceRecorder {
   /** Cap on snapshots kept in memory while streaming (each is already on disk). */
   private static readonly MAX_STREAMED_IN_MEMORY = 200;
 
+  /** Whether the trace shell has been saved ahead of streamed snapshots. */
+  private shellSaved = false;
+
   private async addSnapshot(snapshot: TraceSnapshot): Promise<void> {
     this.trace.snapshots.push(snapshot);
 
     if (this.config.streaming) {
+      // Save the trace shell before the first streamed snapshot: appendSnapshot
+      // targets an existing trace, and a store that hasn't seen save() yet
+      // (e.g. MemoryTraceStore) would silently drop every snapshot.
+      if (!this.shellSaved) {
+        this.shellSaved = true;
+        await this.config.store.save({ ...this.trace, snapshots: [] });
+      }
       // Persisted immediately, so the in-memory copy is only a recent window for
       // live inspection — bound it so a long run doesn't grow without limit.
       await this.config.store.appendSnapshot(this.trace.id, snapshot);
