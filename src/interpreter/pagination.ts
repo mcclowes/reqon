@@ -108,33 +108,38 @@ class ArrayFieldCache {
 }
 
 /**
- * Extract items array from response and determine if more pages exist
- * Shared utility for offset and page-based pagination strategies
+ * Locate the records array in a paginated response.
+ *
+ * When `itemsPath` is declared we resolve exactly that path and never guess -
+ * a declared path that resolves to a non-array yields an empty page rather than
+ * silently locking onto some other array-valued key.
+ *
+ * Without `itemsPath` we fall back to the first array-valued key, which is a
+ * guess: on a `{warnings: [], data: [...]}` envelope it picks `warnings`,
+ * reports zero records, and stops (#250). The guess is kept for convenience but
+ * warns loudly (once per key) so a wrong pick is visible instead of silent.
  */
-function extractItemsFromResponse(
-  response: unknown,
-  pageSize: number,
+function findItemsArray(
+  data: Record<string, unknown>,
   cacheKey: string,
-  cache: ArrayFieldCache
-): { items: unknown[]; hasMore: boolean } {
-  if (!response || typeof response !== 'object') {
-    return { items: [], hasMore: false };
+  cache: ArrayFieldCache,
+  itemsPath?: string
+): unknown[] | undefined {
+  // Declared path: resolve it and trust it, no fallback guessing.
+  if (itemsPath) {
+    const value = extractNestedValue(data, itemsPath);
+    return Array.isArray(value) ? (value as unknown[]) : undefined;
   }
-
-  const data = response as Record<string, unknown>;
 
   // Check cache first
   const cachedField = cache.get(cacheKey);
   if (cachedField !== undefined) {
     if (cachedField === null) {
-      return { items: [], hasMore: false };
+      return undefined;
     }
-    const items = data[cachedField] as unknown[];
+    const items = data[cachedField];
     if (Array.isArray(items)) {
-      return {
-        items,
-        hasMore: items.length >= pageSize,
-      };
+      return items as unknown[];
     }
     // Cached field no longer valid, clear it
     cache.clear();
@@ -143,19 +148,52 @@ function extractItemsFromResponse(
   // Search for array field
   for (const key of Object.keys(data)) {
     if (Array.isArray(data[key])) {
-      const items = data[key] as unknown[];
       cache.set(cacheKey, key);
-      return {
-        items,
-        hasMore: items.length >= pageSize,
-      };
+      warnGuessedItemsField(key, cacheKey);
+      return data[key] as unknown[];
     }
   }
 
   // Cache negative result
   cache.set(cacheKey, null);
+  return undefined;
+}
 
-  return { items: [], hasMore: false };
+/** Fields we've already warned about, so the guess is reported once, not per page. */
+const warnedGuessKeys = new Set<string>();
+
+function warnGuessedItemsField(field: string, cacheKey: string): void {
+  const marker = `${cacheKey}:${field}`;
+  if (warnedGuessKeys.has(marker)) return;
+  warnedGuessKeys.add(marker);
+  console.warn(
+    `[reqon] pagination guessed records live in the "${field}" field of the response; ` +
+      `set itemsPath to declare this explicitly and avoid a wrong guess on envelopes ` +
+      `like {warnings: [], data: [...]}.`
+  );
+}
+
+/**
+ * Extract items array from response and determine if more pages exist
+ * Shared utility for offset and page-based pagination strategies
+ */
+function extractItemsFromResponse(
+  response: unknown,
+  pageSize: number,
+  cacheKey: string,
+  cache: ArrayFieldCache,
+  itemsPath?: string
+): { items: unknown[]; hasMore: boolean } {
+  if (!response || typeof response !== 'object') {
+    return { items: [], hasMore: false };
+  }
+
+  const data = response as Record<string, unknown>;
+  const items = findItemsArray(data, cacheKey, cache, itemsPath);
+  if (!items) {
+    return { items: [], hasMore: false };
+  }
+  return { items, hasMore: items.length >= pageSize };
 }
 
 /**
@@ -186,7 +224,13 @@ export class OffsetPaginationStrategy implements PaginationStrategy {
   }
 
   extractResults(response: unknown, ctx: PaginationContext): PageResult {
-    return extractItemsFromResponse(response, ctx.pageSize, this.cacheKey, this.cache);
+    return extractItemsFromResponse(
+      response,
+      ctx.pageSize,
+      this.cacheKey,
+      this.cache,
+      this.config.itemsPath
+    );
   }
 
   clearCache(): void {
@@ -213,7 +257,13 @@ export class PageNumberPaginationStrategy implements PaginationStrategy {
   }
 
   extractResults(response: unknown, ctx: PaginationContext): PageResult {
-    return extractItemsFromResponse(response, ctx.pageSize, this.cacheKey, this.cache);
+    return extractItemsFromResponse(
+      response,
+      ctx.pageSize,
+      this.cacheKey,
+      this.cache,
+      this.config.itemsPath
+    );
   }
 
   clearCache(): void {
@@ -243,15 +293,19 @@ export class CursorPaginationStrategy implements PaginationStrategy {
 
     const data = response as Record<string, unknown>;
 
-    // Extract items - use cached field if available
+    // Extract items. A declared itemsPath is resolved exactly and never guessed.
     let items: unknown[] = [];
-    if (this.cachedArrayField !== null && Array.isArray(data[this.cachedArrayField])) {
+    if (this.config.itemsPath) {
+      const value = extractNestedValue(data, this.config.itemsPath);
+      items = Array.isArray(value) ? (value as unknown[]) : [];
+    } else if (this.cachedArrayField !== null && Array.isArray(data[this.cachedArrayField])) {
       items = data[this.cachedArrayField] as unknown[];
     } else {
       for (const key of Object.keys(data)) {
         if (Array.isArray(data[key])) {
           items = data[key] as unknown[];
           this.cachedArrayField = key;
+          warnGuessedItemsField(key, `cursor:${this.config.param}`);
           break;
         }
       }

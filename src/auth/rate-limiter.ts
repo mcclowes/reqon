@@ -499,14 +499,19 @@ export function parseRateLimitHeaders(headers: Record<string, string>): RateLimi
     normalized[key.toLowerCase()] = value;
   }
 
-  // Parse remaining
+  // Parse remaining. A malformed value (NaN) must be discarded, not stored: NaN
+  // compares false against everything and silently poisons all downstream pacing
+  // arithmetic, so the throttle stops throttling with no error (see #251).
   const remainingKey = findHeader(normalized, [
     'x-ratelimit-remaining',
     'ratelimit-remaining',
     'x-rate-limit-remaining',
   ]);
   if (remainingKey) {
-    info.remaining = parseInt(normalized[remainingKey], 10);
+    const remaining = Number(normalized[remainingKey]);
+    if (Number.isFinite(remaining)) {
+      info.remaining = remaining;
+    }
   }
 
   // Parse limit
@@ -516,7 +521,10 @@ export function parseRateLimitHeaders(headers: Record<string, string>): RateLimi
     'x-rate-limit-limit',
   ]);
   if (limitKey) {
-    info.limit = parseInt(normalized[limitKey], 10);
+    const limit = Number(normalized[limitKey]);
+    if (Number.isFinite(limit)) {
+      info.limit = limit;
+    }
   }
 
   // Parse reset
@@ -526,43 +534,76 @@ export function parseRateLimitHeaders(headers: Record<string, string>): RateLimi
     'x-rate-limit-reset',
   ]);
   if (resetKey) {
-    const resetValue = normalized[resetKey];
-    // Could be Unix timestamp or ISO date
-    const asNumber = parseInt(resetValue, 10);
-    if (!isNaN(asNumber)) {
-      // Unix timestamp (seconds)
-      if (asNumber > 1000000000000) {
-        // Already in milliseconds
-        info.resetAt = new Date(asNumber);
-      } else {
-        // In seconds
-        info.resetAt = new Date(asNumber * 1000);
-      }
-    } else {
-      // Try as date string
-      const parsed = new Date(resetValue);
-      if (!isNaN(parsed.getTime())) {
-        info.resetAt = parsed;
-      }
+    const resetAt = parseResetHeader(resetKey, normalized[resetKey]);
+    if (resetAt) {
+      info.resetAt = resetAt;
     }
   }
 
   // Parse Retry-After (usually from 429 responses)
   const retryAfter = normalized['retry-after'];
   if (retryAfter) {
-    const asNumber = parseInt(retryAfter, 10);
-    if (!isNaN(asNumber)) {
-      info.retryAfter = asNumber;
+    // `Number()`, not `parseInt`: `parseInt('2035-...')` returns 2035 and hides
+    // the date branch. A past HTTP-date is clamped to 0 rather than left negative.
+    const asNumber = Number(retryAfter.trim());
+    if (retryAfter.trim() !== '' && Number.isFinite(asNumber)) {
+      info.retryAfter = Math.max(0, asNumber);
     } else {
-      // HTTP-date format
       const parsed = new Date(retryAfter);
       if (!isNaN(parsed.getTime())) {
-        info.retryAfter = Math.ceil((parsed.getTime() - Date.now()) / 1000);
+        info.retryAfter = Math.max(0, Math.ceil((parsed.getTime() - Date.now()) / 1000));
       }
     }
   }
 
   return info;
+}
+
+/**
+ * Interpret an `X-RateLimit-Reset` / `RateLimit-Reset` value as an absolute
+ * reset time. Three formats occur in the wild:
+ *
+ * - IETF `RateLimit-Reset` draft: delta seconds until reset (`60` = 60s from now).
+ * - Vendor `X-RateLimit-Reset` (GitHub etc.): absolute epoch seconds (or ms).
+ * - ISO-8601 date string.
+ *
+ * The IETF (unprefixed) header is always a delta. For vendor headers we
+ * classify by magnitude, because delta seconds (single digits up to ~days) and
+ * an epoch (~1.7e9 seconds / ~1.7e12 ms) sit ~9 orders of magnitude apart:
+ *
+ *   >= 1e12  epoch milliseconds
+ *   >= 1e9   epoch seconds (any real epoch since 2001, even a stale one)
+ *   <  1e9   delta seconds - `x-ratelimit-reset: 60` is "60s from now", not 1970
+ *
+ * We classify on magnitude alone (not past-vs-future) so a stale-but-valid epoch
+ * stays an epoch. `Number()` (not `parseInt`) is used so an ISO date
+ * discriminates as NaN and the date branch is actually reachable (see #251).
+ */
+const EPOCH_MS_THRESHOLD = 1_000_000_000_000; // ~2001 in ms
+const EPOCH_SECONDS_THRESHOLD = 1_000_000_000; // ~2001 in seconds
+
+function parseResetHeader(headerName: string, rawValue: string): Date | undefined {
+  const value = rawValue.trim();
+  if (value === '') return undefined;
+
+  const asNumber = Number(value);
+  if (Number.isFinite(asNumber)) {
+    // IETF draft header carries delta seconds, never an epoch.
+    if (headerName === 'ratelimit-reset') {
+      return new Date(Date.now() + asNumber * 1000);
+    }
+    if (asNumber >= EPOCH_MS_THRESHOLD) {
+      return new Date(asNumber);
+    }
+    if (asNumber >= EPOCH_SECONDS_THRESHOLD) {
+      return new Date(asNumber * 1000);
+    }
+    return new Date(Date.now() + asNumber * 1000);
+  }
+
+  // ISO-8601 / HTTP date string.
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
 function findHeader(headers: Record<string, string>, candidates: string[]): string | undefined {

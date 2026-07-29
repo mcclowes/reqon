@@ -1148,12 +1148,25 @@ describe('interpolatePath', () => {
     expect(result).toBe('/orgs/acme/projects/widget');
   });
 
-  it('handles missing values as empty string', () => {
+  it('throws on an unresolved placeholder rather than emitting an empty segment (#260)', () => {
     const ctx = createContext();
 
-    const result = interpolatePath('/users/{nonExistent}', ctx, {});
+    // Previously interpolated to `/users/`, a silently broken URL.
+    expect(() => interpolatePath('/users/{nonExistent}', ctx, {})).toThrow(/\{nonExistent\}/);
+  });
 
-    expect(result).toBe('/users/');
+  it('names the fields in scope when a placeholder is unresolved (#260)', () => {
+    const ctx = createContext();
+
+    expect(() => interpolatePath('/users/{id}', ctx, { userId: 7 })).toThrow(/userId/);
+  });
+
+  it('throws when a nested path resolves to a non-object mid-walk (#260)', () => {
+    const ctx = createContext();
+    setVariable(ctx, 'id', 'GLOBAL-LEAK');
+    // `org` is a string, so `org.id` cannot resolve; this must fail loudly rather
+    // than leak the unrelated `id` context variable.
+    expect(() => interpolatePath('/orgs/{org.id}', ctx, { org: 'acme' })).toThrow(/\{org\.id\}/);
   });
 
   it('falls back to a context variable for a dotted path the current item lacks', () => {

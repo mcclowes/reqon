@@ -272,14 +272,21 @@ export class FetchParser extends ScheduleParser {
     this.consume(TokenType.COMMA, "Expected ','");
     const pageSize = parseInt(this.consume(TokenType.NUMBER, 'Expected page size').value, 10);
 
+    // Trailing string args, positional per type:
+    //   cursor(param, size, "cursorPath"[, "itemsPath"])
+    //   offset|page(param, size[, "itemsPath"])
     let cursorPath: string | undefined;
+    let itemsPath: string | undefined;
     if (type === 'cursor' && this.match(TokenType.COMMA)) {
       cursorPath = this.consume(TokenType.STRING, 'Expected cursor path').value;
+    }
+    if (this.match(TokenType.COMMA)) {
+      itemsPath = this.consume(TokenType.STRING, 'Expected items path').value;
     }
 
     this.consume(TokenType.RPAREN, "Expected ')'");
 
-    return { type, param, pageSize, cursorPath };
+    return { type, param, pageSize, cursorPath, itemsPath };
   }
 
   /** `allow: [404, 410]` - a bare `allow: 404` is read as a one-entry list. */

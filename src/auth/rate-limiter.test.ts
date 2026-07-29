@@ -551,6 +551,52 @@ describe('parseRateLimitHeaders', () => {
     const info = parseRateLimitHeaders(headers);
 
     expect(info.resetAt).toBeInstanceOf(Date);
+    // The ISO branch must actually parse the date, not fall through to 1970 (#251).
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+  });
+
+  it('discards a malformed numeric header rather than storing NaN (#251)', () => {
+    const info = parseRateLimitHeaders({
+      'x-ratelimit-remaining': 'unknown',
+      'x-ratelimit-limit': 'n/a',
+    });
+
+    expect(info.remaining).toBeUndefined();
+    expect(info.limit).toBeUndefined();
+  });
+
+  it('treats IETF RateLimit-Reset as delta seconds from now (#251)', () => {
+    const info = parseRateLimitHeaders({ 'RateLimit-Reset': '60' });
+
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+    const deltaMs = (info.resetAt as Date).getTime() - Date.now();
+    expect(deltaMs).toBeGreaterThan(55_000);
+    expect(deltaMs).toBeLessThanOrEqual(60_000);
+  });
+
+  it('does not read a small vendor reset value as a 1970 epoch (#251)', () => {
+    // Some vendors send x-ratelimit-reset as a small delta, not a full epoch.
+    const info = parseRateLimitHeaders({ 'X-RateLimit-Reset': '60' });
+
+    expect(info.resetAt?.getFullYear()).toBe(new Date().getFullYear());
+  });
+
+  it('clamps a past Retry-After HTTP-date to zero (#251)', () => {
+    const past = new Date(Date.now() - 60_000).toUTCString();
+    const info = parseRateLimitHeaders({ 'Retry-After': past });
+
+    expect(info.retryAfter).toBe(0);
+  });
+
+  it('keeps the throttle alive after a malformed header (#251)', () => {
+    const rl = new AdaptiveRateLimiter();
+    rl.configure('api', { strategy: 'throttle', fallbackRpm: 60 });
+    rl.recordResponse('api', {});
+    expect(rl.getThrottleDelay('api')).toBeGreaterThanOrEqual(0);
+
+    rl.recordResponse('api', parseRateLimitHeaders({ 'x-ratelimit-remaining': 'unknown' }));
+    // Previously NaN poisoned the pacing math and the lane never throttled again.
+    expect(Number.isNaN(rl.getThrottleDelay('api'))).toBe(false);
   });
 });
 
