@@ -579,6 +579,122 @@ describe('HttpClient', () => {
     });
   });
 
+  describe('response body release on retry paths (#253)', () => {
+    /** A Response whose body reports whether it was ever read or cancelled. */
+    function trackedResponse(status: number, headers?: Record<string, string>) {
+      let released = false;
+      const stream = new ReadableStream({
+        cancel() {
+          released = true;
+        },
+      });
+      return { response: new Response(stream, { status, headers }), wasReleased: () => released };
+    }
+
+    it('releases the body of a 429 before retrying', async () => {
+      const first = trackedResponse(429, { 'Retry-After': '1' });
+      const responses = [first.response, new Response('{}', { status: 200 })];
+      globalThis.fetch = vi.fn(async () => responses.shift()!);
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      const promise = client.request(
+        { method: 'GET', path: '/x' },
+        { maxAttempts: 2, backoff: 'constant', initialDelay: 10 }
+      );
+      await vi.advanceTimersByTimeAsync(1500);
+      await promise;
+
+      expect(first.wasReleased()).toBe(true);
+    });
+
+    it('releases the body of a retried 5xx', async () => {
+      const first = trackedResponse(500);
+      const responses = [first.response, new Response('{}', { status: 200 })];
+      globalThis.fetch = vi.fn(async () => responses.shift()!);
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      const promise = client.request(
+        { method: 'GET', path: '/x' },
+        { maxAttempts: 2, backoff: 'constant', initialDelay: 10 }
+      );
+      await vi.advanceTimersByTimeAsync(1000);
+      await promise;
+
+      expect(first.wasReleased()).toBe(true);
+    });
+
+    it('releases the body of a 401 before retrying with a refreshed token', async () => {
+      const first = trackedResponse(401);
+      const responses = [first.response, new Response('{}', { status: 200 })];
+      globalThis.fetch = vi.fn(async () => responses.shift()!);
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        auth: {
+          getToken: async () => 'token',
+          refreshToken: vi.fn(async () => 'fresh-token'),
+        },
+      });
+
+      await client.request(
+        { method: 'GET', path: '/x' },
+        { maxAttempts: 2, backoff: 'constant', initialDelay: 1 }
+      );
+
+      expect(first.wasReleased()).toBe(true);
+    });
+  });
+
+  describe('circuit breaker sees 4xx (#254)', () => {
+    it('trips the breaker on repeated 403s instead of hammering forever', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 3 });
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        circuitBreaker: breaker,
+        sourceName: 'api',
+      });
+      globalThis.fetch = vi.fn(async () => new Response('denied', { status: 403 }));
+
+      for (let i = 0; i < 3; i++) {
+        await expect(
+          client.request(
+            { method: 'GET', path: '/x' },
+            { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+          )
+        ).rejects.toThrow(/403/);
+      }
+
+      await expect(
+        client.request(
+          { method: 'GET', path: '/x' },
+          { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+        )
+      ).rejects.toThrow(/Circuit breaker open/);
+      expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    it('does not count data-shaped 4xx like 404 toward the threshold', async () => {
+      const breaker = new CircuitBreaker({ failureThreshold: 3 });
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        circuitBreaker: breaker,
+        sourceName: 'api',
+      });
+      globalThis.fetch = vi.fn(async () => new Response('missing', { status: 404 }));
+
+      for (let i = 0; i < 5; i++) {
+        await expect(
+          client.request(
+            { method: 'GET', path: '/x' },
+            { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+          )
+        ).rejects.toThrow(/404/);
+      }
+
+      // Still reaching the network: the breaker never opened.
+      expect(globalThis.fetch).toHaveBeenCalledTimes(5);
+    });
+  });
+
   describe('response handling', () => {
     it('parses JSON response body', async () => {
       const client = new HttpClient({ baseUrl: 'https://api.example.com' });
@@ -738,47 +854,70 @@ describe('OAuth2AuthProvider', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('throws with the provider error when refresh fails, not Bearer undefined (#255)', async () => {
+  describe('refresh response validation (#255)', () => {
     const originalFetch = globalThis.fetch;
-    const provider = new OAuth2AuthProvider({
-      accessToken: 'old-token',
-      refreshToken: 'expired-refresh-token',
-      tokenEndpoint: 'https://auth.example.com/token',
+
+    beforeEach(() => {
+      vi.useFakeTimers();
     });
 
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({
-          error: 'invalid_grant',
-          error_description: 'Refresh token expired',
-        }),
-        { status: 400 }
+    afterEach(() => {
+      globalThis.fetch = originalFetch;
+      vi.useRealTimers();
+    });
+
+    const makeProvider = () =>
+      new OAuth2AuthProvider({
+        accessToken: 'old-token',
+        refreshToken: 'refresh-1',
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientId: 'client-id',
+        clientSecret: 'client-secret',
+      });
+
+    it('throws the provider-supplied reason on a failed refresh, keeping the old token', async () => {
+      const provider = makeProvider();
+      globalThis.fetch = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ error: 'invalid_grant', error_description: 'refresh token expired' }),
+            { status: 400 }
+          )
       );
+
+      await expect(provider.refreshToken()).rejects.toThrow(/invalid_grant/);
+      // The session must not be destroyed: "Bearer undefined" is worse than a 401.
+      expect(await provider.getToken()).toBe('old-token');
     });
 
-    await expect(provider.refreshToken()).rejects.toThrow(/invalid_grant/);
-    // The old token must be left intact, never overwritten with undefined.
-    expect(await provider.getToken()).toBe('old-token');
+    it('throws when a 2xx refresh response carries no access_token', async () => {
+      const provider = makeProvider();
+      globalThis.fetch = vi.fn(
+        async () => new Response(JSON.stringify({ token_type: 'Bearer' }), { status: 200 })
+      );
 
-    globalThis.fetch = originalFetch;
-  });
-
-  it('throws when a 200 response has no access_token (#255)', async () => {
-    const originalFetch = globalThis.fetch;
-    const provider = new OAuth2AuthProvider({
-      accessToken: 'old-token',
-      refreshToken: 'refresh-token',
-      tokenEndpoint: 'https://auth.example.com/token',
+      await expect(provider.refreshToken()).rejects.toThrow(/access_token/);
+      expect(await provider.getToken()).toBe('old-token');
     });
 
-    globalThis.fetch = vi.fn(async () => {
-      return new Response(JSON.stringify({ token_type: 'bearer' }), { status: 200 });
+    it('refreshes proactively before an expires_in lifetime lapses', async () => {
+      const provider = makeProvider();
+      let calls = 0;
+      globalThis.fetch = vi.fn(async () => {
+        calls++;
+        return new Response(JSON.stringify({ access_token: `token-${calls}`, expires_in: 3600 }), {
+          status: 200,
+        });
+      });
+
+      await provider.refreshToken();
+      expect(await provider.getToken()).toBe('token-1');
+
+      // Past 80% of the 3600s lifetime the provider refreshes ahead of the 401.
+      await vi.advanceTimersByTimeAsync(3000 * 1000);
+      expect(await provider.getToken()).toBe('token-2');
+      expect(calls).toBe(2);
     });
-
-    await expect(provider.refreshToken()).rejects.toThrow(/access_token/);
-    expect(await provider.getToken()).toBe('old-token');
-
-    globalThis.fetch = originalFetch;
   });
 
   it('coalesces concurrent refreshes into a single network call (single-flight)', async () => {

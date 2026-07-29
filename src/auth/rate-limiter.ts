@@ -139,6 +139,19 @@ export class AdaptiveRateLimiter implements RateLimiter {
         this.state.delete(key);
       }
     }
+
+    // Lane-keyed maps get the same sweep: entries whose moment is long past
+    // hold no useful state and would otherwise accumulate forever.
+    for (const [lane, until] of this.laneBackoff) {
+      if (until < staleThreshold) {
+        this.laneBackoff.delete(lane);
+      }
+    }
+    for (const [lane, slot] of this.pacing) {
+      if (slot < now - this.maxStaleAgeMs) {
+        this.pacing.delete(lane);
+      }
+    }
   }
 
   /**
@@ -399,20 +412,26 @@ export class AdaptiveRateLimiter implements RateLimiter {
 
     const state: RateLimitState = this.state.get(key) ?? {};
 
-    if (info.remaining !== undefined) {
+    // Belt-and-braces against non-finite values from callers that bypass
+    // parseRateLimitHeaders: a NaN stored here poisons every later comparison.
+    if (info.remaining !== undefined && Number.isFinite(info.remaining)) {
       state.remaining = info.remaining;
     }
 
-    if (info.limit !== undefined) {
+    if (info.limit !== undefined && Number.isFinite(info.limit)) {
       state.limit = info.limit;
     }
 
-    if (info.resetAt) {
+    if (info.resetAt && !isNaN(info.resetAt.getTime())) {
       state.resetAt = info.resetAt;
     }
 
-    if (info.retryAfter !== undefined) {
-      const until = new Date(now.getTime() + info.retryAfter * 1000);
+    const retryAfterSec =
+      info.retryAfter !== undefined && Number.isFinite(info.retryAfter)
+        ? info.retryAfter
+        : undefined;
+    if (retryAfterSec !== undefined) {
+      const until = new Date(now.getTime() + retryAfterSec * 1000);
       state.retryAfter = until;
       this.laneBackoff.set(source, until);
       // Push the lane's send slot past the backoff so callers already queued on
@@ -432,7 +451,7 @@ export class AdaptiveRateLimiter implements RateLimiter {
       const model = this.getModel(source);
       model?.penalize(source, now.getTime());
 
-      if (info.retryAfter === undefined && !model) {
+      if (retryAfterSec === undefined && !model) {
         const until = new Date(now.getTime() + RATE_LIMIT_DEFAULTS.REJECT_COOLOFF_MS);
         this.laneBackoff.set(source, until);
         this.pacing.set(source, Math.max(this.pacing.get(source) ?? 0, until.getTime()));
@@ -492,6 +511,31 @@ export class AdaptiveRateLimiter implements RateLimiter {
       resetInSeconds,
     };
   }
+}
+
+/**
+ * Parse a `Retry-After` header into a delay in ms, clamped to `maxDelayMs`.
+ * The header may be delta-seconds (`120`) or an HTTP-date; a date in the past or
+ * an unparseable value yields 0 and `undefined` respectively. Clamping stops a
+ * hostile/broken server from pinning the client for hours, and the date branch
+ * stops `parseInt` from turning a date into `NaN` → `sleep(NaN)` → a tight loop.
+ */
+export function parseRetryAfterMs(
+  value: string | null | undefined,
+  maxDelayMs: number
+): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const seconds = Number(trimmed);
+  let ms: number;
+  if (trimmed !== '' && Number.isFinite(seconds)) {
+    ms = seconds * 1000;
+  } else {
+    const when = Date.parse(trimmed);
+    if (Number.isNaN(when)) return undefined;
+    ms = when - Date.now();
+  }
+  return Math.min(Math.max(ms, 0), maxDelayMs);
 }
 
 /**

@@ -205,9 +205,10 @@ describe('CircuitBreaker', () => {
       expect(breaker.canProceed('TestAPI')).toBe(true); // takes the probe slot
       expect(breaker.getStatus('TestAPI').state).toBe('half_open');
 
-      // 403 is not a counted failure status, so it must not re-open the circuit,
-      // but it must release the probe slot rather than wedging half-open.
-      breaker.recordFailure('TestAPI', undefined, 403);
+      // 404 is not a counted failure status (data, not an outage), so it must
+      // not re-open the circuit, but it must release the probe slot rather
+      // than wedging half-open. (403 counts by default since #254.)
+      breaker.recordFailure('TestAPI', undefined, 404);
       expect(breaker.getStatus('TestAPI').state).toBe('half_open');
 
       // The next request is admitted as a fresh probe instead of being stuck.
