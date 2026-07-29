@@ -164,6 +164,13 @@ export const EXECUTION_DEFAULTS = {
   DEVELOPMENT_MODE: false,
   /** Whether to persist execution state by default */
   PERSIST_STATE: false,
+  /**
+   * Ceiling on how many `for ... concurrency N` iterations may run at once,
+   * regardless of the value a mission declares. Bounds resource use so a stray
+   * `concurrency 10000` can't open ten thousand simultaneous requests; the loop
+   * still processes every item, just with at most this many in flight.
+   */
+  MAX_LOOP_CONCURRENCY: 100,
 } as const;
 
 // ============================================

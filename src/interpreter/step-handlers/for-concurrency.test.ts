@@ -4,6 +4,8 @@ import type { Expression } from 'vague-lang';
 import { ForHandler, type ForHandlerDeps } from './for-handler.js';
 import { createContext, setVariable } from '../context.js';
 import type { ExecutionContext } from '../context.js';
+import { MemoryStore } from '../../stores/memory.js';
+import { EXECUTION_DEFAULTS } from '../../config/index.js';
 
 /** Resolves after `ms` of real time, so overlap is observable. */
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -79,6 +81,54 @@ describe('for loop concurrency', () => {
 
     expect(state.peak).toBe(3);
     expect(state.completed).toHaveLength(50);
+  });
+
+  it('caps in-flight iterations at the ceiling even when a mission asks for more (#262)', async () => {
+    const { deps, state } = trackingDeps(2);
+    setVariable(
+      deps.ctx,
+      'items',
+      Array.from({ length: 200 }, (_, i) => i)
+    );
+
+    // A stray `concurrency 1000` must not open 1000 at once.
+    await new ForHandler(deps).execute(loop('items', 1000));
+
+    expect(state.peak).toBe(EXECUTION_DEFAULTS.MAX_LOOP_CONCURRENCY);
+    expect(state.completed).toHaveLength(200);
+  });
+
+  it('emits liveness and checks for pause even when every item fails (#262)', async () => {
+    const ctx = createContext();
+    setVariable(
+      ctx,
+      'items',
+      Array.from({ length: 25 }, (_, i) => i)
+    );
+    const failures = new MemoryStore('failures');
+    ctx.stores.set('failures', failures);
+
+    const checkPause = vi.fn(async () => undefined);
+    const deps: ForHandlerDeps = {
+      ctx,
+      log: vi.fn(),
+      actionName: 'testAction',
+      checkPause,
+      executeStep: vi.fn(async () => {
+        await tick(1);
+        throw new Error('always fails');
+      }),
+    };
+
+    const step = {
+      ...loop('items', 4),
+      onError: { action: 'continue' as const, queue: 'failures' },
+    };
+    await new ForHandler(deps).execute(step);
+
+    // 25 attempts / heartbeat interval 10 => at least 2 heartbeats, despite zero
+    // successes. Previously the heartbeat fired off successes and never ran here.
+    expect(checkPause.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it('visits every item exactly once', async () => {

@@ -7,6 +7,7 @@ import type { ExecutionContext } from '../context.js';
 import { StepError } from '../../errors/index.js';
 import { SkipSignal, QueueSignal, markTolerated } from '../signals.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { EXECUTION_DEFAULTS } from '../../config/index.js';
 import type { DebugController, DebugSnapshot, DebugLocation } from '../../debug/index.js';
 
 /** Heartbeat interval for loop iterations */
@@ -61,7 +62,16 @@ export class ForHandler implements StepHandler<ForStep> {
 
     // A debugger needs deterministic, one-at-a-time stepping, so it wins over
     // any declared concurrency.
-    const concurrency = this.deps.debugController ? 1 : (step.concurrency ?? 1);
+    const declared = this.deps.debugController ? 1 : (step.concurrency ?? 1);
+    // Cap in-flight iterations regardless of what the mission asked for, so a
+    // stray `concurrency 10000` can't open ten thousand simultaneous requests
+    // (#262). Every item is still processed - just at most this many at once.
+    const concurrency = Math.min(declared, EXECUTION_DEFAULTS.MAX_LOOP_CONCURRENCY);
+    if (declared > EXECUTION_DEFAULTS.MAX_LOOP_CONCURRENCY) {
+      this.deps.log(
+        `Loop concurrency ${declared} exceeds the ${EXECUTION_DEFAULTS.MAX_LOOP_CONCURRENCY} ceiling; capping to ${EXECUTION_DEFAULTS.MAX_LOOP_CONCURRENCY}.`
+      );
+    }
     if (concurrency > 1) {
       await this.executeConcurrently(step, filtered, concurrency, originalCount);
       return;
@@ -183,6 +193,7 @@ export class ForHandler implements StepHandler<ForStep> {
     let next = 0;
     let processedCount = 0;
     let failedCount = 0;
+    let attempts = 0;
     let firstError: unknown;
 
     const worker = async (): Promise<void> => {
@@ -207,13 +218,16 @@ export class ForHandler implements StepHandler<ForStep> {
           await this.recordFailure(step, items[i], i, error);
         }
 
-        // Heartbeat on completions rather than a loop counter: with workers
-        // interleaving, completions are the only monotonic measure of progress.
-        if (processedCount % LOOP_HEARTBEAT_INTERVAL === 0) {
+        // Heartbeat off attempts, not successes: a loop whose items all fail
+        // must still emit liveness and check for a pause, or a million failing
+        // items looks hung and can't be paused (#262). Attempts are the only
+        // monotonic measure of progress when workers interleave.
+        attempts++;
+        if (attempts % LOOP_HEARTBEAT_INTERVAL === 0) {
           await this.deps.checkPause?.();
           this.deps.emit?.('loop.heartbeat', {
             variable: step.variable,
-            current: processedCount,
+            current: attempts,
             total: items.length,
             processedCount,
           });
