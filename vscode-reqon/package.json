@@ -4,6 +4,7 @@
   "description": "Syntax highlighting for Reqon keywords in .vague files - extends the Vague Language extension",
   "version": "0.1.0",
   "publisher": "mcclowes",
+  "license": "ISC",
   "repository": {
     "type": "git",
     "url": "https://github.com/mcclowes/reqon"
