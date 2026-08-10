@@ -54,14 +54,25 @@ proxy pools).
 | `npm run test:coverage` | Run tests with coverage report |
 | `npm run test:crash` | Crash-injection durability suite |
 | `npm run test:pg` | Postgres execution-log tests (needs a Postgres) |
+| `npm run check:docs` | Every reqon/vague block in the docs lexes; complete ones parse |
+| `npm run check:examples` | Every mission under `examples/` parses |
+| `npm run check:snippets` | `build` + `check:docs` + `check:examples` |
 | `npm run lint` | ESLint over `src/` |
 | `npm run format` | Prettier write over `src/` |
 | `npm run bench` | Performance benchmarks |
 
-CI gates on `typecheck`, `lint`, `test:run`, `test:crash`, and `test:pg`. The
-pre-commit hook runs lint-staged (eslint + prettier) and the full test suite, but
-not `typecheck` - vitest compiles with esbuild, which strips types without
-checking them. Run `npm run typecheck` yourself before pushing.
+The two snippet checkers import from `dist/`, so build first when running them on
+their own. `npm run check:snippets` does that for you.
+
+CI gates on `typecheck`, `lint`, `format:check`, `test:run`, `build`,
+`check:docs`, `check:examples`, `test:crash`, `test:pg`, and `npm audit`
+(critical severity, production dependencies only). The pre-commit hook runs
+lint-staged (eslint + prettier) and the full test suite, but not `typecheck` -
+vitest compiles with esbuild, which strips types without checking them. Run
+`npm run typecheck` yourself before pushing.
+
+If you change a documented DSL snippet, run `npm run check:snippets` before
+pushing. It's what stops the docs drifting into syntax the parser never accepted.
 
 ### Project Structure
 
@@ -188,9 +199,9 @@ This section documents how to release a new version of Reqon.
 ### Version Numbering
 
 We follow [Semantic Versioning](https://semver.org/):
-- **Patch** (0.2.0 → 0.2.1): Bug fixes, minor documentation updates
-- **Minor** (0.2.0 → 0.3.0): New features, backward-compatible changes
-- **Major** (0.2.0 → 1.0.0): Breaking changes
+- **Patch** (1.1.0 → 1.1.1): Bug fixes, minor documentation updates
+- **Minor** (1.1.0 → 1.2.0): New features, backward-compatible changes
+- **Major** (1.1.0 → 2.0.0): Breaking changes
 
 ### Release Steps
 
@@ -199,15 +210,16 @@ We follow [Semantic Versioning](https://semver.org/):
    npm run version:patch  # or version:minor, version:major
    ```
 
-2. **Update CHANGELOG.md:**
-   - Move items from `[Unreleased]` to a new version section
-   - Add the release date
-   - Update the comparison links at the bottom
+2. **Update the changelog** at `docusaurus/docs/changelog.md` (the root
+   `CHANGELOG.md` is just a pointer to the docs site). The release script
+   validates the format, so it needs both:
+   - a `## <version>` heading matching `package.json` exactly
+   - a `_Released YYYY-MM-DD_` line under it
 
 3. **Commit the version bump:**
    ```bash
-   git add package.json CHANGELOG.md
-   git commit -m "chore: release v0.3.0"
+   git add package.json docusaurus/docs/changelog.md
+   git commit -m "chore: release v1.2.0"
    git push origin main
    ```
 
@@ -217,7 +229,9 @@ We follow [Semantic Versioning](https://semver.org/):
    ```
 
    This will:
-   - Validate the changelog has the new version entry
+   - Check the working tree is clean (it exits if not) and warn if you aren't on `main`
+   - Validate the changelog has the new version entry and a release date
+   - Check the tag doesn't already exist
    - Run tests and build
    - Create and push the git tag
 
@@ -231,8 +245,8 @@ For alpha/beta/rc releases:
 
 ```bash
 # Manually set version
-npm version 0.3.0-alpha.1 --no-git-tag-version
-# Update CHANGELOG.md
+npm version 1.2.0-alpha.1 --no-git-tag-version
+# Update docusaurus/docs/changelog.md
 # Commit and run release
 npm run release
 ```
@@ -255,9 +269,9 @@ npm run release:dry-run  # Preview npm publish
 **Tag already exists:**
 ```bash
 # Delete local tag
-git tag -d v0.3.0
+git tag -d v1.2.0
 # Delete remote tag (if pushed by mistake)
-git push origin :refs/tags/v0.3.0
+git push origin :refs/tags/v1.2.0
 ```
 
 **Release workflow failed:**
