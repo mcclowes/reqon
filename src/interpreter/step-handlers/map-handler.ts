@@ -17,7 +17,6 @@ export class MapHandler implements StepHandler<MapStep> {
       mapped[mapping.field] = evaluate(mapping.expression, this.deps.ctx, source);
     }
 
-    // Store mapped result in response for next step
     this.deps.ctx.response = mapped;
     this.deps.log(`Mapped to ${step.targetSchema}`);
   }

@@ -19,7 +19,6 @@ export class SourceParser extends ReqonExpressionParser {
     this.consume(ReqonTokenType.SOURCE, "Expected 'source'");
     const name = this.consume(TokenType.IDENTIFIER, 'Expected source name').value;
 
-    // Check for 'from' clause (OAS spec path)
     let specPath: string | undefined;
     if (this.match(ReqonTokenType.FROM)) {
       specPath = this.consume(TokenType.STRING, 'Expected OAS spec path').value;

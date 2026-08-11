@@ -49,7 +49,6 @@ export class FileSyncStore implements SyncStore {
     const data = await readJsonFile<Record<string, SyncCheckpoint>>(this.filePath);
     if (data) {
       for (const [key, checkpoint] of Object.entries(data)) {
-        // Restore Date objects
         restoreDates(checkpoint as unknown as Record<string, unknown>, ['syncedAt']);
         this.checkpoints.set(key, checkpoint);
       }

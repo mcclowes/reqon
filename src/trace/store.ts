@@ -96,7 +96,6 @@ export class FileTraceStore implements TraceStore {
     const traceDir = this.getTraceDir(trace.id);
     await ensureDirectory(traceDir);
 
-    // Save metadata separately from snapshots for efficient listing
     const metadata: Omit<ExecutionTrace, 'snapshots'> & { snapshotCount: number } = {
       id: trace.id,
       mission: trace.mission,
@@ -136,7 +135,6 @@ export class FileTraceStore implements TraceStore {
     const traceDir = this.getTraceDir(traceId);
     await ensureDirectory(traceDir);
 
-    // Load current metadata to get snapshot count
     const metadataPath = this.getMetadataPath(traceId);
     const metadata = await readJsonFile<Record<string, unknown>>(metadataPath);
 
@@ -203,7 +201,6 @@ export class FileTraceStore implements TraceStore {
     const entries = await listFiles(this.baseDir, '');
     const traces: ExecutionTrace[] = [];
 
-    // Read metadata files from subdirectories
     for (const entry of entries) {
       if (entry.endsWith('metadata.json')) {
         const parsed = await readJsonFile<Record<string, unknown>>(entry);

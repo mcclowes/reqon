@@ -1,103 +1,67 @@
 import type {ReactNode} from 'react';
-import clsx from 'clsx';
+import Link from '@docusaurus/Link';
 import Heading from '@theme/Heading';
+
 import styles from './styles.module.css';
 
-type FeatureItem = {
-  title: string;
-  icon: string;
-  description: ReactNode;
-};
-
-const FeatureList: FeatureItem[] = [
+const features = [
   {
-    title: 'Declarative syntax',
-    icon: '📝',
-    description: (
-      <>
-        Write clean, readable pipelines that describe what you want, not how to do it.
-        Reqon handles pagination, retries, and error handling automatically.
-      </>
-    ),
+    marker: '01',
+    title: 'Fetch without babysitting',
+    description: 'Cursor, page, and offset pagination. Retries, backoff, rate limits, and circuit breakers are part of the language.',
+    tags: ['Pagination', 'Retries', 'Rate limits'],
   },
   {
-    title: 'Built-in best practices',
-    icon: '⚡',
-    description: (
-      <>
-        Automatic pagination, exponential backoff, rate limiting, circuit breakers,
-        and incremental sync are all built in. No boilerplate required.
-      </>
-    ),
+    marker: '02',
+    title: 'Transform in plain sight',
+    description: 'Map, validate, and branch with readable expressions. The pipeline stays close to the shape of your data.',
+    tags: ['Mapping', 'Validation', 'Matching'],
   },
   {
-    title: 'Multiple auth methods',
-    icon: '🔐',
-    description: (
-      <>
-        Support for OAuth 2.0, Bearer tokens, API keys, and Basic auth.
-        Automatic token refresh for OAuth flows.
-      </>
-    ),
-  },
-  {
-    title: 'OpenAPI integration',
-    icon: '📋',
-    description: (
-      <>
-        Load OpenAPI specs for type-safe API calls. Validate responses against
-        schema definitions automatically.
-      </>
-    ),
-  },
-  {
-    title: 'Flexible storage',
-    icon: '💾',
-    description: (
-      <>
-        Store data in memory, files, SQL (via PostgREST/Supabase), or NoSQL.
-        Create custom adapters for any backend.
-      </>
-    ),
-  },
-  {
-    title: 'Production ready',
-    icon: '🚀',
-    description: (
-      <>
-        Built-in scheduling with cron and intervals. Run as a daemon with
-        health checks, metrics, and graceful shutdown.
-      </>
-    ),
+    marker: '03',
+    title: 'Resume where you stopped',
+    description: 'Durable checkpoints, incremental sync, and execution traces make long-running jobs safe to restart and easy to inspect.',
+    tags: ['Checkpoints', 'Tracing', 'Scheduling'],
   },
 ];
 
-function Feature({title, icon, description}: FeatureItem) {
-  return (
-    <div className={clsx('col col--4')}>
-      <div className="text--center padding-horiz--md">
-        <div className={styles.featureIcon}>{icon}</div>
-        <Heading as="h3">{title}</Heading>
-        <p>{description}</p>
-      </div>
-    </div>
-  );
-}
-
 export default function HomepageFeatures(): ReactNode {
   return (
-    <section className={clsx(styles.features, 'features-section')}>
+    <section className={styles.features}>
       <div className="container">
-        <div className="text--center margin-bottom--xl">
-          <Heading as="h2">Why Reqon?</Heading>
-          <p className="hero__subtitle">
-            Stop writing boilerplate. Start building data pipelines.
+        <div className={styles.intro}>
+          <div>
+            <span className={styles.label}>One language, the whole pipeline</span>
+            <Heading as="h2">Less glue code.<br />More visible intent.</Heading>
+          </div>
+          <p>
+            Reqon turns the repetitive parts of API integration into readable
+            declarations. Pipelines stay small enough to review and explicit enough to trust.
           </p>
         </div>
-        <div className="row">
-          {FeatureList.map((props, idx) => (
-            <Feature key={idx} {...props} />
+
+        <div className={styles.grid}>
+          {features.map((feature) => (
+            <article className={styles.card} key={feature.marker}>
+              <span className={styles.marker}>{feature.marker}</span>
+              <Heading as="h3">{feature.title}</Heading>
+              <p>{feature.description}</p>
+              <div className={styles.tags}>
+                {feature.tags.map((tag) => <span key={tag}>{tag}</span>)}
+              </div>
+            </article>
           ))}
+        </div>
+
+        <div className={styles.foundation}>
+          <span>Works with the systems you already have</span>
+          <div>
+            <Link to="/docs/authentication/overview">OAuth 2.0</Link>
+            <Link to="/docs/openapi/overview">OpenAPI</Link>
+            <Link to="/docs/stores/postgrest">PostgREST</Link>
+            <Link to="/docs/observability/opentelemetry">OpenTelemetry</Link>
+            <Link to="/docs/advanced/mcp-integration">MCP</Link>
+          </div>
         </div>
       </div>
     </section>

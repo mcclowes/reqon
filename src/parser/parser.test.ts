@@ -75,6 +75,25 @@ describe('ReqonParser', () => {
     expect(fetchStep.retry).toMatchObject({ maxAttempts: 2, timeout: 250 });
   });
 
+  it('parses seeded Vague data generation steps', () => {
+    const program = parse(`
+      mission Fixtures {
+        schema Customer { score: int in 1..100 }
+        action Seed { generate 25 of Customer as customers { seed: 42 } }
+        run Seed
+      }
+    `);
+    const mission = program.statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('expected mission');
+
+    expect(mission.actions[0].steps[0]).toEqual({
+      type: 'GenerateStep',
+      count: 25,
+      schema: 'Customer',
+      as: 'customers',
+      seed: 42,
+    });
+  });
   it('parses fetch with pagination', () => {
     const source = `
       mission PaginatedFetch {
@@ -852,6 +871,43 @@ describe('ReqonParser', () => {
 
     it('accepts optional field markers (?)', () => {
       expect(() => parseSchemaMission('id: string, note: string?, meta: any?')).not.toThrow();
+    });
+
+    it('uses Vague schema ranges, uniqueness, and constraint blocks', () => {
+      const program = parseSchemaMission(`
+        id: unique string,
+        score: decimal in 0..1,
+        source: string,
+        constraints { score >= 0 and score <= 1 }
+      `);
+      const mission = program.statements[0];
+      if (mission.type !== 'MissionDefinition') throw new Error('expected mission');
+
+      expect(mission.schemas[0]).toMatchObject({
+        fields: [
+          { name: 'id', unique: true },
+          { name: 'score', fieldType: { type: 'RangeType' } },
+          { name: 'source' },
+        ],
+        constraints: { constraints: [{ type: 'LogicalExpression' }] },
+      });
+    });
+
+    it('uses Vague OpenAPI-backed schema inheritance', () => {
+      const program = parse(`
+        mission M {
+          schema Product from ecommerce.Product {}
+          action A { let value = 1 }
+          run A
+        }
+      `);
+      const mission = program.statements[0];
+      if (mission.type !== 'MissionDefinition') throw new Error('expected mission');
+
+      expect(mission.schemas[0].base).toEqual({
+        type: 'QualifiedName',
+        parts: ['ecommerce', 'Product'],
+      });
     });
   });
 

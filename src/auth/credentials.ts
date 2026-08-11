@@ -61,7 +61,6 @@ export function loadEnv(options: CredentialsConfig = {}): LoadEnvResult {
     }
   }
 
-  // Load each file (later files override earlier ones)
   for (const envPath of envFilePaths) {
     if (existsSync(envPath)) {
       const result = dotenvConfig({ path: envPath, override: true });
@@ -200,7 +199,6 @@ export function loadCredentials(
   // Load .env files first
   loadEnv(options);
 
-  // Resolve env var references in the config
   return resolveCredentials(config) as AuthCredentials;
 }
 

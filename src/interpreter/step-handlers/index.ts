@@ -1,6 +1,7 @@
 export { type StepHandler, type StepHandlerDeps } from './types.js';
 export { ForHandler, type ForHandlerDeps } from './for-handler.js';
 export { MapHandler } from './map-handler.js';
+export { GenerateHandler } from './generate-handler.js';
 export { ValidateHandler } from './validate-handler.js';
 export { StoreHandler } from './store-handler.js';
 export { MatchHandler, type MatchHandlerDeps, type MatchResult } from './match-handler.js';
@@ -12,7 +13,6 @@ export {
 } from './webhook-handler.js';
 export { PauseHandler, type PauseHandlerDeps, type PauseHandlerResult } from './pause-handler.js';
 
-// Export signals from the canonical location
 export {
   NoMatchError,
   AbortError,

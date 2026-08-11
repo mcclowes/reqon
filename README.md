@@ -6,6 +6,9 @@ A declarative DSL for fetch, map, validate pipelines - built on [Vague](https://
 
 Reqon lets you define data synchronization pipelines in a readable, declarative language. Think of it like Temporal.io, but with a focus on API data fetching and transformation.
 
+Reqon uses Vague schemas directly for constrained fixture generation, runtime
+validation, dataset reports, and golden-output comparisons.
+
 ## Example
 
 ```vague
@@ -56,7 +59,9 @@ mission SyncXeroInvoices {
 
 ## Installation
 
-Reqon is published as `reqon-dsl`; installing it adds the `reqon` CLI binary. Needs Node.js 22 or later.
+Reqon is published as `reqon-dsl`; installing it adds two binaries, `reqon` (the
+CLI) and `reqon-mcp` (the Model Context Protocol server). Needs Node.js 22 or
+later.
 
 ```bash
 npm install reqon-dsl
@@ -70,6 +75,8 @@ npm install reqon-dsl
 reqon sync-invoices.vague --verbose
 reqon sync-invoices.vague --auth ./credentials.json
 reqon sync-invoices.vague --dry-run
+reqon seed-fixtures.vague --report ./report.html
+reqon reconciliation.vague --compare ./golden.json
 ```
 
 ### Programmatic
@@ -313,10 +320,14 @@ Benefits:
 ## Development
 
 ```bash
-npm run build      # Compile TypeScript
-npm run test:run   # Run tests
-npm run dev        # Watch mode
+npm run build          # Compile TypeScript
+npm run test:run       # Run tests
+npm run dev            # Watch mode
+npm run check:snippets # Check every DSL snippet in the docs and examples parses
 ```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full script list, the CI gates,
+and the release process.
 
 ## License
 

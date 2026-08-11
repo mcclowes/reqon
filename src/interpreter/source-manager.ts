@@ -89,7 +89,6 @@ export class SourceManager {
    * Initialize a source definition, creating the HTTP client and configuring resilience.
    */
   async initializeSource(source: SourceDefinition, ctx: ExecutionContext): Promise<void> {
-    // Store source config for later reference
     this.sourceConfigs.set(source.name, source);
 
     const authProvider = this.createAuthProvider(source.name);
@@ -280,7 +279,6 @@ export class SourceManager {
     // If source has OAS spec, load it
     if (source.specPath) {
       try {
-        // Resolve relative spec paths against mission directory
         const specPath = this.config.missionDir
           ? resolve(this.config.missionDir, source.specPath)
           : source.specPath;
@@ -329,7 +327,6 @@ export class SourceManager {
 
     this.deps.circuitBreaker.configure(source.name, {
       failureThreshold: source.config.circuitBreaker.failureThreshold,
-      // Convert seconds to milliseconds for the circuit breaker
       resetTimeout: source.config.circuitBreaker.resetTimeout
         ? source.config.circuitBreaker.resetTimeout * 1000
         : undefined,

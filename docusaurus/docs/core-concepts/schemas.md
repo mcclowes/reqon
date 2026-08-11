@@ -46,23 +46,26 @@ schema User {
 
 ## Typed arrays
 
-Specify array element types:
+Wrap the element type in brackets:
 
 ```vague
 schema UserList {
-  users: array<User>,
+  users: [User],
   total: number
 }
 
 schema Order {
   id: string,
-  items: array<{
+  items: [{
     productId: string,
     quantity: number,
     price: number
-  }>
+  }]
 }
 ```
+
+Array element types are checked recursively during schema matching and named
+validation.
 
 ## Nested schemas
 
@@ -80,10 +83,10 @@ schema Invoice {
       country: string
     }
   },
-  lineItems: array<{
+  lineItems: [{
     description: string,
     amount: number
-  }>,
+  }],
   total: number
 }
 ```
@@ -108,6 +111,9 @@ schema Customer {
 }
 ```
 
+Referenced schemas are checked recursively when the referenced definition is
+registered in the same mission.
+
 ## Using schemas for validation
 
 Validate data against schemas:
@@ -117,7 +123,7 @@ action ValidateResponse {
   get "/users"
 
   for user in response.users {
-    validate user {
+    validate user as User {
       assume .id is string,
       assume .name is string,
       assume .email is string
@@ -224,31 +230,32 @@ action FetchPaginated {
 }
 ```
 
-## Schema inheritance (via Vague)
+## Vague schema features
 
-Extend schemas using Vague's composition:
+Reqon delegates schema parsing to Vague. Ranges, choices, unique fields,
+constraints, assumptions, invariants, generators, and OpenAPI-backed schemas
+are available inside missions:
 
 ```vague
-schema BaseEntity {
-  id: string,
-  createdAt: date,
-  updatedAt: date
-}
+import ecommerce from "./openapi.yaml"
 
-schema User {
-  ...BaseEntity,
-  name: string,
-  email: string
-}
+mission Catalog {
+  schema Product from ecommerce.Product {
+    score: decimal in 0..1,
+    status: "active" | "paused",
+    constraints { score >= 0 and score <= 1 }
+  }
 
-schema Order {
-  ...BaseEntity,
-  customerId: string,
-  total: number
+  action Load { generate 20 of Product as products { seed: 42 } }
+  run Load
 }
 ```
 
-For advanced schema features, see the [Vague documentation](https://github.com/mcclowes/vague).
+:::note
+The older JSON-shaped `[Type]`, inline object, `number`, `any`, and `type?`
+forms remain supported for existing missions. New schemas should use Vague's
+native grammar where possible.
+:::
 
 ## Best practices
 
@@ -257,7 +264,7 @@ For advanced schema features, see the [Vague documentation](https://github.com/m
 ```vague
 mission APISync {
   schema UserResponse {
-    users: array<User>,
+    users: [User],
     pagination: {
       page: number,
       total: number
@@ -315,12 +322,12 @@ schema XeroInvoice {
     ContactID: string,
     Name: string
   },
-  LineItems: array<{
+  LineItems: [{
     Description: string,
     Quantity: number,
     UnitAmount: number,
     LineAmount: number
-  }>,
+  }],
   Total: number,
   Status: string  // DRAFT, SUBMITTED, AUTHORISED, PAID
 }

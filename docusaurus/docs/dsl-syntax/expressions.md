@@ -14,9 +14,8 @@ Reqon uses the Vague expression language for data manipulation. This page covers
 3.14
 -100
 
-// Strings
+// Strings (double quotes only - there is no single-quoted form)
 "hello world"
-'single quotes also work'
 
 // Booleans
 true

@@ -98,7 +98,6 @@ export class StoreHandler implements StepHandler<StoreStep> {
       records.push({ key, value: record });
     }
 
-    // Check if we can use bulk operations
     if (merge && store.bulkUpsert) {
       await store.bulkUpsert(records);
     } else if (!merge && store.bulkSet) {

@@ -207,6 +207,7 @@ export type ActionStep =
   | StoreStep
   | MatchStep
   | LetStep
+  | GenerateStep
   | ApplyStep
   | WebhookStep
   | PauseStep;
@@ -216,6 +217,15 @@ export interface LetStep {
   type: 'LetStep';
   name: string;
   value: Expression;
+}
+
+// generate 100 of Customer as customers { seed: 42 }
+export interface GenerateStep {
+  type: 'GenerateStep';
+  count: number;
+  schema: string;
+  as: string;
+  seed?: number;
 }
 
 // wait { timeout: 60000, path: "/webhooks/callback", ... }
@@ -467,6 +477,8 @@ export interface TryExpression {
 export interface ValidateStep {
   type: 'ValidateStep';
   target: Expression;
+  /** Optional named Vague schema to validate before inline assumptions. */
+  schema?: string;
   constraints: ValidationConstraint[];
   /**
    * Optional `or { ... }` fallback: steps to run when a constraint fails,

@@ -3,10 +3,12 @@
  * Handles parsing of action definitions and all step types.
  */
 import {
+  StatementParser,
   TokenType,
   type Expression,
   type FieldDefinition,
   type SchemaDefinition,
+  type Token,
 } from 'vague-lang';
 import { ReqonTokenType } from '../lexer/tokens.js';
 import type {
@@ -20,6 +22,7 @@ import type {
   MatchArm,
   FlowDirective,
   LetStep,
+  GenerateStep,
   ApplyStep,
   TransformDefinition,
   TransformVariant,
@@ -175,6 +178,7 @@ export class ActionParser extends FetchParser {
     if (this.check(ReqonTokenType.STORE)) return this.parseStoreStep();
     if (this.check(TokenType.MATCH)) return this.parseMatchStep();
     if (this.check(TokenType.LET)) return this.parseLetStep();
+    if (this.check(ReqonTokenType.GENERATE)) return this.parseGenerateStep();
     if (this.check(ReqonTokenType.WAIT)) return this.parseWaitStep();
     if (this.check(ReqonTokenType.PAUSE)) return this.parsePauseStep();
 
@@ -405,6 +409,11 @@ export class ActionParser extends FetchParser {
     this.consume(TokenType.VALIDATE, "Expected 'validate'");
     const target = this.parseExpression();
 
+    let schema: string | undefined;
+    if (this.match(ReqonTokenType.AS)) {
+      schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name').value;
+    }
+
     this.consume(TokenType.LBRACE, "Expected '{'");
     const constraints: ValidationConstraint[] = [];
 
@@ -436,7 +445,7 @@ export class ActionParser extends FetchParser {
       this.consume(TokenType.RBRACE, "Expected '}' to close 'or' block");
     }
 
-    return { type: 'ValidateStep', target, constraints, fallback };
+    return { type: 'ValidateStep', target, schema, constraints, fallback };
   }
 
   /**
@@ -445,7 +454,6 @@ export class ActionParser extends FetchParser {
   protected parseStoreStep(): StoreStep {
     this.consume(ReqonTokenType.STORE, "Expected 'store'");
 
-    // Check for 'each' keyword (consume but not used yet - reserved for future)
     this.match(ReqonTokenType.EACH);
 
     const source = this.parseExpression();
@@ -552,13 +560,11 @@ export class ActionParser extends FetchParser {
 
     this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
 
-    // Check for flow directives
     const flow = this.tryParseFlowDirective();
     if (flow) {
       return { schema, status, isArray, guard, flow };
     }
 
-    // Check for step block
     if (this.check(TokenType.LBRACE)) {
       this.advance();
       const steps: ActionStep[] = [];
@@ -641,6 +647,29 @@ export class ActionParser extends FetchParser {
     const value = this.parseExpression();
 
     return { type: 'LetStep', name, value };
+  }
+
+  protected parseGenerateStep(): GenerateStep {
+    this.consume(ReqonTokenType.GENERATE, "Expected 'generate'");
+    const count = Number(this.consume(TokenType.NUMBER, 'Expected record count').value);
+    if (!Number.isSafeInteger(count) || count < 1) {
+      throw this.error('Generate count must be a positive integer');
+    }
+    this.consume(TokenType.OF, "Expected 'of'");
+    const schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name').value;
+    this.consume(ReqonTokenType.AS, "Expected 'as'");
+    const as = this.consumeIdentifier('Expected variable name').value;
+
+    let seed: number | undefined;
+    if (this.match(TokenType.LBRACE)) {
+      const key = this.consume(TokenType.IDENTIFIER, "Expected 'seed'").value;
+      if (key !== 'seed') throw this.error(`Unknown generate option: ${key}`);
+      this.consume(TokenType.COLON, "Expected ':'");
+      seed = Number(this.consume(TokenType.NUMBER, 'Expected numeric seed').value);
+      this.consume(TokenType.RBRACE, "Expected '}'");
+    }
+
+    return { type: 'GenerateStep', count, schema, as, seed };
   }
 
   /**
@@ -865,6 +894,46 @@ export class ActionParser extends FetchParser {
    * Parse a schema definition
    */
   parseSchema(): SchemaDefinition {
+    const end = this.findSchemaEnd();
+    if (end !== undefined) {
+      const tokens = this.tokens.slice(this.pos, end + 1).map(normalizeSchemaToken);
+      const last = tokens.at(-1) ?? this.peek();
+      tokens.push({ type: TokenType.EOF, value: '', line: last.line, column: last.column + 1 });
+
+      try {
+        const statement = new StatementParser(tokens, this.source).parseStatement();
+        if (statement?.type === 'SchemaDefinition') {
+          this.pos = end + 1;
+          return statement;
+        }
+      } catch {
+        // Reqon historically allowed JSON-shaped `[Type]` and inline object
+        // fields. Keep those schemas working while Vague owns its richer forms.
+      }
+    }
+
+    return this.parseLegacySchema();
+  }
+
+  private findSchemaEnd(): number | undefined {
+    let depth = 0;
+    let sawBody = false;
+
+    for (let index = this.pos; index < this.tokens.length; index++) {
+      const type = this.tokens[index].type;
+      if (type === TokenType.LBRACE) {
+        depth++;
+        sawBody = true;
+      } else if (type === TokenType.RBRACE && sawBody) {
+        depth--;
+        if (depth === 0) return index;
+      }
+    }
+
+    return undefined;
+  }
+
+  private parseLegacySchema(): SchemaDefinition {
     this.consume(TokenType.SCHEMA, "Expected 'schema'");
     const name = this.consume(TokenType.IDENTIFIER, 'Expected schema name').value;
 
@@ -945,4 +1014,17 @@ export class ActionParser extends FetchParser {
       name: typeName as 'string' | 'int' | 'decimal' | 'date' | 'boolean',
     };
   }
+}
+
+const REQON_TOKEN_TYPES = new Set<string>(Object.values(ReqonTokenType));
+
+/**
+ * Reqon keywords are valid Vague field names. Inside a schema, only `from`
+ * carries Reqon/Vague grammar meaning; the rest must be ordinary identifiers.
+ */
+function normalizeSchemaToken(token: Token): Token {
+  if (REQON_TOKEN_TYPES.has(String(token.type)) && token.value !== 'from') {
+    return { ...token, type: TokenType.IDENTIFIER };
+  }
+  return token;
 }

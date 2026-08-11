@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadMission, parse } from '../dist/index.js';
@@ -7,13 +7,14 @@ import { loadMission, parse } from '../dist/index.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const examplesDir = join(root, 'examples');
 
-// Collect example targets: top-level folders that are missions, or single files.
 const targets = [];
 for (const entry of readdirSync(examplesDir)) {
   const p = join(examplesDir, entry);
   if (!statSync(p).isDirectory()) continue;
   // Find .vague/.reqon files in this folder (recursively shallow)
-  const files = readdirSync(p).filter((f) => /\.(vague|reqon)$/.test(f));
+  const files = readdirSync(p)
+    .filter((f) => /\.(vague|reqon)$/.test(f))
+    .filter((f) => /\bmission\s+[A-Za-z_]/.test(readFileSync(join(p, f), 'utf8')));
   if (files.length === 0) {
     // maybe subfolders (e.g. multi-source-sync)
     targets.push({ name: entry, path: p });

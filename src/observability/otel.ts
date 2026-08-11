@@ -243,7 +243,6 @@ export class OTelEventAdapter {
         this.endFetchSpan(event);
         break;
       default:
-        // Add as event to current span
         this.addEventToCurrentSpan(event);
     }
   }

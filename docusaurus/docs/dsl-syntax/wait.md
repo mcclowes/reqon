@@ -206,10 +206,8 @@ mission PaymentProcessing {
       PaymentSuccess -> {
         store { id: paymentId, status: "completed" } -> payments { key: .id }
       },
-      PaymentFailed -> {
-        store { id: paymentId, status: "failed", error: response.error } -> payments { key: .id }
-        abort "Payment failed"
-      },
+      PaymentFailed ->
+        store { id: paymentId, status: "failed", error: response.error } -> payments { key: .id },
       _ -> abort "Unexpected webhook payload"
     }
   }

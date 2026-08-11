@@ -259,7 +259,9 @@ action FetchUsers {
 
 action TransformUsers {
   for user in rawUsers {
-    map user -> StandardUser { /* ... */ }
+    map user -> StandardUser {
+      // field mappings omitted
+    }
     store user -> users { key: .id }
   }
 }

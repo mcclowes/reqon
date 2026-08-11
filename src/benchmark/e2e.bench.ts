@@ -17,7 +17,6 @@ import {
   generateLargeDSL,
 } from './fixtures.js';
 
-// Generate test data for stores
 function generateUsers(count: number): Record<string, unknown>[] {
   const users: Record<string, unknown>[] = [];
   const firstNames = ['John', 'Jane', 'Bob', 'Alice', 'Charlie', 'Diana'];
@@ -228,7 +227,6 @@ export async function runE2EBenchmarks(): Promise<void> {
   executorSuite.print();
 }
 
-// Run if executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   runE2EBenchmarks().catch(console.error);
 }

@@ -109,3 +109,6 @@ output.json
 .test-reqon-data/
 .test-scheduler*/
 .claude/settings.local.json
+
+# Added by saggar — local files that shouldn't be committed
+.saggar/**/*.local.*

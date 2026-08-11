@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { parse } from 'vague-lang';
 import { matchesSchema, findMatchingSchema } from './schema-matcher.js';
 import type { SchemaDefinition } from 'vague-lang';
 
@@ -63,6 +64,55 @@ describe('Schema Matcher', () => {
     it('allows null for optional fields', () => {
       const value = { id: 1, name: 'Alice', email: null };
       expect(matchesSchema(value, userSchema)).toBe(true);
+    });
+
+    it('enforces Vague ranges, superpositions, and schema constraints', () => {
+      const program = parse(`
+        schema Score {
+          value: int in 1..10,
+          grade: "pass" | "fail",
+          constraints { value >= 5 }
+        }
+      `);
+      const schema = program.statements[0];
+      if (schema.type !== 'SchemaDefinition') throw new Error('expected schema');
+
+      expect(matchesSchema({ value: 7, grade: 'pass' }, schema)).toBe(true);
+      expect(matchesSchema({ value: 4, grade: 'pass' }, schema)).toBe(false);
+      expect(matchesSchema({ value: 11, grade: 'pass' }, schema)).toBe(false);
+      expect(matchesSchema({ value: 7, grade: 'unknown' }, schema)).toBe(false);
+    });
+
+    it('validates referenced schemas recursively', () => {
+      const child: SchemaDefinition = {
+        type: 'SchemaDefinition',
+        name: 'Child',
+        fields: [
+          {
+            type: 'FieldDefinition',
+            name: 'id',
+            fieldType: { type: 'PrimitiveType', name: 'int' },
+          },
+        ],
+      };
+      const parent: SchemaDefinition = {
+        type: 'SchemaDefinition',
+        name: 'Parent',
+        fields: [
+          {
+            type: 'FieldDefinition',
+            name: 'child',
+            fieldType: { type: 'ReferenceType', path: { type: 'QualifiedName', parts: ['Child'] } },
+          },
+        ],
+      };
+      const schemas = new Map([
+        ['Child', child],
+        ['Parent', parent],
+      ]);
+
+      expect(matchesSchema({ child: { id: 1 } }, parent, schemas)).toBe(true);
+      expect(matchesSchema({ child: { id: 'bad' } }, parent, schemas)).toBe(false);
     });
   });
 

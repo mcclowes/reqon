@@ -11,6 +11,7 @@ export enum ReqonTokenType {
   RUN = 'RUN',
   FOR = 'FOR',
   MAP = 'MAP',
+  GENERATE = 'GENERATE',
   EACH = 'EACH',
   PAGINATE = 'PAGINATE',
   UNTIL = 'UNTIL',
@@ -28,7 +29,6 @@ export enum ReqonTokenType {
   PATCH = 'PATCH',
   DELETE = 'DELETE',
 
-  // Store types
   NOSQL = 'NOSQL',
   SQL = 'SQL',
   MEMORY = 'MEMORY',
@@ -119,6 +119,7 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   run: ReqonTokenType.RUN,
   for: ReqonTokenType.FOR,
   map: ReqonTokenType.MAP,
+  generate: ReqonTokenType.GENERATE,
   each: ReqonTokenType.EACH,
   paginate: ReqonTokenType.PAGINATE,
   until: ReqonTokenType.UNTIL,
@@ -141,7 +142,6 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   PATCH: ReqonTokenType.PATCH,
   DELETE: ReqonTokenType.DELETE,
 
-  // Store types
   nosql: ReqonTokenType.NOSQL,
   sql: ReqonTokenType.SQL,
   memory: ReqonTokenType.MEMORY,

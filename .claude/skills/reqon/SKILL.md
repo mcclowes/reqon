@@ -6,11 +6,12 @@ description: Use when writing or editing .vague files for Reqon declarative API 
 
 # Reqon
 
-Declarative DSL for fetch, map, validate pipelines. File extension: `.vague`
+Declarative DSL for fetch, map, validate pipelines. File extensions: `.vague` or
+`.reqon` (the loader tries `.vague` first).
 
 ## Quick Start
 
-```
+```vague
 mission SyncData {
   source API { auth: bearer, base: "https://api.example.com" }
   store items: memory("items")
@@ -28,12 +29,14 @@ mission SyncData {
 
 - `mission` - Pipeline container (sources, stores, schemas, actions, schedule)
 - `source` - API: auth, base, headers, validateResponses, rateLimit, circuitBreaker, proxy.
-  Auth is bearer/basic/api_key/oauth2/none, but only **bearer and oauth2 are applied at
-  runtime** — basic/api_key parse and then send nothing
+  Auth is bearer/basic/api_key/oauth2/none, all four wired to a provider. A type
+  configured without its credentials throws at source init rather than sending an
+  unauthenticated request
 - `proxy: [...]` - Egress proxy pool, rotated per request; limiter/breaker keyed per IP
 - `source Name from "./spec.yaml"` - OAS-based source
-- `store` - Storage: `memory("name")`, `file("path")`, `postgrest("table")`. `sql()`/`nosql()`
-  have no adapter and throw unless `--dev` falls them back to local JSON
+- `store` - Storage: `memory("name")`, `file("name")` (writes `.reqon-data/name.json`),
+  `postgrest("table")`. `sql()`/`nosql()` have no adapter and throw unless `--dev` falls
+  them back to local JSON
 - `action` - Pipeline step: fetch, map, validate, store, wait
 - `run [A, B] then C` - Parallel then sequential execution
 - `match response { Schema -> ..., _ -> skip }` - Pattern matching

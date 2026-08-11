@@ -56,7 +56,6 @@ function validateChangelog(version) {
   const changelogPath = join(rootDir, 'docusaurus', 'docs', 'changelog.md');
   const changelog = readFileSync(changelogPath, 'utf-8');
 
-  // Check if the version has an entry in the changelog
   const versionHeader = `## ${version}`;
   if (!changelog.includes(versionHeader)) {
     console.error(`\nError: docusaurus/docs/changelog.md does not contain an entry for version ${version}`);
@@ -69,7 +68,6 @@ function validateChangelog(version) {
     process.exit(1);
   }
 
-  // Check the version has a release date (not just Unreleased)
   const versionRegex = new RegExp(`## ${version.replace(/\./g, '\\.')}[\\s\\S]*?_Released \\d{4}-\\d{2}-\\d{2}_`);
   if (!versionRegex.test(changelog)) {
     console.error(`\nError: Changelog entry for ${version} is missing a release date`);
@@ -140,7 +138,6 @@ async function main() {
   }
   console.log(`✓ Tag ${tag} does not exist yet`);
 
-  // Run tests and build
   if (!skipTests) {
     console.log('\n--- Running Tests ---');
     exec('npm run test:run');
@@ -151,7 +148,6 @@ async function main() {
     console.log('\n--- Skipping tests (--skip-tests) ---');
   }
 
-  // Create tag
   console.log('\n--- Creating Git Tag ---');
   exec(`git tag -a ${tag} -m "Release ${tag}"`);
 

@@ -2,7 +2,7 @@
 
 ## Simple API Sync
 
-```
+```vague
 mission SyncUsers {
   source API {
     auth: bearer,
@@ -25,7 +25,7 @@ mission SyncUsers {
 
 ## Multi-File Mission Structure
 
-```
+```text
 project/
 ├── mission.vague        # Main: sources, stores, schemas, pipeline
 ├── fetch-data.vague     # Action: FetchData
@@ -37,7 +37,7 @@ Actions in separate files are automatically merged into the mission.
 
 ## Error Handling with Match
 
-```
+```vague
 action FetchWithErrorHandling {
   get "/data"
 
@@ -69,7 +69,7 @@ action FetchWithErrorHandling {
 
 ## Data Transformation Pipeline
 
-```
+```vague
 action TransformData {
   for item in raw_items {
     map item -> NormalizedItem {
@@ -101,7 +101,7 @@ action TransformData {
 
 ## Parallel Execution
 
-```
+```vague
 mission ParallelSync {
   source GitHubAPI { auth: bearer, base: "https://api.github.com" }
 
@@ -121,8 +121,12 @@ mission ParallelSync {
 
   action Normalize {
     // Process both issues and PRs after parallel fetch
-    for issue in issues { ... }
-    for pr in prs { ... }
+    for issue in issues {
+      store issue -> work_items { key: .id, upsert: true }
+    }
+    for pr in prs {
+      store pr -> work_items { key: .id, upsert: true }
+    }
   }
 
   // FetchIssues and FetchPRs run in parallel, then Normalize
@@ -132,7 +136,7 @@ mission ParallelSync {
 
 ## Incremental Sync
 
-```
+```vague
 action IncrementalFetch {
   get "/items" {
     body: { "updated_after": lastSync },
@@ -144,7 +148,7 @@ action IncrementalFetch {
 
 ## Dead Letter Queue Pattern
 
-```
+```vague
 action ProcessWithDLQ {
   for item in pending {
     post "/process/{item.id}"
@@ -173,7 +177,7 @@ Filter iteration on the record's own fields. (A cross-store "not already in the
 fraud queue" check isn't expressible inline — a store can't be read from an
 expression — so carry the flag on the record itself.)
 
-```
+```vague
 action ProcessConditionally {
   for payment in pending_payments
     where .fraud_checked == true and .fraud_flagged == false {
@@ -192,16 +196,24 @@ action ProcessConditionally {
 
 ## OpenAPI Integration
 
-```
+```vague
 mission OpenAPIExample {
   source API from "./openapi.yaml" {
     auth: bearer,
     base: "https://api.example.com"
   }
 
+  store users: memory("users")
+
   action FetchUsers {
-    // Use operation ID from OpenAPI spec
-    call API.listUsers { query: { limit: 100 } }
+    // Use operation ID from OpenAPI spec. Method and path come from the spec.
+    // There is no `query:` option — the query string is built from `paginate`
+    // and `since` only. For an arbitrary fixed param, use a plain
+    // `get "/users?limit=100"` instead of a `call`.
+    call API.listUsers {
+      paginate: page(page, 100),
+      until: length(response) == 0
+    }
     store response -> users { key: .id }
   }
 
@@ -211,7 +223,7 @@ mission OpenAPIExample {
 
 ## Webhook/Callback Workflow
 
-```
+```vague
 mission PaymentWorkflow {
   source API { auth: bearer, base: "https://api.example.com" }
   store orders: memory("orders")
@@ -242,7 +254,7 @@ mission PaymentWorkflow {
 
 ## Scheduled Mission
 
-```
+```vague
 mission DailySyncWithSchedule {
   schedule: cron "0 9 * * 1-5" {
     timezone: "Europe/London",

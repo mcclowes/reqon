@@ -36,6 +36,12 @@ import { loadEnv, loadCredentials } from './auth/credentials.js';
 import { WebhookServer } from './webhook/index.js';
 import type { DebugController } from './debug/index.js';
 import { ControlServer } from './control/index.js';
+import {
+  buildDatasetReport,
+  compareDatasetOutput,
+  formatDatasetReport,
+  reportFormatFromPath,
+} from './reporting/index.js';
 
 /** Valid values for `--log-level`, quietest last. */
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -216,7 +222,9 @@ Options:
   --dev                Development mode: let sql/nosql stores fall back to local JSON files
   --auth <file>        JSON file with auth credentials (supports env var interpolation)
   --env <file>         Path to .env file (default: .env in current directory)
-  --output <path>      Export stores to JSON (file or directory)
+  --output <path>      Export all stores to a single JSON file, keyed by store name
+  --report <path>      Write Vague dataset statistics (.json, .md, or .html)
+  --compare <path>     Compare stores with a golden JSON dataset; fail on differences
   --daemon             Run as daemon, executing scheduled missions
   --once               Run scheduled missions once immediately, then exit
   --webhook            Enable webhook server for 'wait' steps
@@ -320,6 +328,11 @@ Control Server:
     outputPath = resolve(args[outputIndex + 1]);
   }
 
+  const rawReportPath = flagValue(args, '--report');
+  const reportPath = rawReportPath ? resolve(rawReportPath) : undefined;
+  const rawComparePath = flagValue(args, '--compare');
+  const comparePath = rawComparePath ? resolve(rawComparePath) : undefined;
+
   // Daemon mode: run scheduled missions
   if (daemon || once) {
     await runDaemon(filePath, {
@@ -417,6 +430,34 @@ Control Server:
         await mkdir(dirname(outputPath), { recursive: true });
         await writeFile(outputPath, JSON.stringify(storeData, null, 2));
         console.log(`  Output written to: ${outputPath}`);
+      }
+
+      if (reportPath) {
+        let schemaSource = filePath;
+        try {
+          schemaSource = await readFile(resolve(filePath), 'utf-8');
+        } catch {
+          // Folder missions have several sources; the path is still a stable
+          // report identifier when there is no single schema source.
+        }
+        const report = buildDatasetReport(storeData, schemaSource, result.duration);
+        await mkdir(dirname(reportPath), { recursive: true });
+        await writeFile(
+          reportPath,
+          formatDatasetReport(report, reportFormatFromPath(reportPath)),
+          'utf-8'
+        );
+        console.log(`  Dataset report written to: ${reportPath}`);
+      }
+
+      if (comparePath) {
+        const expected = JSON.parse(await readFile(comparePath, 'utf-8')) as Record<
+          string,
+          unknown[]
+        >;
+        const comparison = compareDatasetOutput(expected, storeData);
+        console.log(comparison.formatted);
+        if (!comparison.result.identical) process.exitCode = 1;
       }
     } else {
       console.log(`\n✗ Mission failed`);

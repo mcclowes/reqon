@@ -277,11 +277,9 @@ export class ConsoleOutput implements LogOutput {
     const prefix = `[${this.prefix}]`;
     const levelStr = entry.level.toUpperCase().padEnd(5);
 
-    // Format context as key=value pairs
     const contextStr =
       Object.keys(entry.context).length > 0 ? ` ${formatContext(entry.context)}` : '';
 
-    // Format duration if present
     const durationStr = entry.duration !== undefined ? ` (${entry.duration}ms)` : '';
 
     const message = `${prefix} ${this.timeStamp(entry)}${levelStr} ${entry.message}${contextStr}${durationStr}`;

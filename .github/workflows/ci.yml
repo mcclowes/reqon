@@ -91,6 +91,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Docs and examples are checked against the parser they document: every
+      # fenced reqon/vague block lexes, and every complete one parses. Stops the
+      # docs drifting into syntax the language never accepted.
+      - name: Check doc snippets parse
+        run: npm run check:docs
+
+      - name: Check examples parse
+        run: npm run check:examples
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest

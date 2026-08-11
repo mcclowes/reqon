@@ -62,7 +62,6 @@ export function generateCheckpointKey(
     return `${source}:${operationId}`;
   }
   if (endpoint) {
-    // Normalize endpoint (remove query params, trailing slashes)
     const normalized = endpoint.split('?')[0].replace(/\/+$/, '');
     return `${source}:${normalized}`;
   }

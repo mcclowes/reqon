@@ -13,9 +13,9 @@ const parseExample = (...segments: string[]) =>
   ).parse();
 
 /**
- * Every shipped example is documented as runnable, so a parse failure is a
- * broken doc. This is the gate that keeps that claim honest — it walks the
- * directory rather than naming files, so a new example is covered on arrival.
+ * Every shipped Reqon mission is documented as runnable, so a parse failure is
+ * a broken doc. Vague data files can share the .vague extension, but they use
+ * Vague's parser and are covered by their own integration tests.
  */
 describe('every shipped example parses', () => {
   const exampleFiles = readdirSync(examplesDir, { withFileTypes: true })
@@ -23,6 +23,9 @@ describe('every shipped example parses', () => {
     .flatMap((d) =>
       readdirSync(join(examplesDir, d.name))
         .filter((f) => f.endsWith('.vague') || f.endsWith('.reqon'))
+        .filter((f) =>
+          /\bmission\s+[A-Za-z_]/.test(readFileSync(join(examplesDir, d.name, f), 'utf8'))
+        )
         .map((f) => [d.name, f] as const)
     );
 
