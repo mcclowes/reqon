@@ -75,6 +75,26 @@ describe('ReqonParser', () => {
     expect(fetchStep.retry).toMatchObject({ maxAttempts: 2, timeout: 250 });
   });
 
+  it('parses seeded Vague data generation steps', () => {
+    const program = parse(`
+      mission Fixtures {
+        schema Customer { score: int in 1..100 }
+        action Seed { generate 25 of Customer as customers { seed: 42 } }
+        run Seed
+      }
+    `);
+    const mission = program.statements[0];
+    if (mission.type !== 'MissionDefinition') throw new Error('expected mission');
+
+    expect(mission.actions[0].steps[0]).toEqual({
+      type: 'GenerateStep',
+      count: 25,
+      schema: 'Customer',
+      as: 'customers',
+      seed: 42,
+    });
+  });
+
   it('parses fetch with pagination', () => {
     const source = `
       mission PaginatedFetch {

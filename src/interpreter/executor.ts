@@ -27,6 +27,7 @@ import type {
   StoreStep,
   MatchStep,
   LetStep,
+  GenerateStep,
   ApplyStep,
   TransformDefinition,
   WebhookStep,
@@ -57,6 +58,7 @@ import { FetchHandler } from './fetch-handler.js';
 import {
   ForHandler,
   MapHandler,
+  GenerateHandler,
   ValidateHandler,
   StoreHandler,
   MatchHandler,
@@ -1294,6 +1296,9 @@ export class MissionExecutor {
         case 'LetStep':
           await this.executeLet(step, execCtx);
           break;
+        case 'GenerateStep':
+          await this.executeGenerate(step, execCtx);
+          break;
         case 'ApplyStep':
           await this.executeApply(step, execCtx);
           break;
@@ -1698,6 +1703,10 @@ export class MissionExecutor {
     this.log(`Set variable '${step.name}' = ${JSON.stringify(redactNamedValue(step.name, value))}`);
   }
 
+  private async executeGenerate(step: GenerateStep, ctx: ExecutionContext): Promise<void> {
+    await new GenerateHandler({ ctx, log: (message) => this.log(message) }).execute(step);
+  }
+
   private async executeApply(step: ApplyStep, ctx: ExecutionContext): Promise<void> {
     const transform = this.transforms.get(step.transform);
     if (!transform) {
@@ -1837,6 +1846,7 @@ export class MissionExecutor {
       StoreStep: 'store',
       MatchStep: 'match',
       LetStep: 'let',
+      GenerateStep: 'generate',
       ApplyStep: 'apply',
       WebhookStep: 'webhook',
       PauseStep: 'pause',

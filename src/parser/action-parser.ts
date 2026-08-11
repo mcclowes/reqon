@@ -22,6 +22,7 @@ import type {
   MatchArm,
   FlowDirective,
   LetStep,
+  GenerateStep,
   ApplyStep,
   TransformDefinition,
   TransformVariant,
@@ -177,6 +178,7 @@ export class ActionParser extends FetchParser {
     if (this.check(ReqonTokenType.STORE)) return this.parseStoreStep();
     if (this.check(TokenType.MATCH)) return this.parseMatchStep();
     if (this.check(TokenType.LET)) return this.parseLetStep();
+    if (this.check(ReqonTokenType.GENERATE)) return this.parseGenerateStep();
     if (this.check(ReqonTokenType.WAIT)) return this.parseWaitStep();
     if (this.check(ReqonTokenType.PAUSE)) return this.parsePauseStep();
 
@@ -645,6 +647,29 @@ export class ActionParser extends FetchParser {
     const value = this.parseExpression();
 
     return { type: 'LetStep', name, value };
+  }
+
+  protected parseGenerateStep(): GenerateStep {
+    this.consume(ReqonTokenType.GENERATE, "Expected 'generate'");
+    const count = Number(this.consume(TokenType.NUMBER, 'Expected record count').value);
+    if (!Number.isSafeInteger(count) || count < 1) {
+      throw this.error('Generate count must be a positive integer');
+    }
+    this.consume(TokenType.OF, "Expected 'of'");
+    const schema = this.consume(TokenType.IDENTIFIER, 'Expected schema name').value;
+    this.consume(ReqonTokenType.AS, "Expected 'as'");
+    const as = this.consumeIdentifier('Expected variable name').value;
+
+    let seed: number | undefined;
+    if (this.match(TokenType.LBRACE)) {
+      const key = this.consume(TokenType.IDENTIFIER, "Expected 'seed'").value;
+      if (key !== 'seed') throw this.error(`Unknown generate option: ${key}`);
+      this.consume(TokenType.COLON, "Expected ':'");
+      seed = Number(this.consume(TokenType.NUMBER, 'Expected numeric seed').value);
+      this.consume(TokenType.RBRACE, "Expected '}'");
+    }
+
+    return { type: 'GenerateStep', count, schema, as, seed };
   }
 
   /**
