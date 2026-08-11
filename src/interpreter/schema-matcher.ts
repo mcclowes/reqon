@@ -86,8 +86,7 @@ function matchesFieldType(
     }
     const cardinality = fieldType.cardinality;
     const min = cardinality?.type === 'Cardinality' ? cardinality.min : 0;
-    const max =
-      cardinality?.type === 'Cardinality' ? cardinality.max : Number.POSITIVE_INFINITY;
+    const max = cardinality?.type === 'Cardinality' ? cardinality.max : Number.POSITIVE_INFINITY;
     return (
       value.length >= min &&
       value.length <= max &&
