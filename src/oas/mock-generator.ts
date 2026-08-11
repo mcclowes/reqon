@@ -48,7 +48,6 @@ function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): u
   // and we're past the top level (depth > 0). Use strict equality check
   // to avoid false positives from undefined/truthy coercion.
   if (schema.nullable === true && ctx.depth > 1) {
-    // Return null ~20% of the time for nullable fields deep in the tree
     if (Math.random() < 0.2) {
       return null;
     }
@@ -74,7 +73,6 @@ function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): u
   const deeper: GeneratorContext = { ...ctx, depth: ctx.depth + 1 };
 
   if (schema.allOf && schema.allOf.length > 0) {
-    // Merge all schemas
     const merged: Record<string, unknown> = {};
     for (const subSchema of schema.allOf) {
       const subValue = generateValue(subSchema as OpenAPIV3.SchemaObject, deeper);
@@ -93,7 +91,6 @@ function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): u
     return generateValue(schema.anyOf[0] as OpenAPIV3.SchemaObject, deeper);
   }
 
-  // Generate based on type
   switch (schema.type) {
     case 'string':
       return generateString(schema, ctx);
@@ -121,7 +118,6 @@ function generateValue(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): u
 }
 
 function generateString(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): string {
-  // Handle format
   switch (schema.format) {
     case 'date':
       return '2024-01-15';
@@ -133,7 +129,6 @@ function generateString(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): 
     case 'url':
       return 'https://example.com';
     case 'uuid': {
-      // Generate unique UUIDs using counter
       const id = ctx.counter.value++;
       const hex = id.toString(16).padStart(12, '0');
       return `550e8400-e29b-41d4-a716-${hex}`;
@@ -159,7 +154,6 @@ function generateString(schema: OpenAPIV3.SchemaObject, ctx: GeneratorContext): 
   const maxLen = schema.maxLength ?? 50;
   const targetLen = Math.max(minLen, Math.min(8, maxLen));
 
-  // Generate a simple mock string
   const base = 'mock_value';
   if (base.length >= targetLen) {
     return base.substring(0, targetLen);
@@ -171,10 +165,8 @@ function generateNumber(schema: OpenAPIV3.SchemaObject): number {
   const min = schema.minimum ?? 0;
   const max = schema.maximum ?? 100;
 
-  // Generate a value in range
   const value = min + (max - min) / 2;
 
-  // Handle multipleOf
   if (schema.multipleOf) {
     return Math.round(value / schema.multipleOf) * schema.multipleOf;
   }
@@ -186,10 +178,8 @@ function generateInteger(schema: OpenAPIV3.SchemaObject): number {
   const min = schema.minimum ?? 0;
   const max = schema.maximum ?? 100;
 
-  // Generate integer in range
   const value = Math.floor(min + (max - min) / 2);
 
-  // Handle multipleOf
   if (schema.multipleOf) {
     return Math.round(value / schema.multipleOf) * schema.multipleOf;
   }
@@ -198,12 +188,10 @@ function generateInteger(schema: OpenAPIV3.SchemaObject): number {
 }
 
 function generateArray(schema: OpenAPIV3.ArraySchemaObject, ctx: GeneratorContext): unknown[] {
-  // Check depth limit
   if (ctx.depth >= ctx.maxDepth) {
     return [];
   }
 
-  // Determine array length
   const minItems = schema.minItems ?? 0;
   const maxItems = schema.maxItems ?? ctx.arrayLength;
   const length = Math.max(minItems, Math.min(ctx.arrayLength, maxItems));
@@ -231,7 +219,6 @@ function generateObject(
   schema: OpenAPIV3.SchemaObject,
   ctx: GeneratorContext
 ): Record<string, unknown> {
-  // Check depth limit
   if (ctx.depth >= ctx.maxDepth) {
     return {};
   }

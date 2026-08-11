@@ -97,7 +97,6 @@ export class WebhookServer {
         this.running = true;
         this.log(`Webhook server listening on ${this.config.host}:${this.config.port}`);
 
-        // Start cleanup interval
         this.cleanupInterval = setInterval(
           () => this.cleanup(),
           WEBHOOK_DEFAULTS.CLEANUP_INTERVAL_MS
@@ -114,7 +113,6 @@ export class WebhookServer {
   async stop(): Promise<void> {
     if (!this.running) return;
 
-    // Clear cleanup interval
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = undefined;
@@ -133,7 +131,6 @@ export class WebhookServer {
     }
     this.pendingWaits.clear();
 
-    // Close server
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => {
@@ -201,13 +198,11 @@ export class WebhookServer {
       };
     }
 
-    // Check if already received enough events
     const events = await this.store.getEvents(registrationId);
     if (events.length >= registration.expectedEvents) {
       return { success: true, events };
     }
 
-    // Wait for more events
     const waitTimeout = timeout ?? registration.expiresAt.getTime() - Date.now();
 
     return new Promise((resolve) => {
@@ -312,7 +307,6 @@ export class WebhookServer {
       return;
     }
 
-    // Find matching registration
     const registration = await this.store.getRegistrationByPath(path);
     if (!registration) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -321,7 +315,6 @@ export class WebhookServer {
       return;
     }
 
-    // Check if registration is expired
     if (registration.expiresAt < new Date()) {
       res.writeHead(410, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Webhook registration expired' }));
@@ -371,7 +364,6 @@ export class WebhookServer {
       }
     }
 
-    // Parse request body
     let body: unknown = null;
     try {
       if (rawBody) {
@@ -416,12 +408,10 @@ export class WebhookServer {
     this.log(`Webhook received: ${path} (${receivedEvents}/${registration.expectedEvents})`);
     this.callbacks.onWebhookReceived?.(event);
 
-    // Check if all expected events received
     if (receivedEvents >= registration.expectedEvents) {
       const events = await this.store.getEvents(registration.id);
       this.callbacks.onRegistrationComplete?.(updated, events);
 
-      // Resolve every pending waiter for this registration.
       const waiters = this.pendingWaits.get(registration.id);
       if (waiters) {
         this.pendingWaits.delete(registration.id);
@@ -432,7 +422,6 @@ export class WebhookServer {
       }
     }
 
-    // Send response
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
       JSON.stringify({

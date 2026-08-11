@@ -1,0 +1,9 @@
+{
+  "command" : "claude -- \/rtf",
+  "createdAt" : "2026-07-29T21:34:22Z",
+  "enabled" : true,
+  "id" : "94164C73-ECBC-4194-ACF8-48C1CBA1230A",
+  "lastRunAt" : "2026-08-10T08:00:20Z",
+  "name" : "check docs",
+  "schedule" : "0 9 * * 1"
+}

@@ -42,7 +42,9 @@ mission Transform {
 
   action Process {
     for item in raw {
-      map item -> Processed { /* ... */ }
+      map item -> Processed {
+        // field mappings omitted
+      }
       store item -> processed { key: .id }
     }
   }
@@ -87,14 +89,18 @@ mission Pipeline {
 
   action Step2 {
     for item in step1 {
-      map item -> Enriched { /* ... */ }
+      map item -> Enriched {
+        // field mappings omitted
+      }
       store item -> step2 { key: .id }
     }
   }
 
   action Step3 {
     for item in step2 {
-      validate item { /* ... */ }
+      validate item {
+        // assumptions omitted
+      }
       store item -> final { key: .id }
     }
   }
@@ -152,7 +158,9 @@ mission Hybrid {
 
     // Process and save to persistent
     for item in cache {
-      map item -> Processed { /* ... */ }
+      map item -> Processed {
+        // field mappings omitted
+      }
       store item -> persistent { key: .id }
     }
   }

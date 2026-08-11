@@ -18,7 +18,9 @@ mission DebuggablePipeline {
     get "/data"
     store response -> data { key: .id }
     for item in data {
-      map item -> Processed { ... }
+      map item -> Processed {
+        // field mappings omitted
+      }
     }
   }
 

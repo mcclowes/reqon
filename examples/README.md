@@ -121,22 +121,23 @@ See: [github-sync](./github-sync/)
 
 ### Authentication Types
 ```vague
-source API { auth: none }           # Public API
-source API { auth: bearer }         # Bearer token
-source API { auth: oauth2 }         # OAuth2
-source API { auth: basic }          # Basic auth    — parses, NOT applied at runtime
-source API { auth: api_key }        # API key       — parses, NOT applied at runtime
+source API { auth: none }           // Public API
+source API { auth: bearer }         // Bearer token
+source API { auth: oauth2 }         // OAuth2
+source API { auth: basic }          // Basic auth
+source API { auth: api_key }        // API key (header or query parameter)
 ```
 
-Only `bearer` and `oauth2` build an auth provider. `basic` and `api_key` parse
-without error but attach nothing, so those requests go out **unauthenticated**.
-If your API accepts the key as a bearer token, use `bearer`.
+All five build an auth provider. Configuring an auth type without its
+credentials throws at source setup rather than sending the request
+unauthenticated, so a missing `REQON_API_TOKEN` fails the run instead of
+producing a wall of 401s.
 
 ### Pagination Strategies
 ```vague
-paginate: offset(page, 100)                    # Offset pagination
-paginate: page(page, 100)                      # Page number pagination
-paginate: cursor(cursor, 100, "nextCursor")   # Cursor pagination
+paginate: offset(page, 100)                   // Offset pagination
+paginate: page(page, 100)                     // Page number pagination
+paginate: cursor(cursor, 100, "nextCursor")   // Cursor pagination
 ```
 
 ### Incremental Sync
@@ -164,9 +165,11 @@ See: [webhook-payment](./webhook-payment/)
 Run missions on a schedule:
 ```vague
 mission DailyReport {
-  schedule: cron "0 6 * * *"
-  skipIfRunning: true
-  retryOnFailure: 3
+  schedule: cron "0 6 * * *" {
+    maxConcurrency: 1,
+    skipIfRunning: true,
+    retry: { maxRetries: 3 }
+  }
 }
 ```
 See: [scheduled-reports](./scheduled-reports/)
@@ -234,12 +237,12 @@ Two gotchas worth knowing:
 
 ### Store Types
 ```vague
-store temp: memory("cache")          # In-memory
-store export: file("output")         # JSON files under .reqon-data/
-store api: postgrest("table")        # PostgreSQL via PostgREST or Supabase
+store temp: memory("cache")          // In-memory
+store export: file("output")         // JSON files under .reqon-data/
+store api: postgrest("table")        // PostgreSQL via PostgREST or Supabase
 
-store structured: sql("table")       # No standalone adapter — see below
-store flexible: nosql("collection")  # No implementation — see below
+store structured: sql("table")       // No standalone adapter - see below
+store flexible: nosql("collection")  // No implementation - see below
 ```
 
 `sql` and `nosql` aren't database adapters. `sql` only works if you wire up a
@@ -252,11 +255,11 @@ See: [database-sync](./database-sync/), [postgrest-sync](./postgrest-sync/), [fi
 ### HTTP Methods (CRUD Operations)
 Full support for REST operations:
 ```vague
-get "/resources"                     # Read
-post "/resources" { body: {...} }    # Create
-put "/resources/{id}" { body: {...} }   # Replace (full update)
-patch "/resources/{id}" { body: {...} } # Partial update
-delete "/resources/{id}"             # Delete
+get "/resources"                        // Read
+post "/resources" { body: {} }          // Create
+put "/resources/{id}" { body: {} }      // Replace (full update)
+patch "/resources/{id}" { body: {} }    // Partial update
+delete "/resources/{id}"                // Delete
 ```
 See: [crud-operations](./crud-operations/)
 

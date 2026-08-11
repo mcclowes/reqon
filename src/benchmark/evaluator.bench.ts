@@ -8,11 +8,9 @@ import { createContext, setVariable } from '../interpreter/context.js';
 import type { ExecutionContext } from '../interpreter/context.js';
 import { BenchmarkSuite } from './utils.js';
 
-// Create a rich test context
 function createTestContext(): ExecutionContext {
   const ctx = createContext();
 
-  // Set up variables
   setVariable(ctx, 'user', {
     id: '12345',
     firstName: 'John',
@@ -48,7 +46,6 @@ function createTestContext(): ExecutionContext {
   setVariable(ctx, 'x', 5);
   setVariable(ctx, 'y', 15);
 
-  // Set up response
   ctx.response = {
     data: {
       users: [
@@ -327,7 +324,6 @@ export async function runEvaluatorBenchmarks(): Promise<void> {
   stressSuite.print();
 }
 
-// Run if executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   runEvaluatorBenchmarks().catch(console.error);
 }

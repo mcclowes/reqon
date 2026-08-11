@@ -42,7 +42,6 @@ export interface ExecutionContext {
   // Named stores
   stores: Map<string, StoreAdapter>;
 
-  // Store type info (for observability events)
   storeTypes: Map<string, string>;
 
   // Named HTTP clients (sources)

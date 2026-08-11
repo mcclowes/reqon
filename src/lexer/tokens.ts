@@ -28,7 +28,6 @@ export enum ReqonTokenType {
   PATCH = 'PATCH',
   DELETE = 'DELETE',
 
-  // Store types
   NOSQL = 'NOSQL',
   SQL = 'SQL',
   MEMORY = 'MEMORY',
@@ -141,7 +140,6 @@ export const REQON_KEYWORDS: Record<string, ReqonTokenType> = {
   PATCH: ReqonTokenType.PATCH,
   DELETE: ReqonTokenType.DELETE,
 
-  // Store types
   nosql: ReqonTokenType.NOSQL,
   sql: ReqonTokenType.SQL,
   memory: ReqonTokenType.MEMORY,

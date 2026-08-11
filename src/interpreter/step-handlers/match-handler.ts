@@ -54,7 +54,6 @@ export class MatchHandler {
   async execute(step: MatchStep): Promise<void> {
     const value = evaluate(step.target, this.deps.ctx);
 
-    // Find matching arm, checking guards
     let matchedArm = null;
 
     for (const arm of step.arms) {
@@ -77,7 +76,6 @@ export class MatchHandler {
           continue;
         }
       } else if (arm.schema !== '_') {
-        // Check if this schema matches the value
         const schemaMatches = findMatchingSchema(value, this.deps.ctx.schemas, [arm.schema]);
         if (!schemaMatches) {
           continue;
@@ -111,7 +109,6 @@ export class MatchHandler {
     const matchedLabel = describeArm(matchedArm);
     this.deps.log(`Matched schema: ${matchedLabel}${matchedArm.guard ? ' (with guard)' : ''}`);
 
-    // Handle flow directive
     if (matchedArm.flow) {
       // 'continue' means proceed normally - don't throw
       if (matchedArm.flow.type === 'continue') {
@@ -120,7 +117,6 @@ export class MatchHandler {
       this.handleFlowDirective(matchedArm.flow, value);
     }
 
-    // Execute steps
     if (matchedArm.steps) {
       // Debug pause point - before match arm body (step-into mode)
       if (

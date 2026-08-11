@@ -101,7 +101,6 @@ export async function runParserBenchmarks(): Promise<void> {
   pipelineSuite.print();
 }
 
-// Run if executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   runParserBenchmarks().catch(console.error);
 }

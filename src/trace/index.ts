@@ -12,7 +12,6 @@ export type { TraceSnapshot, StoreSnapshot, LoopContext, ExecutionTrace } from '
 
 export { generateSnapshotId, createExecutionTrace, safeClone, truncateForTrace } from './state.js';
 
-// Store
 export type { TraceStore } from './store.js';
 export { FileTraceStore, MemoryTraceStore } from './store.js';
 
@@ -30,6 +29,5 @@ export type {
 } from './replay.js';
 export { TraceReplayer, createTraceReplayer } from './replay.js';
 
-// Log-backed trace view (time-travel as a view over the execution log)
 export type { LogTimelineEntry, LogTraceSummary } from './log-view.js';
 export { LogTraceView, traceTimelineFromLog } from './log-view.js';

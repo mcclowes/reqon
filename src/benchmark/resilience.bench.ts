@@ -30,7 +30,6 @@ export async function runResilienceBenchmarks(): Promise<void> {
     breaker.recordFailure('test-source', '/endpoint');
   });
 
-  // Configure operation
   cbSuite.addSync('configure', () => {
     const breaker = new CircuitBreaker();
     breaker.configure('new-source', {
@@ -90,7 +89,6 @@ export async function runResilienceBenchmarks(): Promise<void> {
     return await limiter.canProceed('test-api', '/test-endpoint');
   });
 
-  // Configure operation
   rlSuite.addSync('configure', () => {
     const rl = new AdaptiveRateLimiter();
     rl.configure('api', {
@@ -101,7 +99,6 @@ export async function runResilienceBenchmarks(): Promise<void> {
     });
   });
 
-  // Record response with rate limit info
   await rlSuite.addAsync('recordResponse-with-headers', async () => {
     const rl = new AdaptiveRateLimiter();
     rl.recordResponse(
@@ -181,14 +178,12 @@ export async function runResilienceBenchmarks(): Promise<void> {
 
       // Simulate 50 requests
       for (let i = 0; i < 50; i++) {
-        // Check circuit breaker
         try {
           cb.ensureCanProceed('api', '/data');
         } catch {
           continue;
         }
 
-        // Check rate limiter
         if (!(await rl.canProceed('api', '/data'))) {
           continue;
         }
@@ -215,7 +210,6 @@ export async function runResilienceBenchmarks(): Promise<void> {
   combinedSuite.print();
 }
 
-// Run if executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   runResilienceBenchmarks().catch(console.error);
 }

@@ -3,11 +3,13 @@
  * Verify that fenced Reqon/Vague code blocks in the docs actually lex and parse.
  *
  * - Every ```reqon / ```vague block is lexed (catches stray characters like `!`).
- * - Every such block that contains a `mission` declaration is fully parsed
- *   (catches structural/option errors). Partial snippets are lexed only.
+ * - Every such block that declares a `mission` or a top-level `schema` is fully
+ *   parsed (catches structural/option errors). Other partial snippets are lexed
+ *   only.
  *
- * Usage: node scripts/check-doc-snippets.mjs [docsDir]
- * Exits non-zero if any block fails.
+ * Usage: node scripts/check-doc-snippets.mjs [path...]
+ * Paths may be files or directories; defaults to the docs site plus the root
+ * markdown files. Exits non-zero if any block fails.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -15,7 +17,18 @@ import { fileURLToPath } from 'node:url';
 import { ReqonLexer, parse } from '../dist/index.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const docsDir = process.argv[2] ?? join(root, 'docusaurus/docs');
+const DEFAULT_TARGETS = [
+  'docusaurus/docs',
+  'README.md',
+  'CLAUDE.md',
+  'CONTRIBUTING.md',
+  'DURABILITY.md',
+  'examples/README.md',
+  // The agent-facing DSL reference drifts the same way the docs do, and nothing
+  // else reads it closely enough to notice.
+  '.claude/skills/reqon',
+].map((p) => join(root, p));
+const targets = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT_TARGETS;
 
 const LANGS = new Set(['reqon', 'vague']);
 const FENCE = /```(\w+)?\r?\n([\s\S]*?)```/g;
@@ -29,13 +42,23 @@ const PARTIAL_SNIPPET = [
   /Source must have (a )?base URL/,
   /Program must contain at least one mission/,
   /No mission found/,
+  // A schema shown next to a loose step (`schema Order {...}` then `match order
+  // {...}`). The schema itself parsed; the step just has no action to live in.
+  /Unexpected token: (match|get|post|put|patch|delete|for|map|validate|store|call|wait|pause|run)$/,
 ];
 const isPartial = (msg) => PARTIAL_SNIPPET.some((re) => re.test(msg));
 
-function walk(dir) {
+// Only a real declaration counts, not the word in a comment ("aborts the
+// mission if ..." used to trigger a full parse of a two-line snippet).
+const stripComments = (src) => src.replace(/\/\/[^\n]*/g, '');
+const DECLARES = /^[ \t]*(mission|schema)\s+\w+/m;
+const declaresTopLevel = (body) => DECLARES.test(stripComments(body));
+
+function walk(target) {
+  if (!statSync(target).isDirectory()) return /\.mdx?$/.test(target) ? [target] : [];
   const out = [];
-  for (const entry of readdirSync(dir)) {
-    const p = join(dir, entry);
+  for (const entry of readdirSync(target)) {
+    const p = join(target, entry);
     const s = statSync(p);
     if (s.isDirectory()) out.push(...walk(p));
     else if (/\.mdx?$/.test(p)) out.push(p);
@@ -51,7 +74,9 @@ const failures = [];
 let blocks = 0;
 let parsed = 0;
 
-for (const file of walk(docsDir).sort()) {
+const files = [...new Set(targets.flatMap(walk))].sort();
+
+for (const file of files) {
   const text = readFileSync(file, 'utf8');
   let m;
   while ((m = FENCE.exec(text)) !== null) {
@@ -67,8 +92,8 @@ for (const file of walk(docsDir).sort()) {
       failures.push({ file, startLine, phase: 'lex', message: String(err.message ?? err) });
       continue;
     }
-    // Full parse only for complete missions.
-    if (/\bmission\s+\w/.test(body)) {
+    // Full parse only for blocks that declare something top-level.
+    if (declaresTopLevel(body)) {
       parsed++;
       try {
         parse(body);

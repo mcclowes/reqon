@@ -64,20 +64,17 @@ function validateValue(
   path: string,
   errors: ValidationError[]
 ): void {
-  // Handle nullable
   if (value === null) {
     if (schema.nullable) return;
     errors.push({ path, message: 'Value is null but schema is not nullable' });
     return;
   }
 
-  // Handle undefined/missing
   if (value === undefined) {
     // Required check happens at object level
     return;
   }
 
-  // Check type
   const schemaType = schema.type;
 
   switch (schemaType) {
@@ -102,7 +99,6 @@ function validateValue(
       break;
   }
 
-  // Check enum
   if (schema.enum && !schema.enum.includes(value)) {
     errors.push({
       path,
@@ -259,7 +255,6 @@ function validateArray(
     });
   }
 
-  // Validate items
   const arraySchema = schema as OpenAPIV3.ArraySchemaObject;
   if (arraySchema.items) {
     const itemSchema = arraySchema.items as OpenAPIV3.SchemaObject;
@@ -287,7 +282,6 @@ function validateObject(
 
   const obj = value as Record<string, unknown>;
 
-  // Check required properties
   if (schema.required) {
     for (const prop of schema.required) {
       if (!(prop in obj)) {
@@ -299,7 +293,6 @@ function validateObject(
     }
   }
 
-  // Validate properties
   const properties = schema.properties as Record<string, OpenAPIV3.SchemaObject> | undefined;
   if (properties) {
     for (const [key, propSchema] of Object.entries(properties)) {
@@ -310,7 +303,6 @@ function validateObject(
     }
   }
 
-  // Handle additionalProperties
   if (schema.additionalProperties === false) {
     const allowedKeys = new Set(Object.keys(properties ?? {}));
     for (const key of Object.keys(obj)) {

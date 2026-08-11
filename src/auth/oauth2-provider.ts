@@ -32,7 +32,6 @@ export class OAuth2AuthProvider implements AuthProvider {
       throw new Error(`No tokens found for connection: ${this.connectionId}`);
     }
 
-    // Check if we need to refresh
     if (this.shouldRefresh(tokens)) {
       return this.refreshToken();
     }
@@ -106,7 +105,6 @@ export class OAuth2AuthProvider implements AuthProvider {
       scope: data.scope,
     };
 
-    // Calculate expiry
     if (data.expires_in) {
       newTokens.expiresAt = new Date(Date.now() + data.expires_in * 1000);
     }

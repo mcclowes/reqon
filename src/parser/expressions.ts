@@ -79,7 +79,6 @@ export class ReqonExpressionParser extends ReqonParserBase {
     return condition;
   }
 
-  // Parse a ternary branch - allows nested ternaries but skips superposition
   private parseTernaryBranch(): Expression {
     const expr = this.parseTernaryBranchOr();
 
@@ -126,7 +125,6 @@ export class ReqonExpressionParser extends ReqonParserBase {
       return { type: 'NotExpression', operand };
     }
 
-    // Skip superposition, go directly to comparison
     return this.parseComparison();
   }
 
@@ -217,13 +215,11 @@ export class ReqonExpressionParser extends ReqonParserBase {
       )
     ) {
       const token = this.advance();
-      // Normalize the operator value for NOT_EQUALS
       const operator = token.type === ReqonTokenType.NOT_EQUALS ? '!=' : token.value;
       const right = this.parseRange();
       left = { type: 'BinaryExpression', operator, left, right };
     }
 
-    // Check for 'is' type checking: expr is array, expr is string, etc.
     if (this.check(ReqonTokenType.IS)) {
       this.advance(); // consume 'is'
       const typeCheck = this.consumeName("Expected type name after 'is'").value;
@@ -462,7 +458,6 @@ export class ReqonExpressionParser extends ReqonParserBase {
   private parseObjectLiteral(): Expression {
     const properties: ObjectProperty[] = [];
 
-    // Handle empty object {}
     if (this.check(TokenType.RBRACE)) {
       this.advance();
       return { type: 'ObjectLiteral', properties } as unknown as Expression;

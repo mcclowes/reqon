@@ -323,7 +323,6 @@ export type EventType =
   // Step lifecycle
   | 'step.start'
   | 'step.complete'
-  // Fetch operations
   | 'fetch.start'
   | 'fetch.complete'
   | 'fetch.retry'

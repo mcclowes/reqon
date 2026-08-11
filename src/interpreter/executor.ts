@@ -397,7 +397,6 @@ export class MissionExecutor {
     }
     this.circuitBreaker.setCallbacks(cbCallbacks);
 
-    // Initialize execution store if persistence enabled
     if (config.persistState) {
       this.executionStore =
         config.executionStore ??
@@ -421,7 +420,6 @@ export class MissionExecutor {
       });
     }
 
-    // Update managers with log function now that logger is configured
     this.sourceManager = new SourceManager(
       {
         auth: config.auth,
@@ -446,7 +444,6 @@ export class MissionExecutor {
     // Initialize debug controller if provided
     this.debugController = config.debugController;
 
-    // Initialize trace store
     this.traceStore =
       config.traceStore ?? new FileTraceStore(`${config.dataDir ?? '.reqon-data'}/traces`);
 
@@ -472,7 +469,6 @@ export class MissionExecutor {
   async execute(program: ReqonProgram): Promise<ExecutionResult> {
     const startTime = Date.now();
 
-    // Find mission definition
     const mission = program.statements.find(
       (s): s is MissionDefinition => s.type === 'MissionDefinition'
     );
@@ -552,7 +548,6 @@ export class MissionExecutor {
     try {
       await this.executeMission(mission);
 
-      // Mark execution as completed
       if (this.executionState) {
         this.executionState.status = 'completed';
         this.executionState.completedAt = new Date();
@@ -586,7 +581,6 @@ export class MissionExecutor {
           error
         );
 
-        // Mark execution as failed
         if (this.executionState) {
           this.executionState.status = 'failed';
           this.executionState.completedAt = new Date();
@@ -625,7 +619,6 @@ export class MissionExecutor {
       }
     }
 
-    // Emit onExecutionComplete callback - count stages in a single pass
     const stageCounts = this.executionState?.stages.reduce(
       (acc, s) => {
         if (s.status === 'completed') acc.completed++;
@@ -709,7 +702,6 @@ export class MissionExecutor {
       }
 
       if (!this.executionState) {
-        // Create new execution state
         const stages = mission.pipeline.stages.map((s) => this.getStageName(s));
         this.executionState = createExecutionState({
           mission: mission.name,
@@ -722,7 +714,6 @@ export class MissionExecutor {
       }
     }
 
-    // Emit onExecutionStart callback
     this.config.progress?.onExecutionStart?.({
       executionId: this.executionState?.id ?? 'ephemeral',
       mission: mission.name,
@@ -793,25 +784,20 @@ export class MissionExecutor {
         ? new LogBackedSyncStore(this.executionLog, mission.name)
         : new FileSyncStore(mission.name, `${this.config.dataDir ?? '.reqon-data'}/sync`));
 
-    // Initialize sources using SourceManager
     await this.sourceManager.initializeSources(mission.sources, this.ctx);
 
-    // Initialize stores using StoreManager
     await this.storeManager.initializeStores(mission.stores, this.ctx);
 
-    // Initialize schemas (for match step schema matching)
     for (const schema of mission.schemas) {
       this.ctx.schemas.set(schema.name, schema);
       this.log(`Registered schema: ${schema.name}`);
     }
 
-    // Initialize transforms
     for (const transform of mission.transforms) {
       this.transforms.set(transform.name, transform);
       this.log(`Registered transform: ${transform.name}`);
     }
 
-    // Build action lookup
     const actions = new Map<string, ActionDefinition>();
     for (const action of mission.actions) {
       actions.set(action.name, action);
@@ -825,20 +811,17 @@ export class MissionExecutor {
       this.log(`Resuming from stage ${resumeIndex} (${stageName})`);
     }
 
-    // Execute pipeline
     for (let i = 0; i < mission.pipeline.stages.length; i++) {
       const stage = mission.pipeline.stages[i];
 
       // Check for pause request at safe point (between stages)
       await this.checkPause();
 
-      // Skip already completed stages when resuming
       if (i < resumeIndex) {
         this.log(`Skipping ${this.getStageName(stage)} (already completed)`);
         continue;
       }
 
-      // Check condition if present
       if (stage.condition) {
         const shouldRun = evaluate(stage.condition, this.ctx);
         if (!shouldRun) {
@@ -900,13 +883,11 @@ export class MissionExecutor {
       throw new Error(`Action not found: ${actionName}`);
     }
 
-    // Update stage state to running
     this.updateStageState(stageIndex, { status: 'running' });
     await this.saveExecutionState();
 
     const stageStartTime = Date.now();
 
-    // Emit onStageStart callback
     this.config.progress?.onStageStart?.({
       executionId: this.executionState?.id ?? 'ephemeral',
       mission: mission.name,
@@ -927,11 +908,9 @@ export class MissionExecutor {
       await this.executeAction(action);
       this.actionsRun.push(action.name);
 
-      // Mark stage as completed
       this.updateStageState(stageIndex, { status: 'completed' });
       await this.saveExecutionState();
 
-      // Emit onStageComplete callback (success)
       this.config.progress?.onStageComplete?.({
         executionId: this.executionState?.id ?? 'ephemeral',
         mission: mission.name,
@@ -955,7 +934,6 @@ export class MissionExecutor {
         throw error;
       }
 
-      // Mark stage as failed
       this.updateStageState(stageIndex, {
         status: 'failed',
         error: (error as Error).message,
@@ -1031,7 +1009,6 @@ export class MissionExecutor {
     const actionNames = stage.actions;
     const stageName = `[${actionNames.join(', ')}]`;
 
-    // Validate all actions exist
     const actionDefs: ActionDefinition[] = [];
     for (const name of actionNames) {
       const action = actions.get(name);
@@ -1041,13 +1018,11 @@ export class MissionExecutor {
       actionDefs.push(action);
     }
 
-    // Update stage state to running
     this.updateStageState(stageIndex, { status: 'running' });
     await this.saveExecutionState();
 
     const stageStartTime = Date.now();
 
-    // Emit onStageStart callback
     this.config.progress?.onStageStart?.({
       executionId: this.executionState?.id ?? 'ephemeral',
       mission: mission.name,
@@ -1075,7 +1050,6 @@ export class MissionExecutor {
         this.maxParallel()
       );
 
-      // Check for failures
       const failures: { name: string; error: Error }[] = [];
       for (let i = 0; i < results.length; i++) {
         const result = results[i];
@@ -1091,11 +1065,9 @@ export class MissionExecutor {
         throw new Error(`Parallel stage failed: ${errorMsg}`);
       }
 
-      // Mark stage as completed
       this.updateStageState(stageIndex, { status: 'completed' });
       await this.saveExecutionState();
 
-      // Emit onStageComplete callback (success)
       this.config.progress?.onStageComplete?.({
         executionId: this.executionState?.id ?? 'ephemeral',
         mission: mission.name,
@@ -1113,7 +1085,6 @@ export class MissionExecutor {
         success: true,
       });
     } catch (error) {
-      // Mark stage as failed
       this.updateStageState(stageIndex, {
         status: 'failed',
         error: (error as Error).message,
@@ -1834,7 +1805,6 @@ export class MissionExecutor {
 
     this.log('Pause requested - saving state and pausing execution');
 
-    // Save state as paused
     if (this.executionState) {
       this.executionState.status = 'paused';
       await this.saveExecutionState();
@@ -1897,7 +1867,6 @@ export class MissionExecutor {
     pauseReason: DebugPauseReason,
     ctx: ExecutionContext
   ): DebugSnapshot {
-    // Collect variables from context chain
     const variables: Record<string, unknown> = {};
     let current: ExecutionContext | undefined = ctx;
     while (current) {
@@ -1909,7 +1878,6 @@ export class MissionExecutor {
       current = current.parent;
     }
 
-    // Collect store info
     const stores: Record<string, { type: string; count: number }> = {};
     for (const [name, _store] of ctx.stores) {
       stores[name] = {

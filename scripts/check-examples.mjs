@@ -7,7 +7,6 @@ import { loadMission, parse } from '../dist/index.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const examplesDir = join(root, 'examples');
 
-// Collect example targets: top-level folders that are missions, or single files.
 const targets = [];
 for (const entry of readdirSync(examplesDir)) {
   const p = join(examplesDir, entry);

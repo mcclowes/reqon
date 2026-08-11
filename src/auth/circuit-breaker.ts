@@ -265,7 +265,6 @@ export class CircuitBreaker {
         entry.probeStartedAt = undefined;
       }
     } else if (entry.state === 'closed') {
-      // Clear old failures from window
       this.pruneOldFailures(entry);
       if (entry.config.failureRate > 0) {
         entry.successTimestamps.push(Date.now());
@@ -333,7 +332,6 @@ export class CircuitBreaker {
       entry.failures = entry.failureTimestamps.length;
       entry.lastFailureTime = now;
 
-      // Check if we should open the circuit
       const reason = this.openReason(entry, config);
       if (reason) {
         this.transitionTo(entry, 'open', source, endpoint, reason);

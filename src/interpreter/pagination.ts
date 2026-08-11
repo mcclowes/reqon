@@ -62,7 +62,6 @@ class ArrayFieldCache {
       return undefined;
     }
 
-    // Check if expired
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(key);
       return undefined;
@@ -332,7 +331,6 @@ export class CursorPaginationStrategy implements PaginationStrategy {
       }
     }
 
-    // Extract next cursor
     let nextCursor: string | undefined;
     if (this.config.cursorPath) {
       const cursorValue = extractNestedValue(data, this.config.cursorPath);

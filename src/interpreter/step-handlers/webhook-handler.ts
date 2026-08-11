@@ -49,7 +49,6 @@ export class WebhookHandler {
   async execute(step: WebhookStep): Promise<WebhookHandlerResult> {
     const { ctx, webhookServer, executionId, log, emit } = this.deps;
 
-    // Register webhook endpoint
     const timeout = step.timeout ?? 300000; // 5 minutes default
     const expectedEvents = step.expectedEvents ?? 1;
 
@@ -72,7 +71,6 @@ export class WebhookHandler {
       expectedEvents,
     });
 
-    // Set the webhook URL in context for use in subsequent steps
     ctx.response = {
       webhookId: registration.id,
       webhookUrl,
@@ -135,14 +133,12 @@ export class WebhookHandler {
 
     log(`Received ${events.length} webhook event(s)`);
 
-    // Set response to webhook events
     if (events.length === 1) {
       ctx.response = events[0].body;
     } else {
       ctx.response = events.map((e) => e.body);
     }
 
-    // Store events if storage configured
     if (step.storage) {
       const store = ctx.stores.get(step.storage.target);
       if (store) {
@@ -155,7 +151,6 @@ export class WebhookHandler {
             const keyValue = evaluate(step.storage.key, keyCtx);
             key = String(keyValue);
           } else {
-            // Generate a key from the event ID
             key = event.id;
           }
 

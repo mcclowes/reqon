@@ -20,13 +20,19 @@ Execute actions one after another:
 
 ```vague
 mission DataPipeline {
-  action Fetch { /* ... */ }
-  action Transform { /* ... */ }
-  action Export { /* ... */ }
+  // Bodies are left empty here to keep the focus on the pipeline
+  action Fetch { }
+  action Transform { }
+  action Export { }
 
   run Fetch then Transform then Export
 }
 ```
+
+:::note
+Reqon only has `//` line comments. There is no `/* ... */` block comment, so an
+elided body is written as an empty `{ }` or a `//` line inside the braces.
+:::
 
 Each action completes before the next starts:
 
@@ -40,9 +46,9 @@ Execute multiple actions concurrently:
 
 ```vague
 mission ParallelFetch {
-  action FetchUsers { /* ... */ }
-  action FetchOrders { /* ... */ }
-  action FetchProducts { /* ... */ }
+  action FetchUsers { }
+  action FetchOrders { }
+  action FetchProducts { }
 
   run [FetchUsers, FetchOrders, FetchProducts]
 }
@@ -62,10 +68,10 @@ Combine parallel and sequential:
 
 ```vague
 mission ComplexPipeline {
-  action FetchCustomers { /* ... */ }
-  action FetchProducts { /* ... */ }
-  action MergeData { /* ... */ }
-  action Export { /* ... */ }
+  action FetchCustomers { }
+  action FetchProducts { }
+  action MergeData { }
+  action Export { }
 
   run [FetchCustomers, FetchProducts] then MergeData then Export
 }
@@ -212,7 +218,9 @@ mission ETL {
 
   action Transform {
     for item in raw {
-      map item -> Transformed { /* ... */ }
+      map item -> Transformed {
+        // field mappings omitted
+      }
       store item -> transformed { key: .id }
     }
   }
@@ -309,7 +317,7 @@ mission RetryPipeline {
     }
   }
 
-  action ProcessData { /* ... */ }
+  action ProcessData { }
 
   run FetchWithRetry then ProcessData
 }

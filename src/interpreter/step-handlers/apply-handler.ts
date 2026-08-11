@@ -25,7 +25,6 @@ export class ApplyHandler implements StepHandler<ApplyStep> {
     const source = evaluate(step.source, this.deps.ctx) as Record<string, unknown>;
     const transform = this.deps.transform;
 
-    // Find matching variant
     const variant = this.findMatchingVariant(source, transform.variants);
     if (!variant) {
       throw new Error(
@@ -34,13 +33,11 @@ export class ApplyHandler implements StepHandler<ApplyStep> {
       );
     }
 
-    // Apply the variant's mappings
     const mapped: Record<string, unknown> = {};
     for (const mapping of variant.mappings) {
       mapped[mapping.field] = evaluate(mapping.expression, this.deps.ctx, source);
     }
 
-    // Store result - either in a variable (if 'as' specified) or in response
     if (step.as) {
       setVariable(this.deps.ctx, step.as, mapped);
       this.deps.log(`Applied ${transform.name} to ${step.as}`);
@@ -65,7 +62,6 @@ export class ApplyHandler implements StepHandler<ApplyStep> {
     for (const variant of variants) {
       // Wildcard always matches
       if (variant.sourceSchema === '_') {
-        // Check guard if present
         if (variant.guard) {
           const guardResult = evaluate(variant.guard, this.deps.ctx, source);
           if (!guardResult) continue;
@@ -73,7 +69,6 @@ export class ApplyHandler implements StepHandler<ApplyStep> {
         return variant;
       }
 
-      // Check if source matches the schema
       const schema = this.deps.ctx.schemas.get(variant.sourceSchema);
       if (!schema) {
         // Schema not defined - skip this variant
@@ -82,7 +77,6 @@ export class ApplyHandler implements StepHandler<ApplyStep> {
       }
 
       if (matchesSchema(source, schema)) {
-        // Check guard if present
         if (variant.guard) {
           const guardResult = evaluate(variant.guard, this.deps.ctx, source);
           if (!guardResult) continue;

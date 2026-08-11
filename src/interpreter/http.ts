@@ -198,7 +198,6 @@ export class HttpClient {
           this.config.circuitBreaker.ensureCanProceed(requestLane);
         }
 
-        // Wait for rate limit capacity if we have a rate limiter
         if (this.config.rateLimiter && requestLane) {
           await this.config.rateLimiter.waitForCapacity(requestLane);
         }
@@ -216,7 +215,6 @@ export class HttpClient {
           lane?.fetchImpl ?? fetch
         );
 
-        // Extract and record rate limit info from response headers
         const responseHeaders: Record<string, string> = {};
         response.headers.forEach((value, key) => {
           responseHeaders[key] = value;
@@ -328,7 +326,6 @@ export class HttpClient {
 
         const data = await this.parseResponseBody<T>(response, url, req.method, timeout);
 
-        // Record success in circuit breaker
         if (this.config.circuitBreaker && requestLane && response.status < 500) {
           this.config.circuitBreaker.recordSuccess(requestLane);
         }
@@ -352,7 +349,6 @@ export class HttpClient {
           throw error;
         }
 
-        // Record network errors in circuit breaker
         if (this.config.circuitBreaker && requestLane) {
           this.config.circuitBreaker.recordFailure(requestLane, undefined, undefined, true);
         }
@@ -612,7 +608,6 @@ export class HttpClient {
         delay = initialDelay;
     }
 
-    // Add jitter (±10%)
     const jitter = delay * 0.1 * (Math.random() * 2 - 1);
     delay = Math.min(delay + jitter, maxDelay);
 

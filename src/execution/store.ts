@@ -54,7 +54,6 @@ export class FileExecutionStore implements ExecutionStore {
   }
 
   private deserialize(parsed: Record<string, unknown>): ExecutionState {
-    // Restore Date objects
     restoreDates(parsed, ['startedAt', 'completedAt']);
     if (parsed.checkpoint && typeof parsed.checkpoint === 'object') {
       restoreDates(parsed.checkpoint as Record<string, unknown>, ['createdAt']);
@@ -135,7 +134,6 @@ export class MemoryExecutionStore implements ExecutionStore {
     const state = this.states.get(id);
     if (!state) return null;
 
-    // Restore Date objects
     const restored = JSON.parse(JSON.stringify(state));
     restored.startedAt = new Date(restored.startedAt);
     if (restored.completedAt) {

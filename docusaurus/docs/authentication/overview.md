@@ -15,11 +15,14 @@ Reqon supports multiple authentication methods for connecting to APIs. Authentic
 | `none` | No authentication | Public APIs |
 | `bearer` | Bearer token | Most REST APIs |
 | `basic` | HTTP basic auth | Legacy systems |
-| `api_key` | API key in a header | Many SaaS APIs |
+| `api_key` | API key in a header or query parameter | Many SaaS APIs |
 | `oauth2` | OAuth 2.0 with refresh | Enterprise APIs |
 
-:::warning Runtime support
-All five types parse, but only `bearer` and `oauth2` actually attach credentials to requests today. `basic` and `api_key` parse without error, but no auth is applied at runtime, so requests go out unauthenticated. See the [basic](./basic.md) and [api key](./api-key.md) pages for details.
+:::note Missing credentials fail loudly
+All five types attach credentials at runtime. An auth type configured without
+the credentials it needs throws when the source is initialized, rather than
+sending the request unauthenticated, so a typo in an env var name fails the run
+instead of producing a wall of 401s.
 :::
 
 The `auth:` value in a `source` block is only the type. Credentials are never written inline in the source block. They come from a `--auth <file>` JSON file keyed by source name, or from `REQON_{SOURCE}_{FIELD}` environment variables.

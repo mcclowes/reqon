@@ -78,7 +78,6 @@ async function loadMissionFile(filePath: string): Promise<LoadResult> {
  * Action files contain standalone action definitions that get merged in.
  */
 async function loadMissionFolder(folderPath: string, options: LoadOptions): Promise<LoadResult> {
-  // Find root file - try extensions in order of preference
   const extensionsToTry = options.extension ? [options.extension] : SUPPORTED_EXTENSIONS;
 
   let rootFilePath: string | null = null;
@@ -103,7 +102,6 @@ async function loadMissionFolder(folderPath: string, options: LoadOptions): Prom
     );
   }
 
-  // Load root file
   const rootSource = await readFile(rootFilePath, 'utf-8');
   const rootProgram = parseSource(rootSource, rootFilePath);
 
@@ -115,7 +113,6 @@ async function loadMissionFolder(folderPath: string, options: LoadOptions): Prom
   const sourceFiles = [rootFilePath];
   const externalActions: ActionDefinition[] = [];
 
-  // Parse each action file
   for (const file of actionFiles) {
     const filePath = join(folderPath, file);
     sourceFiles.push(filePath);
@@ -123,7 +120,6 @@ async function loadMissionFolder(folderPath: string, options: LoadOptions): Prom
     const source = await readFile(filePath, 'utf-8');
     const actionProgram = parseSource(source, filePath);
 
-    // Extract action definitions from the file
     for (const stmt of actionProgram.statements) {
       if (stmt.type === 'ActionDefinition') {
         externalActions.push(stmt);
@@ -139,7 +135,6 @@ async function loadMissionFolder(folderPath: string, options: LoadOptions): Prom
   // Merge external actions into the mission
   const mergedProgram = mergeActions(rootProgram, externalActions);
 
-  // Validate that all actions referenced in the pipeline exist
   validatePipelineActions(mergedProgram);
 
   return {
@@ -163,7 +158,6 @@ function parseSource(source: string, filePath: string): ReqonProgram {
  * Merge external actions into the mission definition
  */
 function mergeActions(program: ReqonProgram, externalActions: ActionDefinition[]): ReqonProgram {
-  // Find the mission in the program
   const missionIndex = program.statements.findIndex(
     (s): s is MissionDefinition => s.type === 'MissionDefinition'
   );
@@ -191,13 +185,11 @@ function mergeActions(program: ReqonProgram, externalActions: ActionDefinition[]
     actionMap.set(action.name, action);
   }
 
-  // Create updated mission with all actions
   const updatedMission: MissionDefinition = {
     ...mission,
     actions: Array.from(actionMap.values()),
   };
 
-  // Return updated program
   const updatedStatements = [...program.statements];
   updatedStatements[missionIndex] = updatedMission;
 
@@ -243,7 +235,6 @@ export async function isMissionFolder(path: string): Promise<boolean> {
 
     if (!stats.isDirectory()) return false;
 
-    // Check for any supported root file
     for (const ext of SUPPORTED_EXTENSIONS) {
       try {
         await stat(join(absolutePath, `mission${ext}`));

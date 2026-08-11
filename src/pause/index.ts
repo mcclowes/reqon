@@ -20,7 +20,6 @@ export {
   getPauseSummary,
 } from './state.js';
 
-// Store
 export type { PauseStore } from './store.js';
 export { FilePauseStore, MemoryPauseStore } from './store.js';
 export { LogBackedPauseStore } from './log-store.js';

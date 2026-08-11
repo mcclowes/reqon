@@ -267,7 +267,6 @@ const tools: Tool[] = [
   },
 ];
 
-// Create server instance
 const server = new Server(
   {
     name: 'reqon-mcp-server',
@@ -281,12 +280,10 @@ const server = new Server(
   }
 );
 
-// Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools };
 });
 
-// Handle tool execution
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
@@ -503,7 +500,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Handle resource listing
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   const resources: Resource[] = [
     {
@@ -514,7 +510,6 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
     },
   ];
 
-  // Add individual store resources
   for (const name of storeRegistry.keys()) {
     resources.push({
       uri: `reqon://stores/${name}`,
@@ -527,7 +522,6 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
   return { resources };
 });
 
-// Handle resource reading
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const { uri } = request.params;
 
@@ -584,9 +578,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   throw new Error(`Resource not found: ${uri}`);
 });
 
-// Start server
 async function main() {
-  // Parse CLI arguments
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--verbose' || args[i] === '-v') {
@@ -604,7 +596,6 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  // Log to stderr so it doesn't interfere with MCP protocol on stdout
   console.error('Reqon MCP Server running on stdio');
   console.error(
     serverConfig.allowEffects

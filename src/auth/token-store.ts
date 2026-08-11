@@ -54,7 +54,6 @@ export class InMemoryTokenStore implements TokenStore {
     const needsRefresh: string[] = [];
 
     for (const [connectionId, stored] of this.tokens) {
-      // Check access token expiry
       if (stored.expiresAt) {
         const expiresIn = stored.expiresAt.getTime() - now.getTime();
         if (expiresIn < buffer) {
@@ -63,7 +62,6 @@ export class InMemoryTokenStore implements TokenStore {
         }
       }
 
-      // Check refresh token expiry from non-use
       if (stored.refreshExpiresAt && stored.lastUsedAt) {
         const refreshExpiresIn = stored.refreshExpiresAt.getTime() - now.getTime();
         if (refreshExpiresIn < buffer) {
