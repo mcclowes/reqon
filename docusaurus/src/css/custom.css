@@ -235,6 +235,10 @@ html {
 }
 
 /* External link indicators */
+.navbar__item[href*="://"] > svg {
+  display: none;
+}
+
 .navbar__item[href*="://"]::after,
 .footer__link-item[href*="://"]::after {
   content: " \2197";
