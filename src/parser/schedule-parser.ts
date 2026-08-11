@@ -21,7 +21,6 @@ export class ScheduleParser extends SourceParser {
     let skipIfRunning: boolean | undefined;
     let retryOnFailure: ScheduleRetryConfig | undefined;
 
-    // Determine schedule type
     if (this.check(ReqonTokenType.EVERY)) {
       // Interval-based: schedule: every 6 hours
       scheduleType = 'interval';
@@ -43,7 +42,6 @@ export class ScheduleParser extends SourceParser {
     // Optional configuration block
     if (this.match(TokenType.LBRACE)) {
       while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
-        // Handle keyword tokens that can appear as option keys
         let key: string;
         if (this.check(ReqonTokenType.RETRY)) {
           this.advance();

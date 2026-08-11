@@ -39,7 +39,6 @@ export class StoreManager {
    * Initialize a store definition, creating the appropriate adapter.
    */
   async initializeStore(store: StoreDefinition, ctx: ExecutionContext): Promise<void> {
-    // Check for custom store adapter
     if (this.config.customStores?.[store.name]) {
       ctx.stores.set(store.name, this.config.customStores[store.name]);
       ctx.storeTypes.set(store.name, 'custom');

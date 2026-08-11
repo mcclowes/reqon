@@ -337,8 +337,8 @@ mission ScheduledSync {
     base: "https://api.example.com"
   }
 
-  store customers: sql("customers")
-  store orders: sql("orders")
+  store customers: postgrest("customers")
+  store orders: postgrest("orders")
   store syncLog: file("sync-log")
 
   action SyncCustomers {

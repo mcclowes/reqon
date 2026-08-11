@@ -91,7 +91,6 @@ export class PauseManager {
           active: true,
         };
 
-        // Register webhook if server available
         if (this.config.webhookServer) {
           const registration = await this.registerWebhookTrigger(
             options.executionId,
@@ -198,7 +197,6 @@ export class PauseManager {
       return false;
     }
 
-    // Mark resumed with webhook payload; false if another trigger won the race.
     const resumed = await this.markResumed(pause, 'webhook', payload);
     return resumed !== null;
   }
@@ -399,7 +397,6 @@ export class PauseManager {
       throw new Error('Webhook server not configured for webhook triggers');
     }
 
-    // Register a webhook listener that will call handleWebhook
     const registration = await this.config.webhookServer.register(executionId, {
       path,
       timeout,

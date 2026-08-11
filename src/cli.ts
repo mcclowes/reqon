@@ -216,7 +216,7 @@ Options:
   --dev                Development mode: let sql/nosql stores fall back to local JSON files
   --auth <file>        JSON file with auth credentials (supports env var interpolation)
   --env <file>         Path to .env file (default: .env in current directory)
-  --output <path>      Export stores to JSON (file or directory)
+  --output <path>      Export all stores to a single JSON file, keyed by store name
   --daemon             Run as daemon, executing scheduled missions
   --once               Run scheduled missions once immediately, then exit
   --webhook            Enable webhook server for 'wait' steps

@@ -104,19 +104,16 @@ export class Scheduler {
     this.running = true;
     this.state.startedAt = new Date();
 
-    // Load persisted state
     await this.loadState();
 
     this.log(`Scheduler started with ${Object.keys(this.state.jobs).length} jobs`);
 
-    // Start the check loop
     this.checkTimer = setInterval(() => {
       this.checkAndRun().catch((error) => {
         this.log(`Scheduler check error: ${error.message}`);
       });
     }, this.config.checkInterval!);
 
-    // Run initial check
     await this.checkAndRun();
   }
 
@@ -139,7 +136,6 @@ export class Scheduler {
     }
     this.retryTimers.clear();
 
-    // Save state
     await this.saveState();
 
     this.log('Scheduler stopped');
@@ -165,10 +161,8 @@ export class Scheduler {
         const schedule = scheduledMission.mission.schedule;
         if (!schedule) continue; // Mission must have schedule
 
-        // Check if job should run
         if (!shouldRunNow(schedule, job.lastRun, this.config.checkInterval)) continue;
 
-        // Check if already running
         if (job.isRunning && schedule.skipIfRunning !== false) {
           this.emitEvent({
             type: 'skipped',
@@ -209,13 +203,11 @@ export class Scheduler {
     });
 
     try {
-      // Create executor and run mission
       const executor = new MissionExecutor({
         ...this.executorConfig,
         verbose: this.config.verbose,
       });
 
-      // Create a minimal program with just this mission
       const program: ReqonProgram = {
         type: 'ReqonProgram',
         statements: [scheduledMission.mission],
@@ -387,7 +379,6 @@ export class Scheduler {
       const content = await readFile(statePath, 'utf-8');
       const savedState = JSON.parse(content) as SchedulerState;
 
-      // Merge saved state with registered jobs
       for (const [name, savedJob] of Object.entries(savedState.jobs)) {
         if (this.state.jobs[name]) {
           this.state.jobs[name].lastRun = savedJob.lastRun ? new Date(savedJob.lastRun) : undefined;

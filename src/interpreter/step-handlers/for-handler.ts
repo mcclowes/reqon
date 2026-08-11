@@ -49,7 +49,6 @@ export class ForHandler implements StepHandler<ForStep> {
     const collection = await this.getCollection(step);
     const originalCount = collection.length;
 
-    // Apply filter if present
     const filtered = step.condition
       ? collection.filter((item) => evaluate(step.condition!, this.deps.ctx, item))
       : collection;
@@ -81,7 +80,6 @@ export class ForHandler implements StepHandler<ForStep> {
       return;
     }
 
-    // Execute steps for each item
     for (let i = 0; i < filtered.length; i++) {
       const item = filtered[i];
 
@@ -89,7 +87,6 @@ export class ForHandler implements StepHandler<ForStep> {
       if (i > 0 && i % LOOP_HEARTBEAT_INTERVAL === 0) {
         await this.deps.checkPause?.();
 
-        // Emit heartbeat every N iterations
         this.deps.emit?.('loop.heartbeat', {
           variable: step.variable,
           current: i,
@@ -119,7 +116,6 @@ export class ForHandler implements StepHandler<ForStep> {
           loopInfo: { variable: step.variable, index: i, total: filtered.length },
         };
         if (this.deps.debugController.shouldPause(location)) {
-          // Create child context to capture loop variable
           const previewCtx = childContext(this.deps.ctx);
           setVariable(previewCtx, step.variable, item);
 
@@ -348,7 +344,6 @@ export class ForHandler implements StepHandler<ForStep> {
     setVariable(childCtx, step.variable, item);
 
     try {
-      // Execute each inner step with child context
       for (const innerStep of step.steps) {
         await this.deps.executeStep(innerStep, this.deps.actionName, childCtx);
       }

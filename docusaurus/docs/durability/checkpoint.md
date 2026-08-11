@@ -169,7 +169,9 @@ mission ETLPipeline {
 
   action Transform {
     for item in raw {
-      map item -> CleanedItem { ... }
+      map item -> CleanedItem {
+        // field mappings omitted
+      }
       store response -> cleaned { key: .id }
     }
   }
@@ -191,7 +193,7 @@ Each stage checkpoints independently. A failure in Load doesn't require re-runni
 ```vague
 mission ScheduledSync {
   checkpoint: afterStep
-  schedule: cron("0 2 * * *")  // 2 AM daily
+  schedule: cron "0 2 * * *"  // 2 AM daily
 
   action Sync {
     get "/updates" { since: lastSync }

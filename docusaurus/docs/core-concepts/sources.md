@@ -24,11 +24,13 @@ The `auth:` value is just the type; there's no sub-config in the DSL, and creden
 | `none` | No authentication |
 | `bearer` | Bearer token in the Authorization header |
 | `basic` | HTTP Basic authentication |
-| `api_key` | API key in a request header |
+| `api_key` | API key in a request header or query parameter |
 | `oauth2` | OAuth 2.0 with token refresh |
 
-:::note Runtime support
-Only `bearer` and `oauth2` are wired up at runtime today. `basic` and `api_key` parse fine, but no auth provider is attached, so requests go out unauthenticated. Treat them as not yet implemented.
+:::note Missing credentials fail loudly
+All five types attach credentials at runtime. An auth type configured without
+the credentials it needs throws when the source is initialized rather than
+sending the request unauthenticated.
 :::
 
 ### No authentication

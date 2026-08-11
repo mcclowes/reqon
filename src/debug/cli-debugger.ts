@@ -42,7 +42,6 @@ export class CLIDebugger extends BaseDebugController {
       console.log(`  Breakpoint: ${s.pauseReason.location}`);
     }
 
-    // Print variables summary
     const varKeys = Object.keys(s.variables);
     if (varKeys.length > 0) {
       const preview = varKeys
@@ -53,7 +52,6 @@ export class CLIDebugger extends BaseDebugController {
       console.log(`  Variables: { ${preview}${more} }`);
     }
 
-    // Print stores summary
     const storeEntries = Object.entries(s.stores);
     if (storeEntries.length > 0) {
       const storeInfo = storeEntries
@@ -65,7 +63,6 @@ export class CLIDebugger extends BaseDebugController {
       console.log(`  Stores: { ${storeInfo} }`);
     }
 
-    // Print response summary
     if (s.response !== undefined) {
       console.log(`  Response: ${this.formatValue(s.response)}`);
     }

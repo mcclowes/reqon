@@ -118,18 +118,15 @@ export function evaluate(
       return expr.value;
 
     case 'Identifier': {
-      // Check if it's a field on current object
       if (isRecord(current) && expr.name in current) {
         return current[expr.name];
       }
-      // Check variables
       const value = getVariable(ctx, expr.name);
       if (value !== undefined) return value;
       // Special case: 'response' refers to ctx.response
       if (expr.name === 'response') {
         return ctx.response;
       }
-      // Check if the identifier is a field on response
       if (isRecord(ctx.response) && expr.name in ctx.response) {
         return ctx.response[expr.name];
       }

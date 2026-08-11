@@ -71,7 +71,6 @@ export async function runLexerBenchmarks(): Promise<void> {
   suite.print();
 }
 
-// Run if executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   runLexerBenchmarks().catch(console.error);
 }

@@ -46,23 +46,29 @@ schema User {
 
 ## Typed arrays
 
-Specify array element types:
+Wrap the element type in brackets:
 
 ```vague
 schema UserList {
-  users: array<User>,
+  users: [User],
   total: number
 }
 
 schema Order {
   id: string,
-  items: array<{
+  items: [{
     productId: string,
     quantity: number,
     price: number
-  }>
+  }]
 }
 ```
+
+:::caution
+Matching only checks that the value is an array. Element types are recorded but
+not verified, so `[User]` and a bare `array` behave identically at match time.
+Use `validate` if you need the elements themselves checked.
+:::
 
 ## Nested schemas
 
@@ -80,10 +86,10 @@ schema Invoice {
       country: string
     }
   },
-  lineItems: array<{
+  lineItems: [{
     description: string,
     amount: number
-  }>,
+  }],
   total: number
 }
 ```
@@ -107,6 +113,12 @@ schema Customer {
   shippingAddress: Address?
 }
 ```
+
+:::caution
+A referenced schema is checked as "is an object", not against the referenced
+shape. `billingAddress: Address` and `billingAddress: object` match the same
+values. References document intent; they don't deepen the match.
+:::
 
 ## Using schemas for validation
 
@@ -224,9 +236,11 @@ action FetchPaginated {
 }
 ```
 
-## Schema inheritance (via Vague)
+## Schema inheritance
 
-Extend schemas using Vague's composition:
+Reqon has none. There is no spread (`...BaseEntity`) and no `schema User from
+BaseEntity`; both are parse errors. Repeat the shared fields in each schema, or
+pull them into a named field:
 
 ```vague
 schema BaseEntity {
@@ -236,19 +250,17 @@ schema BaseEntity {
 }
 
 schema User {
-  ...BaseEntity,
+  base: BaseEntity,
   name: string,
   email: string
 }
-
-schema Order {
-  ...BaseEntity,
-  customerId: string,
-  total: number
-}
 ```
 
-For advanced schema features, see the [Vague documentation](https://github.com/mcclowes/vague).
+:::note
+Reqon defines its own, smaller schema grammar rather than reusing Vague's. A
+schema is a flat list of `name: type` fields and nothing else, so Vague features
+like `refine`, `constraints`, contexts, and generators are not available here.
+:::
 
 ## Best practices
 
@@ -257,7 +269,7 @@ For advanced schema features, see the [Vague documentation](https://github.com/m
 ```vague
 mission APISync {
   schema UserResponse {
-    users: array<User>,
+    users: [User],
     pagination: {
       page: number,
       total: number
@@ -315,12 +327,12 @@ schema XeroInvoice {
     ContactID: string,
     Name: string
   },
-  LineItems: array<{
+  LineItems: [{
     Description: string,
     Quantity: number,
     UnitAmount: number,
     LineAmount: number
-  }>,
+  }],
   Total: number,
   Status: string  // DRAFT, SUBMITTED, AUTHORISED, PAID
 }

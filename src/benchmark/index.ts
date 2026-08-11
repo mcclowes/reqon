@@ -53,7 +53,6 @@ Examples:
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  // Parse arguments
   let suiteName = 'all';
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--help' || args[i] === '-h') {

@@ -4,11 +4,10 @@ sidebar_position: 4
 
 # API key authentication
 
-API key authentication sends a key in a request header. Many SaaS APIs use this method.
+API key authentication sends a key in a request header or query parameter. Many SaaS APIs use this method.
 
-:::warning Not applied at runtime
-`auth: api_key` parses, and Reqon recognizes API key credentials in a credentials file, but no auth provider is built for it yet. At runtime, requests to an `api_key` source go out **unauthenticated** — Reqon does not add the API key header. This page documents the configuration shape Reqon recognizes, but the key is not sent. If your API accepts the key as a bearer token (in `Authorization: Bearer ...`), use [bearer](./bearer.md) instead, which does work end to end.
-:::
+Configuring `auth: api_key` without an `apiKey` throws when the source is set
+up, rather than sending the request unauthenticated.
 
 ## Configuration
 
@@ -39,9 +38,30 @@ source API {
 |-------|----------|-------------|
 | `type` | Yes | Must be `"api_key"` |
 | `apiKey` | Yes | The API key value |
-| `headerName` | No | Header name for the key (default `X-API-Key`) |
+| `headerName` | No | Name of the header or query parameter carrying the key |
+| `apiKeyLocation` | No | `"header"` (default) or `"query"` |
 
-There is no query-parameter placement and no value prefix. The key is only ever a header value, and the header name defaults to `X-API-Key` when omitted.
+There is no value prefix: the key is sent verbatim. When `headerName` is
+omitted, it defaults to `X-API-Key` for header placement and `api_key` for
+query placement.
+
+### Key in a query parameter
+
+```json
+{
+  "API": {
+    "type": "api_key",
+    "apiKey": "${API_KEY}",
+    "apiKeyLocation": "query",
+    "headerName": "token"
+  }
+}
+```
+
+This sends `?token=<key>` on every request. `apiKeyLocation` is available in the
+credentials file and the programmatic `auth` option; there is no `REQON_*`
+environment variable for it, so a key discovered purely from the environment
+always travels as a header.
 
 ## Environment variables
 

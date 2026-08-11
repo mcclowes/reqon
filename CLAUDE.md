@@ -45,15 +45,17 @@ src/
 ├── oas/           # OpenAPI spec integration (loader, validator)
 ├── observability/ # Structured events, logging, OpenTelemetry integration
 ├── parser/        # Parser for mission/action/fetch/store syntax
-├── pause/         # Resource-free long pauses (state, store, manager)
+├── pause/         # Resource-free long pauses (state, store, log-backed store, manager)
 ├── scheduler/     # Cron/interval scheduling for missions
 ├── stores/        # Store adapters (memory, file, postgrest) + a batching wrapper.
-│                  # sql/nosql have no real backend: they throw unless --dev opts
+│                  # sql falls through to the PostgREST adapter when PostgREST
+│                  # options are set; otherwise sql/nosql throw unless --dev opts
 │                  # into the local JSON file fallback.
 ├── sync/          # Incremental sync checkpointing
 ├── trace/         # Time-travel debugging (recorder, replayer, snapshots)
 ├── utils/         # Shared utilities (async, path traversal, logger, atomic file
-│                  # writes, deep merge, secret redaction, long timeouts)
+│                  # writes, deep merge, secret redaction, long timeouts,
+│                  # constant-time compare, type guards)
 ├── webhook/       # Webhook server for async callbacks (wait step)
 ├── index.ts       # Main exports
 ├── plugin.ts      # Vague plugin integration
@@ -70,15 +72,22 @@ npm run test       # Run tests in watch mode
 npm run test:run   # Run tests once
 npm run test:crash # Crash-injection durability suite (src/durability/)
 npm run test:pg    # Postgres execution-log tests (needs a Postgres)
+npm run check:docs # Every reqon/vague block in the docs lexes; complete ones parse
+npm run check:examples # Every mission under examples/ parses
+npm run check:snippets # build + check:docs + check:examples
 npm run lint       # ESLint over src/
 npm run format     # Prettier write over src/
 npm run bench      # Run performance benchmarks
 ```
 
-CI gates on `typecheck`, `lint`, `test:run`, `test:crash`, and `test:pg`. The
-pre-commit hook runs lint-staged (eslint + prettier) and the full test suite, but
-not `typecheck` - vitest strips types without checking them, so run `typecheck`
-yourself before pushing.
+`check:docs` and `check:examples` read from `dist/`, so build before running them
+on their own (or use `check:snippets`, which builds first).
+
+CI gates on `typecheck`, `lint`, `format:check`, `test:run`, `build`,
+`check:docs`, `check:examples`, `test:crash`, `test:pg`, and `npm audit`
+(critical, production deps only). The pre-commit hook runs lint-staged (eslint +
+prettier) and the full test suite, but not `typecheck` - vitest strips types
+without checking them, so run `typecheck` yourself before pushing.
 
 ## DSL Syntax
 

@@ -250,7 +250,9 @@ mission DataPipelineWithReview {
 
   action Transform {
     for item in raw {
-      map item -> CleanedItem { ... }
+      map item -> CleanedItem {
+        // field mappings omitted
+      }
       store response -> cleaned { key: .id }
     }
   }
@@ -426,7 +428,7 @@ pause {
 
 // If it timed out, response is empty; check with a guarded match
 match response {
-  _ where response.approved == true -> { /* webhook received */ },
+  _ where response.approved == true -> continue,
   _ -> abort "Approval timeout"
 }
 ```

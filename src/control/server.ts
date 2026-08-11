@@ -165,7 +165,6 @@ export class ControlServer {
     // browser on another origin can't read /status.
     res.setHeader('Vary', 'Origin');
 
-    // Handle preflight
     if (method === 'OPTIONS') {
       res.writeHead(204);
       res.end();

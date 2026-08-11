@@ -78,7 +78,6 @@ export class TraceReplayer {
       throw new Error(`No traces found for mission: ${mission}`);
     }
 
-    // Load full trace with snapshots
     const fullTrace = await this.store.load(trace.id);
     if (!fullTrace) {
       throw new Error(`Failed to load trace: ${trace.id}`);
@@ -290,7 +289,6 @@ export class TraceReplayer {
 
     const variableChanges: VariableChange[] = [];
 
-    // Find variables that changed
     const allVars = new Set([...Object.keys(snap1.variables), ...Object.keys(snap2.variables)]);
 
     for (const varName of allVars) {

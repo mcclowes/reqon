@@ -445,7 +445,6 @@ export class ActionParser extends FetchParser {
   protected parseStoreStep(): StoreStep {
     this.consume(ReqonTokenType.STORE, "Expected 'store'");
 
-    // Check for 'each' keyword (consume but not used yet - reserved for future)
     this.match(ReqonTokenType.EACH);
 
     const source = this.parseExpression();
@@ -552,13 +551,11 @@ export class ActionParser extends FetchParser {
 
     this.consume(TokenType.RIGHT_ARROW, "Expected '->'");
 
-    // Check for flow directives
     const flow = this.tryParseFlowDirective();
     if (flow) {
       return { schema, status, isArray, guard, flow };
     }
 
-    // Check for step block
     if (this.check(TokenType.LBRACE)) {
       this.advance();
       const steps: ActionStep[] = [];

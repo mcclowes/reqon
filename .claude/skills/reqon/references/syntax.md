@@ -2,7 +2,7 @@
 
 ## Mission Structure
 
-```
+```text
 mission MissionName {
   // Sources (API connections)
   source SourceName { ... }
@@ -25,7 +25,7 @@ mission MissionName {
 
 ### Authentication Types
 
-```
+```vague
 // Bearer token (from env var)
 source API {
   auth: bearer,
@@ -33,13 +33,14 @@ source API {
   headers: { "Accept": "application/json" }
 }
 
-// API key — parses, but NO auth is applied at runtime (see note below)
+// API key. Sent as a header (default X-API-Key) or, with
+// apiKeyLocation: "query" in the credentials, as a query parameter.
 source API {
   auth: api_key,
   base: "https://api.example.com"
 }
 
-// Basic auth — parses, but NO auth is applied at runtime (see note below)
+// Basic auth. Sends base64(username:password) in the Authorization header.
 source API {
   auth: basic,
   base: "https://api.example.com"
@@ -56,13 +57,14 @@ source API {
 A source block accepts only `auth`, `base`, `headers`, `validateResponses`,
 `rateLimit`, `circuitBreaker`, and `proxy`. There is no inline `oauth:` block.
 
-**Only `bearer` and `oauth2` are wired to an auth provider.** `basic` and
-`api_key` parse without error but attach nothing, so those requests go out
-unauthenticated. If the API accepts the key as a bearer token, use `bearer`.
+**All four auth types are wired to a provider.** An auth type configured without
+the credentials it needs (a `bearer` with no token, a `basic` with no password)
+throws when the source is initialized, rather than sending an unauthenticated
+request. Set `auth: none` if that's what you mean.
 
 ### Rate Limiting
 
-```
+```vague
 source API {
   auth: bearer,
   base: "https://api.example.com",
@@ -79,7 +81,7 @@ When you know the server's limiter, model it so throttle uses the burst
 allowance instead of pacing flat. `refill` is tokens per second; the model
 self-calibrates downward on 429s and decays back up when they stop:
 
-```
+```vague
 source API {
   auth: none,
   base: "https://api.example.com",
@@ -96,7 +98,7 @@ Route a source's requests through one or more proxies. A list is a pool,
 rotated round-robin per request attempt, so a retry after a 429 leaves from a
 different IP than the attempt that earned it.
 
-```
+```vague
 source API {
   auth: none,
   base: "https://api.example.com",
@@ -122,9 +124,9 @@ Requires the optional peer dependency: `npm install undici`.
 
 ## Stores
 
-```
+```vague
 store items: memory("items")           // In-memory, lost on exit
-store items: file("./data/items.json") // JSON files under .reqon-data/
+store items: file("items")             // JSON at .reqon-data/items.json
 store items: postgrest("items_table")  // PostgREST/Supabase — the production option
 ```
 
@@ -135,7 +137,7 @@ Prefer `postgrest()`.
 
 ## Schemas
 
-```
+```vague
 schema User {
   id: int,
   name: string,
@@ -146,13 +148,16 @@ schema User {
 }
 ```
 
-Supported types: `int`, `string`, `boolean`, `decimal`, `date`, `array`, `object`
+Types checked when matching: `string`, `int` (`integer`), `decimal` (`number`,
+`float`, `double`), `boolean` (`bool`), `date` (`datetime`), `any`. Anything else
+(`array`, `object`, a nested schema name) parses and is matched permissively — it
+always passes.
 
 ## HTTP Operations
 
 ### Basic Fetch
 
-```
+```vague
 get "/users"
 post "/users" { body: { "name": "John" } }
 put "/users/{id}" { body: { "name": "Jane" } }
@@ -161,26 +166,36 @@ delete "/users/{id}"
 
 ### Full Options
 
-```
+```vague
 get "/users" {
   source: APISource,
   body: { "status": "active" },
   headers: { "X-Custom": "value" },
 
-  // Pagination
-  paginate: page(page, 100),           // Page-based
-  paginate: cursor(.next_cursor),      // Cursor-based
-  paginate: offset(offset, 50),        // Offset-based
+  // Pagination. Param name and page size are both required; the trailing
+  // string args are positional:
+  //   cursor(param, size, "cursorPath"[, "itemsPath"])
+  //   offset|page(param, size[, "itemsPath"])
+  paginate: page(page, 100),
+  paginate: cursor(after, 50, "meta.next", "data"),
+  paginate: offset(offset, 50, "data"),
 
   until: length(response) == 0,        // Stop condition
 
   // Retry configuration
   retry: {
     maxAttempts: 3,
-    backoff: "exponential",  // or "constant", "linear"
+    backoff: exponential,    // bare identifier, not a string: constant | linear | exponential
     initialDelay: 1000,      // ms
-    maxDelay: 60000          // ms
+    maxDelay: 60000,         // ms
+    timeout: 30000           // ms, per attempt
   },
+
+  // Treat these statuses as a non-error result rather than throwing
+  allow: [404, 410],
+
+  // Resumable, memory-bounded backfill (needs a durable execution log)
+  backfill: true,
 
   // Incremental sync
   since: lastSync
@@ -189,7 +204,7 @@ get "/users" {
 
 ## Pattern Matching
 
-```
+```vague
 match response {
   // Match array of schema type
   [UserSchema] -> { store response -> users { key: .id } },
@@ -207,7 +222,7 @@ match response {
 
 ## Loops and Iteration
 
-```
+```vague
 // Basic loop
 for user in users {
   // process each user
@@ -251,7 +266,7 @@ Notes:
 
 ## Mapping
 
-```
+```vague
 map input -> OutputSchema {
   id: .id,
   fullName: .firstName + " " + .lastName,
@@ -267,17 +282,28 @@ map input -> OutputSchema {
 
 ## Validation
 
-```
+```vague
 validate response {
-  assume length(.name) > 0
-  assume .age >= 0
-  assume .email contains "@"
+  assume length(.name) > 0,
+  assume .age >= 0,
+  assume .status in ["active", "pending"]
+}
+
+// Optional `or` block: run these steps on failure instead of throwing.
+// It takes action steps, not flow directives — `queue dlq` is a parse error here.
+validate response {
+  assume .amount > 0
+} or {
+  store response -> rejects { key: .id }
 }
 ```
 
+There is no `contains` operator. The binary operators are `+ - * / == != < >
+<= >=` and `in` (array membership, substring, or object own-key presence).
+
 ## Store Operations
 
-```
+```vague
 // Basic store
 store response -> items { key: .id }
 
@@ -290,7 +316,7 @@ store response -> items { key: .id, partial: true }
 
 ## Pipeline Execution
 
-```
+```vague
 // Sequential
 run ActionA then ActionB then ActionC
 
@@ -311,6 +337,32 @@ run [ActionA, ActionB] then [ActionC, ActionD] then ActionE
 | `retry {...}` | Retry current operation |
 | `queue storeName` | Send to dead letter queue |
 | `jump ActionName then retry` | Execute action then retry |
+
+**Where they're valid:** only directly after a `match` arm's `->`. They are not
+action steps, so they can't sit on their own in an action body, a `for` body, a
+match arm's `{ }` block, or a validate `or` block.
+
+```vague
+match response {
+  ErrorSchema -> abort "API error",
+  _ where .status == "rate_limited" -> retry { maxAttempts: 3 },
+  _ -> skip
+}
+```
+
+A for loop takes its own error policy in the header instead:
+
+```vague
+for item in items onError continue { ... }
+for item in items onError abort { ... }
+for item in items onError queue dlq { ... }   // failed items land in the dlq store
+```
+
+## Action Steps
+
+The steps valid anywhere a step goes (action body, `for` body, `match` arm block,
+validate `or` block): `get`/`post`/`put`/`patch`/`delete`, `call`, `for`, `map`,
+`apply`, `validate`, `store`, `match`, `let`, `wait`, `pause`.
 
 ## Built-in Functions
 
@@ -345,7 +397,7 @@ Other:
 
 ## Expressions
 
-```
+```vague
 // Arithmetic
 .price * .quantity
 .total + .tax
@@ -366,7 +418,7 @@ Other:
 
 ## Webhook/Callback Waiting
 
-```
+```vague
 wait {
   timeout: 60000,                           // Required: ms to wait
   path: "/webhooks/callback",               // Optional: specific path
@@ -386,7 +438,7 @@ wait {
 
 ## Scheduling
 
-```
+```vague
 // Interval-based
 schedule: every 6 hours
 schedule: every 30 minutes

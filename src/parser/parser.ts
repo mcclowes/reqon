@@ -119,13 +119,11 @@ export class ReqonParser extends PipelineParser {
       throw this.error('Mission must have a run pipeline');
     }
 
-    // Build sets of defined names for validation
     const definedStores = new Set(stores.map((s) => s.name));
     const definedActions = new Set(actions.map((a) => a.name));
     const definedSources = new Set(sources.map((s) => s.name));
     const definedTransforms = new Set(transforms.map((t) => t.name));
 
-    // Validate all references within actions (stores, sources)
     this.validateActionReferences(
       actions,
       definedStores,
@@ -158,7 +156,6 @@ export class ReqonParser extends PipelineParser {
 
     let mode: CheckpointConfig['mode'];
 
-    // Check for keyword token (afterStep, onFailure)
     if (this.check(ReqonTokenType.AFTER_STEP)) {
       this.advance();
       mode = 'after-step';
@@ -260,14 +257,12 @@ export class ReqonParser extends PipelineParser {
         break;
 
       case 'FetchStep':
-        // Validate source reference if specified
         if (step.source && !definedSources.has(step.source)) {
           throw this.error(
             `Source '${step.source}' is not defined. ` +
               `Available sources: ${[...definedSources].join(', ') || 'none'}`
           );
         }
-        // Validate operationRef source if present
         if (step.operationRef && !definedSources.has(step.operationRef.source)) {
           throw this.error(
             `Source '${step.operationRef.source}' is not defined. ` +
@@ -277,7 +272,6 @@ export class ReqonParser extends PipelineParser {
         break;
 
       case 'ApplyStep':
-        // Validate transform reference
         if (!definedTransforms.has(step.transform)) {
           throw this.error(
             `Transform '${step.transform}' is not defined. ` +
@@ -299,7 +293,6 @@ export class ReqonParser extends PipelineParser {
         break;
 
       case 'MatchStep':
-        // Validate steps in match arms
         for (const arm of step.arms) {
           if (arm.steps) {
             this.validateStepsReferences(
@@ -311,7 +304,6 @@ export class ReqonParser extends PipelineParser {
               actionName
             );
           }
-          // Validate jump target in flow directive
           if (arm.flow?.type === 'jump' && !definedActions.has(arm.flow.action)) {
             throw this.error(
               `Action '${arm.flow.action}' referenced in jump is not defined. ` +

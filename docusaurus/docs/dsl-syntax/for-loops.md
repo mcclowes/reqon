@@ -225,17 +225,19 @@ for user in users {
   get "/users/{user.id}/details"
 
   match response {
-    _ where response.error != null -> {
-      // Log the error and continue
-      store { userId: user.id, error: response.error } -> errors { key: user.id }
-      skip
-    },
-    _ -> continue
+    // Log the failure and move on to the next user
+    _ where response.error != null ->
+      store { userId: user.id, error: response.error } -> errors { key: user.id },
+    _ -> store response -> userDetails { key: user.id }
   }
-
-  store response -> userDetails { key: user.id }
 }
 ```
+
+:::note
+A match arm is *either* a flow directive (`skip`, `continue`, `abort`, …) *or* a
+block of steps, never both. So put the success path in its own arm rather than
+storing in one arm and letting the rest of the iteration fall through.
+:::
 
 ## Concurrency
 
@@ -349,27 +351,26 @@ mission OrderProcessing {
       get "/customers/{order.customerId}"
 
       match response {
-        _ where response.error != null -> {
-          store { orderId: order.id, error: "Customer not found" } -> errors { key: order.id }
-          skip
-        },
-        _ -> continue
-      }
+        _ where response.error != null ->
+          store { orderId: order.id, error: "Customer not found" } -> errors { key: order.id },
 
-      // Enrich order with customer data
-      map order -> EnrichedOrder {
-        id: order.id,
-        total: order.total,
-        status: order.status,
-        customer: {
-          id: response.id,
-          name: response.name,
-          email: response.email
-        },
-        items: order.items
-      }
+        // Enrich order with customer data
+        _ -> {
+          map order -> EnrichedOrder {
+            id: order.id,
+            total: order.total,
+            status: order.status,
+            customer: {
+              id: response.id,
+              name: response.name,
+              email: response.email
+            },
+            items: order.items
+          }
 
-      store order -> enrichedOrders { key: .id }
+          store order -> enrichedOrders { key: .id }
+        }
+      }
     }
   }
 

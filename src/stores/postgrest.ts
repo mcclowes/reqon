@@ -60,7 +60,6 @@ export class PostgRESTStore implements StoreAdapter {
   private timeoutMs: number;
 
   constructor(private options: PostgRESTOptions) {
-    // Normalize URL (remove trailing slash)
     const url = options.url.replace(/\/$/, '');
     this.baseUrl = `${url}/${options.table}`;
     this.primaryKey = options.primaryKey ?? 'id';
@@ -253,12 +252,10 @@ export class PostgRESTStore implements StoreAdapter {
   async list(filter?: StoreFilter): Promise<Record<string, unknown>[]> {
     const params = new URLSearchParams();
 
-    // Apply where clause
     if (filter?.where) {
       this.applyWhere(params, filter.where);
     }
 
-    // Apply pagination
     if (filter?.limit) {
       params.append('limit', String(filter.limit));
     }

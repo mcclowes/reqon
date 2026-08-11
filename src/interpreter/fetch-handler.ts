@@ -106,7 +106,6 @@ export class FetchHandler {
       throw new Error(`Source not found: ${resolved.sourceName}`);
     }
 
-    // Resolve "since" query parameter and/or header for incremental sync
     const {
       query: sinceQuery,
       headers: sinceHeaders,
@@ -476,7 +475,6 @@ export class FetchHandler {
     let truncated: TruncationInfo | undefined;
 
     while (hasMore) {
-      // Build query with pagination params
       const paginationQuery = strategy.buildQuery(ctx);
       const query: Record<string, string> = { ...sinceQuery, ...paginationQuery };
       const headers = Object.keys(sinceHeaders).length > 0 ? sinceHeaders : undefined;

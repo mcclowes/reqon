@@ -71,7 +71,9 @@ mission ExportData {
     get "/all-data"
 
     for item in response.data {
-      map item -> ExportFormat { /* ... */ }
+      map item -> ExportFormat {
+        // field mappings omitted
+      }
       store item -> export { key: .id }
     }
   }

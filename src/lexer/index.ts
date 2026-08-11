@@ -23,7 +23,6 @@ export { TokenType, type Token } from 'vague-lang';
 // tests) get the enhanced lexer.
 export { ReqonLexer, ReqonLexer as Lexer } from './lexer.js';
 
-// Export Reqon-specific token types and keywords
 export { ReqonTokenType, REQON_KEYWORDS } from './tokens.js';
 
 // Re-export Token type with Reqon compatibility alias

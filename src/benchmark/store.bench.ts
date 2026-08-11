@@ -43,7 +43,6 @@ export async function runStoreBenchmarks(): Promise<void> {
     { iterations: 50, warmupIterations: 5 }
   );
 
-  // Get operations (pre-populate store)
   const prePopulatedStore = new MemoryStore('prepopulated');
   for (const record of mediumRecords) {
     await prePopulatedStore.set(record.id as string, record);
@@ -67,7 +66,6 @@ export async function runStoreBenchmarks(): Promise<void> {
     { iterations: 100 }
   );
 
-  // Update operations
   await suite.addAsync('update-existing', async () => {
     await prePopulatedStore.update('record-500', { updated: true });
   });
@@ -139,7 +137,6 @@ export async function runStoreBenchmarks(): Promise<void> {
 
   suite.print();
 
-  // Filter function benchmarks
   const filterSuite = new BenchmarkSuite('applyStoreFilter');
 
   filterSuite.addSync('no-filter-1000', () => {
@@ -189,7 +186,6 @@ export async function runStoreBenchmarks(): Promise<void> {
   filterSuite.print();
 }
 
-// Run if executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   runStoreBenchmarks().catch(console.error);
 }

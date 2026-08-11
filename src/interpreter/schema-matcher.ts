@@ -33,7 +33,6 @@ export function matchesSchema(value: unknown, schema: SchemaDefinition): boolean
       continue;
     }
 
-    // Check type if present
     if (!matchesFieldType(fieldValue, field.fieldType)) {
       return false;
     }
@@ -46,12 +45,10 @@ export function matchesSchema(value: unknown, schema: SchemaDefinition): boolean
  * Check if a value matches the expected field type
  */
 function matchesFieldType(value: unknown, fieldType: FieldType): boolean {
-  // Handle primitive types
   if (fieldType.type === 'PrimitiveType') {
     return matchesPrimitiveType(value, fieldType.name);
   }
 
-  // Handle collection types (arrays)
   if (fieldType.type === 'CollectionType') {
     if (!Array.isArray(value)) {
       return false;
@@ -60,13 +57,11 @@ function matchesFieldType(value: unknown, fieldType: FieldType): boolean {
     return true;
   }
 
-  // Handle object/reference types
   if (fieldType.type === 'ReferenceType') {
     // For now, just check it's an object
     return typeof value === 'object' && value !== null;
   }
 
-  // Handle superposition types (unions) - any option matching is ok
   if (fieldType.type === 'SuperpositionType') {
     // Would need to check each option - be permissive for now
     return true;
@@ -77,17 +72,14 @@ function matchesFieldType(value: unknown, fieldType: FieldType): boolean {
     return true;
   }
 
-  // Handle expression types - can't validate statically
   if (fieldType.type === 'ExpressionType') {
     return true;
   }
 
-  // Handle range types - check it's a number in range
   if (fieldType.type === 'RangeType') {
     return typeof value === 'number';
   }
 
-  // Handle ordered sequence types (tuples)
   if (fieldType.type === 'OrderedSequenceType') {
     return Array.isArray(value);
   }
@@ -147,7 +139,6 @@ export function findMatchingSchema(
   schemaNames: string[]
 ): string | undefined {
   for (const name of schemaNames) {
-    // Handle wildcard
     if (name === '_') {
       return '_';
     }

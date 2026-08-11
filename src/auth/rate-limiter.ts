@@ -114,7 +114,6 @@ export class AdaptiveRateLimiter implements RateLimiter {
   private cleanup(): void {
     const now = Date.now();
 
-    // Skip if cleanup was done recently and we're under the entry limit
     if (
       now - this.lastCleanup < RATE_LIMIT_DEFAULTS.CLEANUP_INTERVAL_MS &&
       this.state.size < RATE_LIMIT_DEFAULTS.MAX_ENTRIES_BEFORE_CLEANUP
@@ -224,14 +223,12 @@ export class AdaptiveRateLimiter implements RateLimiter {
       return false;
     }
 
-    // Check if we've reset
     if (state.resetAt && state.resetAt <= now) {
       // Reset has passed, clear the limit
       this.state.delete(key);
       return true;
     }
 
-    // Check remaining quota
     if (state.remaining !== undefined && state.remaining <= 0) {
       return false;
     }
@@ -287,7 +284,6 @@ export class AdaptiveRateLimiter implements RateLimiter {
     const config = this.getConfig(source);
     const key = this.getKey(source, endpoint);
 
-    // Check if we can proceed immediately
     if (await this.canProceed(source, endpoint)) {
       // In throttle mode, hold the caller until its reserved slot comes up
       if (config.strategy === 'throttle') {
@@ -303,7 +299,6 @@ export class AdaptiveRateLimiter implements RateLimiter {
     const state = this.state.get(key);
     const now = Date.now();
 
-    // Calculate wait time
     let waitUntil: Date;
     const laneBackoff = this.laneBackoff.get(source);
     if (laneBackoff && laneBackoff.getTime() > now) {
@@ -320,17 +315,14 @@ export class AdaptiveRateLimiter implements RateLimiter {
     const totalWaitMs = waitUntil.getTime() - now;
     const totalWaitSeconds = Math.ceil(totalWaitMs / 1000);
 
-    // Check strategy
     if (config.strategy === 'fail') {
       throw new RateLimitError(source, state?.resetAt);
     }
 
-    // Check if wait exceeds max
     if (totalWaitSeconds > config.maxWait) {
       throw new RateLimitTimeoutError(source, 0, config.maxWait);
     }
 
-    // Emit rate limited event
     const event: RateLimitEvent = {
       source,
       endpoint,
@@ -341,14 +333,12 @@ export class AdaptiveRateLimiter implements RateLimiter {
     };
     this.callbacks.onRateLimited?.(event);
 
-    // Wait with periodic updates
     const startTime = Date.now();
     let lastNotify = 0;
 
     while (!(await this.canProceed(source, endpoint))) {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
 
-      // Check timeout
       if (elapsed >= config.maxWait) {
         throw new RateLimitTimeoutError(source, elapsed, config.maxWait);
       }
@@ -369,7 +359,6 @@ export class AdaptiveRateLimiter implements RateLimiter {
       await sleep(sleepMs);
     }
 
-    // Emit resumed event
     const waitedSeconds = Math.floor((Date.now() - startTime) / 1000);
     this.callbacks.onResumed?.({ source, endpoint, waitedSeconds });
 
@@ -550,7 +539,6 @@ export function parseRetryAfterMs(
 export function parseRateLimitHeaders(headers: Record<string, string>): RateLimitInfo {
   const info: RateLimitInfo = {};
 
-  // Normalize headers to lowercase for matching
   const normalized: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     normalized[key.toLowerCase()] = value;
@@ -571,7 +559,6 @@ export function parseRateLimitHeaders(headers: Record<string, string>): RateLimi
     }
   }
 
-  // Parse limit
   const limitKey = findHeader(normalized, [
     'x-ratelimit-limit',
     'ratelimit-limit',
@@ -584,7 +571,6 @@ export function parseRateLimitHeaders(headers: Record<string, string>): RateLimi
     }
   }
 
-  // Parse reset
   const resetKey = findHeader(normalized, [
     'x-ratelimit-reset',
     'ratelimit-reset',

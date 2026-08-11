@@ -13,18 +13,20 @@ A **Mission** is the top-level container in Reqon. It defines a complete data pi
 ```vague
 mission MissionName {
   // Source definitions (APIs)
-  source SourceName { auth: type, base: "url" }
+  source SourceName { auth: bearer, base: "https://api.example.com" }
 
   // Store definitions (data persistence)
-  store storeName: adapter("identifier")
+  store storeName: memory("identifier")
 
   // Schema definitions (for validation and matching)
-  schema SchemaName { field: type }
+  schema SchemaName { field: string }
 
   // Action definitions (processing logic)
   action ActionName {
     // steps...
   }
+
+  action AnotherAction { }
 
   // Pipeline definition (execution order)
   run ActionName then AnotherAction
