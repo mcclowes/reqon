@@ -253,11 +253,14 @@ mission DurablePipeline {
 }
 ```
 
-A pause records its deadline and resume triggers, then stops the run. **You drive
-the resume**: re-run with `reqon mission.vague --resume <executionId>` (or
-`execute(source, { executionLog, resumeFrom })`), and the run replays past the
-pause. The shipped runtime does not poll deadlines or dispatch inbound webhooks
-into paused runs on its own — to automate that, drive `PauseManager` yourself.
+A pause records its deadline and resume triggers, then stops the run. To let the
+triggers fire on their own, run under `executeWithResume(source, { executionLog,
+webhookServer })`: it stays live, routes an inbound webhook on the pause's path
+into the run, polls deadlines, and re-executes past the pause until the mission
+finishes. Custom hosts can wire the same behaviour with `PauseOrchestrator`. A
+plain CLI run exits on pause instead — resume it with
+`reqon mission.vague --resume <executionId>` (or
+`execute(source, { executionLog, resumeFrom })`).
 
 #### Durability guarantees
 

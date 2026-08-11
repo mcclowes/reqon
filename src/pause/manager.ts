@@ -204,6 +204,37 @@ export class PauseManager {
   }
 
   /**
+   * Route an inbound webhook event to the waiting pause holding its trigger.
+   *
+   * Matches by the registration id recorded on the trigger at creation, falling
+   * back to the trigger's path (a registration re-created after a restart has a
+   * fresh id, but the path is stable). Returns true if a pause was resumed.
+   */
+  async handleWebhookEvent(event: {
+    registrationId: string;
+    path?: string;
+    body?: unknown;
+  }): Promise<boolean> {
+    const active = await this.config.store.listActive();
+
+    const matches = (pause: PauseState): boolean =>
+      pause.resumeTriggers.some(
+        (t) =>
+          t.type === 'webhook' &&
+          t.active &&
+          (t.registrationId === event.registrationId ||
+            (event.path !== undefined && t.path === event.path))
+      );
+
+    const pause = active.find(matches);
+    if (!pause) {
+      return false;
+    }
+
+    return this.handleWebhook(pause.id, event.body);
+  }
+
+  /**
    * Start monitoring for expired pauses
    */
   startMonitoring(): void {

@@ -34,6 +34,8 @@ export interface WebhookEvent {
   id: string;
   /** Registration ID this event belongs to */
   registrationId: string;
+  /** Path the event was delivered on (absent on events stored before this field existed) */
+  path?: string;
   /** Received timestamp */
   receivedAt: Date;
   /** HTTP method used */
