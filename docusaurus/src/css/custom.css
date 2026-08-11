@@ -21,6 +21,7 @@
   --ifm-background-surface-color: #EDE4CC;
 
   --ifm-code-font-size: 95%;
+  --ifm-pre-padding: 1.25rem;
   --ifm-font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
   --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   --ifm-heading-font-family: 'Inter', system-ui, -apple-system, sans-serif;
