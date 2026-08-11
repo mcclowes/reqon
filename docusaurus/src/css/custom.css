@@ -7,14 +7,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  /* Primary brand color - warm brown accent */
-  --ifm-color-primary: #9C5438;
-  --ifm-color-primary-dark: #8B4931;
-  --ifm-color-primary-darker: #82452E;
-  --ifm-color-primary-darkest: #6B3826;
-  --ifm-color-primary-light: #AD5F40;
-  --ifm-color-primary-lighter: #B66547;
-  --ifm-color-primary-lightest: #C98266;
+  /* Primary brand color - deep turquoise */
+  --ifm-color-primary: #193E40;
+  --ifm-color-primary-dark: #16383A;
+  --ifm-color-primary-darker: #153536;
+  --ifm-color-primary-darkest: #112B2C;
+  --ifm-color-primary-light: #1C4648;
+  --ifm-color-primary-lighter: #1D494B;
+  --ifm-color-primary-lightest: #245A5D;
 
   /* Light theme backgrounds */
   --ifm-background-color: #F3EAD3;
@@ -36,13 +36,13 @@
 
 [data-theme='dark'] {
   /* Dark theme - charcoal base */
-  --ifm-color-primary: #D79372;
-  --ifm-color-primary-dark: #CE7F5B;
-  --ifm-color-primary-darker: #C8754F;
-  --ifm-color-primary-darkest: #AD5A37;
-  --ifm-color-primary-light: #E0A789;
-  --ifm-color-primary-lighter: #E5B296;
-  --ifm-color-primary-lightest: #EECBB8;
+  --ifm-color-primary: #478183;
+  --ifm-color-primary-dark: #407577;
+  --ifm-color-primary-darker: #3C6E70;
+  --ifm-color-primary-darkest: #325A5B;
+  --ifm-color-primary-light: #4E8D8F;
+  --ifm-color-primary-lighter: #559294;
+  --ifm-color-primary-lightest: #6EA3A5;
 
   --docusaurus-highlighted-code-line-bg: rgba(212, 188, 170, 0.2);
   --ifm-background-color: #252221;

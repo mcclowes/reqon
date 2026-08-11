@@ -3,7 +3,7 @@
   overflow: hidden;
   padding: 7.5rem 0 7rem;
   background:
-    radial-gradient(circle at 78% 18%, rgba(192, 118, 76, 0.12), transparent 34rem),
+    radial-gradient(circle at 78% 18%, rgba(25, 62, 64, 0.12), transparent 34rem),
     linear-gradient(180deg, #f8f2e5 0%, #f3ead3 100%);
   border-bottom: 1px solid rgba(75, 61, 49, 0.12);
 }
@@ -38,7 +38,7 @@
 }
 
 .heroCopy h1 span {
-  color: #9c5438;
+  color: #193e40;
 }
 
 .eyebrow,
@@ -46,7 +46,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  color: #87513d;
+  color: #315f61;
   font-family: var(--ifm-font-family-monospace);
   font-size: 0.78rem;
   font-weight: 600;
@@ -185,7 +185,7 @@
   user-select: none;
 }
 
-.keyword { color: #d79372; }
+.keyword { color: #6ea3a5; }
 .value { color: #c6a66d; }
 .string { color: #a8b98c; }
 .number { color: #b5a0c9; }
@@ -236,7 +236,7 @@
 }
 
 [data-theme='dark'] .heroBanner {
-  background: radial-gradient(circle at 78% 18%, rgba(192, 118, 76, 0.12), transparent 34rem), #272421;
+  background: radial-gradient(circle at 78% 18%, rgba(71, 129, 131, 0.12), transparent 34rem), #272421;
 }
 
 [data-theme='dark'] .heroCopy h1,

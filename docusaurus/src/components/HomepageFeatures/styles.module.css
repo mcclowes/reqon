@@ -12,7 +12,7 @@
 }
 
 .label {
-  color: #87513d;
+  color: #315f61;
   font-family: var(--ifm-font-family-monospace);
   font-size: 0.75rem;
   font-weight: 600;
@@ -58,8 +58,8 @@
   width: 2.3rem;
   height: 2.3rem;
   margin-bottom: 3.75rem;
-  color: #9c5438;
-  border: 1px solid rgba(156, 84, 56, 0.4);
+  color: #193e40;
+  border: 1px solid rgba(25, 62, 64, 0.4);
   border-radius: 50%;
   place-items: center;
   font-family: var(--ifm-font-family-monospace);
@@ -125,7 +125,7 @@
   text-decoration: none;
 }
 
-.foundation a:hover { color: #9c5438; }
+.foundation a:hover { color: #193e40; }
 
 [data-theme='dark'] .features { background: #252221; }
 [data-theme='dark'] .intro h2,
@@ -135,6 +135,10 @@
 [data-theme='dark'] .grid { border-color: rgba(255, 255, 255, 0.09); }
 [data-theme='dark'] .card { border-color: rgba(255, 255, 255, 0.09); }
 [data-theme='dark'] .foundation a { color: #ddd1c1; }
+[data-theme='dark'] .label,
+[data-theme='dark'] .marker,
+[data-theme='dark'] .foundation a:hover { color: #6ea3a5; }
+[data-theme='dark'] .marker { border-color: rgba(110, 163, 165, 0.45); }
 
 @media screen and (max-width: 996px) {
   .features { padding-top: 5rem; }
