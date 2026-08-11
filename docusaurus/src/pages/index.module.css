@@ -83,7 +83,7 @@
 .ghostButton {
   color: #4c4540;
   border: 1px solid rgba(76, 69, 64, 0.28);
-  background: rgba(255, 255, 255, 0.32);
+  background: transparent;
 }
 
 .ghostButton:hover {
@@ -241,8 +241,18 @@
 
 [data-theme='dark'] .heroCopy h1,
 [data-theme='dark'] .closingInner h2 { color: #f4ecdc; }
+[data-theme='dark'] .heroCopy h1 span { color: #478183; }
 [data-theme='dark'] .heroSubtitle { color: #c0b6a8; }
-[data-theme='dark'] .ghostButton { color: #e0d5c5; border-color: rgba(224, 213, 197, 0.3); }
+[data-theme='dark'] .ghostButton {
+  color: #e0d5c5;
+  border-color: rgba(224, 213, 197, 0.3);
+  background: transparent;
+}
+[data-theme='dark'] .ghostButton:hover {
+  color: #f4ecdc;
+  border-color: rgba(224, 213, 197, 0.55);
+  background: rgba(244, 236, 220, 0.06);
+}
 [data-theme='dark'] .installCommand code { color: #bcb1a3; }
 [data-theme='dark'] .closingCta { background: #252221; }
 [data-theme='dark'] .closingInner { background: #302c29; border-color: rgba(255, 255, 255, 0.08); }
