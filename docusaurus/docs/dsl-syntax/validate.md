@@ -17,6 +17,19 @@ validate target {
 }
 ```
 
+To validate the target against a named Vague schema before checking inline
+assumptions, add `as SchemaName`:
+
+```vague
+validate response as Invoice {
+  assume .status != "deleted"
+}
+```
+
+Named validation checks required and optional fields, primitive and referenced
+types, collection elements, ranges, choices, schema constraints, assumptions,
+and invariants.
+
 ## Simple validation
 
 ```vague

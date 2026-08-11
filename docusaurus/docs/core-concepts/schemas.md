@@ -64,11 +64,8 @@ schema Order {
 }
 ```
 
-:::caution
-Matching only checks that the value is an array. Element types are recorded but
-not verified, so `[User]` and a bare `array` behave identically at match time.
-Use `validate` if you need the elements themselves checked.
-:::
+Array element types are checked recursively during schema matching and named
+validation.
 
 ## Nested schemas
 
@@ -114,11 +111,8 @@ schema Customer {
 }
 ```
 
-:::caution
-A referenced schema is checked as "is an object", not against the referenced
-shape. `billingAddress: Address` and `billingAddress: object` match the same
-values. References document intent; they don't deepen the match.
-:::
+Referenced schemas are checked recursively when the referenced definition is
+registered in the same mission.
 
 ## Using schemas for validation
 
@@ -129,7 +123,7 @@ action ValidateResponse {
   get "/users"
 
   for user in response.users {
-    validate user {
+    validate user as User {
       assume .id is string,
       assume .name is string,
       assume .email is string
@@ -236,30 +230,31 @@ action FetchPaginated {
 }
 ```
 
-## Schema inheritance
+## Vague schema features
 
-Reqon has none. There is no spread (`...BaseEntity`) and no `schema User from
-BaseEntity`; both are parse errors. Repeat the shared fields in each schema, or
-pull them into a named field:
+Reqon delegates schema parsing to Vague. Ranges, choices, unique fields,
+constraints, assumptions, invariants, generators, and OpenAPI-backed schemas
+are available inside missions:
 
 ```vague
-schema BaseEntity {
-  id: string,
-  createdAt: date,
-  updatedAt: date
-}
+import ecommerce from "./openapi.yaml"
 
-schema User {
-  base: BaseEntity,
-  name: string,
-  email: string
+mission Catalog {
+  schema Product from ecommerce.Product {
+    score: decimal in 0..1,
+    status: "active" | "paused",
+    constraints { score >= 0 and score <= 1 }
+  }
+
+  action Load { generate 20 of Product as products { seed: 42 } }
+  run Load
 }
 ```
 
 :::note
-Reqon defines its own, smaller schema grammar rather than reusing Vague's. A
-schema is a flat list of `name: type` fields and nothing else, so Vague features
-like `refine`, `constraints`, contexts, and generators are not available here.
+The older JSON-shaped `[Type]`, inline object, `number`, `any`, and `type?`
+forms remain supported for existing missions. New schemas should use Vague's
+native grammar where possible.
 :::
 
 ## Best practices

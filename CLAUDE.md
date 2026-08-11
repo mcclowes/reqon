@@ -44,7 +44,8 @@ src/
 ├── mcp/           # Model Context Protocol integration
 ├── oas/           # OpenAPI spec integration (loader, validator)
 ├── observability/ # Structured events, logging, OpenTelemetry integration
-├── parser/        # Parser for mission/action/fetch/store syntax
+├── parser/        # Reqon mission parser plus Vague expression compatibility checks
+├── reporting/     # Vague-backed dataset reports and golden comparisons
 ├── pause/         # Resource-free long pauses (state, store, log-backed store, manager)
 ├── scheduler/     # Cron/interval scheduling for missions
 ├── stores/        # Store adapters (memory, file, postgrest) + a batching wrapper.
@@ -106,6 +107,8 @@ Key constructs:
 - `for...in...where` - Iteration with filtering, optional `concurrency N` for bounded fan-out (default sequential)
 - `map...->` - Schema transformation
 - `validate` - Constraint checking with `assume`
+- `validate value as Schema` - Vague schema validation plus inline assumptions
+- `generate N of Schema as name { seed: N }` - Reproducible Vague fixture generation
 - `run...then` - Pipeline sequencing (supports `run [A, B] then C` for parallel)
 - `match` - Pattern matching (from Vague)
 - `since: lastSync` - Incremental sync with checkpointing
@@ -129,7 +132,7 @@ Key constructs:
 
 ## Key Decisions
 
-1. **Extends Vague**: Reqon uses Vague's lexer (via plugin system) and expression syntax; parser extends Vague's token types
+1. **Extends Vague**: Vague owns lexing, expression compatibility, and rich schema parsing. Its plugin parser delegates `mission` bodies to Reqon.
 2. **Keyword conflicts**: Parser explicitly handles Reqon keywords (key, partial, upsert, page, etc.) when they appear in option contexts
 3. **`response` identifier**: Special-cased in evaluator to reference `ctx.response`
 4. **Store adapters**: Interface-based design for pluggable storage backends

@@ -33,6 +33,7 @@ const sidebars: SidebarsConfig = {
         'dsl-syntax/fetch',
         'dsl-syntax/for-loops',
         'dsl-syntax/map',
+        'dsl-syntax/generate',
         'dsl-syntax/validate',
         'dsl-syntax/match',
         'dsl-syntax/pipelines',

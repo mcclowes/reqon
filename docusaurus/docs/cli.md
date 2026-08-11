@@ -38,6 +38,8 @@ reqon ./missions/customer-sync/
 | `--auth <file>` | Path to a JSON file containing authentication credentials |
 | `--env <file>` | Path to a .env file (default: .env in the current directory) |
 | `--output <path>` | Export all stores to a single JSON file after execution |
+| `--report <path>` | Write Vague dataset statistics as JSON, Markdown, or HTML |
+| `--compare <path>` | Compare stores with a golden JSON dataset and fail on differences |
 | `--daemon` | Run as a daemon, executing scheduled missions |
 | `--once` | Run scheduled missions once immediately, then exit |
 | `--webhook` | Enable the webhook server for `wait` steps |
@@ -142,6 +144,29 @@ This writes a single JSON file, an object keyed by store name, with each store's
   "orders": [ { "id": 100, "customerId": 1 } ]
 }
 ```
+
+### Dataset reports
+
+Write field statistics, distributions, record counts, and a Vague data
+attestation after a run. The extension selects JSON, Markdown, or HTML:
+
+```bash
+reqon seed-test-data.vague --report ./artifacts/data-report.html
+```
+
+The attestation describes data as synthetic, so use this flag for generated or
+test datasets rather than production data fetched from an API.
+
+### Golden dataset comparison
+
+Compare every exported store with a checked-in JSON snapshot:
+
+```bash
+reqon reconciliation.vague --compare ./testdata/reconciliation.golden.json
+```
+
+The comparison prints collection, record, and field differences. A mismatch
+sets exit code 1, which makes the command suitable for CI regression checks.
 
 ### Daemon mode
 
