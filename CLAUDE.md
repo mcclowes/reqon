@@ -116,9 +116,11 @@ Key constructs:
 - `schedule` - Mission scheduling (every N units, cron, or at datetime)
 - `checkpoint` - Durable execution mode (afterStep, onFailure)
 - `trace` - Time-travel debugging mode (full, minimal)
-- `pause` - Resource-free long pauses with resume triggers (timeout, webhook). Triggers are
-  recorded, not dispatched: nothing calls `PauseManager.startMonitoring()`/`handleWebhook()`
-  in the shipped runtime, so a paused run resumes when you re-run with `--resume <execId>`
+- `pause` - Resource-free long pauses with resume triggers (timeout, webhook). Triggers fire
+  when something is listening: `executeWithResume` (or a `PauseOrchestrator` in a custom host)
+  routes inbound webhooks into the paused run, polls deadlines, and re-invokes
+  `execute({ resumeFrom })` — this needs `executionLog` (replaying past a pause is log-based).
+  A plain CLI run still exits on pause; resume it with `--resume <execId>`
 
 ## Code Conventions
 

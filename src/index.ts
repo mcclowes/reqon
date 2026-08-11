@@ -260,6 +260,8 @@ export {
   LogBackedPauseStore,
   PauseManager,
   createPauseManager,
+  PauseOrchestrator,
+  createPauseOrchestrator,
   parseDuration,
   formatDuration,
   createPauseState,
@@ -273,6 +275,7 @@ export {
   type PauseManagerConfig,
   type CreatePauseOptions,
   type PauseStatus,
+  type PauseOrchestratorConfig,
 } from './pause/index.js';
 
 import { readFile } from 'node:fs/promises';
@@ -282,6 +285,8 @@ import { ReqonParser } from './parser/index.js';
 import { MissionExecutor, type ExecutorConfig } from './interpreter/index.js';
 import { loadMission } from './loader/index.js';
 import type { ReqonProgram } from './ast/index.js';
+import { PauseOrchestrator, LogBackedPauseStore } from './pause/index.js';
+import type { PauseState } from './pause/index.js';
 
 export function parse(source: string, filePath?: string): ReqonProgram {
   const lexer = new ReqonLexer(source);
@@ -324,6 +329,91 @@ export async function fromPath(
   const { program, baseDir } = await loadMission(path);
   const executor = new MissionExecutor({ ...config, missionDir: baseDir });
   return executor.execute(program);
+}
+
+export interface ExecuteWithResumeOptions {
+  /** Poll interval for the pause timeout monitor in ms (default: 1 minute). */
+  pollInterval?: number;
+  /** Safety cap on resume cycles before giving up (default: 1000). */
+  maxResumes?: number;
+}
+
+/**
+ * Execute a mission and automatically resume it when a pause's trigger fires.
+ *
+ * Runs the mission; when it suspends on a `pause` step, stays live until an
+ * inbound webhook on the pause's path or its expired timeout resumes it, then
+ * re-executes with `resumeFrom` so the replay continues past the pause. Loops
+ * until the run finishes (or fails), so a mission with several pauses completes
+ * end to end in one call.
+ *
+ * Requires `config.executionLog`: replaying past a pause needs the durable
+ * event log. Webhook triggers additionally need `config.webhookServer`
+ * (started by the caller).
+ */
+export async function executeWithResume(
+  source: string,
+  config: ExecutorConfig,
+  options: ExecuteWithResumeOptions = {}
+): Promise<import('./interpreter/index.js').ExecutionResult> {
+  const executionLog = config.executionLog;
+  if (!executionLog) {
+    throw new Error(
+      'executeWithResume requires config.executionLog: resuming past a pause replays the durable event log'
+    );
+  }
+  const program = parse(source);
+  const maxResumes = options.maxResumes ?? 1000;
+
+  // Resumed pauses queue here; the loop below is the only consumer. Dispatching
+  // through a queue (instead of executing inside the orchestrator callback)
+  // serializes runs — a webhook that lands while the paused run is still
+  // unwinding must not start the resume run concurrently with it.
+  const pending: PauseState[] = [];
+  let wake: (() => void) | undefined;
+  const logger = config.logger;
+  const orchestrator = new PauseOrchestrator({
+    store: new LogBackedPauseStore(executionLog),
+    webhookServer: config.webhookServer,
+    pollInterval: options.pollInterval,
+    resume: (pause) => {
+      pending.push(pause);
+      wake?.();
+    },
+    log: logger ? (msg) => logger.info(msg) : undefined,
+  });
+
+  const nextResume = async (executionId: string): Promise<PauseState> => {
+    for (;;) {
+      const index = pending.findIndex((p) => p.executionId === executionId);
+      if (index !== -1) return pending.splice(index, 1)[0];
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      wake = undefined;
+    }
+  };
+
+  await orchestrator.start();
+  try {
+    let result = await new MissionExecutor(config).execute(program);
+
+    for (let cycles = 0; result.pauseId; cycles++) {
+      if (cycles >= maxResumes) {
+        throw new Error(
+          `executeWithResume exceeded ${maxResumes} resume cycles for execution ${result.executionId}`
+        );
+      }
+      const executionId = result.executionId;
+      if (!executionId) break;
+      await nextResume(executionId);
+      result = await new MissionExecutor({ ...config, resumeFrom: executionId }).execute(program);
+    }
+
+    return result;
+  } finally {
+    orchestrator.stop();
+  }
 }
 
 // Tagged template literal for inline missions
