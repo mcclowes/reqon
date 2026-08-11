@@ -8,13 +8,13 @@
 
 :root {
   /* Primary brand color - warm brown accent */
-  --ifm-color-primary: #8B7355;
-  --ifm-color-primary-dark: #7A6349;
-  --ifm-color-primary-darker: #6E5941;
-  --ifm-color-primary-darkest: #5A4936;
-  --ifm-color-primary-light: #9C8466;
-  --ifm-color-primary-lighter: #B8A088;
-  --ifm-color-primary-lightest: #D4BCAA;
+  --ifm-color-primary: #9C5438;
+  --ifm-color-primary-dark: #8B4931;
+  --ifm-color-primary-darker: #82452E;
+  --ifm-color-primary-darkest: #6B3826;
+  --ifm-color-primary-light: #AD5F40;
+  --ifm-color-primary-lighter: #B66547;
+  --ifm-color-primary-lightest: #C98266;
 
   /* Light theme backgrounds */
   --ifm-background-color: #F3EAD3;
@@ -23,11 +23,12 @@
   --ifm-code-font-size: 95%;
   --ifm-font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
   --ifm-font-family-monospace: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  --ifm-heading-font-family: 'Courier Prime', 'Courier New', monospace;
+  --ifm-heading-font-family: 'Inter', system-ui, -apple-system, sans-serif;
 
   --docusaurus-highlighted-code-line-bg: rgba(139, 115, 85, 0.15);
 
   --ifm-heading-font-weight: 700;
+  --ifm-button-border-radius: 8px;
   --ifm-navbar-shadow: 0 1px 2px rgba(37, 34, 33, 0.08);
   --ifm-navbar-background-color: #F3EAD3;
   --ifm-footer-background-color: #EDE4CC;
@@ -35,13 +36,13 @@
 
 [data-theme='dark'] {
   /* Dark theme - charcoal base */
-  --ifm-color-primary: #D4BCAA;
-  --ifm-color-primary-dark: #C4A894;
-  --ifm-color-primary-darker: #B8A088;
-  --ifm-color-primary-darkest: #9C8466;
-  --ifm-color-primary-light: #E0CCBC;
-  --ifm-color-primary-lighter: #ECDCCE;
-  --ifm-color-primary-lightest: #F3EAD3;
+  --ifm-color-primary: #D79372;
+  --ifm-color-primary-dark: #CE7F5B;
+  --ifm-color-primary-darker: #C8754F;
+  --ifm-color-primary-darkest: #AD5A37;
+  --ifm-color-primary-light: #E0A789;
+  --ifm-color-primary-lighter: #E5B296;
+  --ifm-color-primary-lightest: #EECBB8;
 
   --docusaurus-highlighted-code-line-bg: rgba(212, 188, 170, 0.2);
   --ifm-background-color: #252221;
@@ -69,7 +70,7 @@ code {
 }
 
 .navbar__title {
-  font-family: var(--ifm-heading-font-family);
+  font-family: 'Courier Prime', 'Courier New', monospace;
   font-weight: 700;
 }
 
@@ -79,17 +80,11 @@ code {
   width: auto;
 }
 
-/* Heading typography - Courier Prime display font */
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--ifm-heading-font-family);
-}
-
-.hero__title {
-  font-family: var(--ifm-heading-font-family);
-}
+/* Heading typography */
+h1, h2, h3, h4, h5, h6 { font-family: var(--ifm-heading-font-family); }
 
 /* Hero section on homepage */
-.hero {
+.hero:not([class*='heroBanner']) {
   background: linear-gradient(135deg, #EDE4CC 0%, var(--ifm-background-color) 100%);
 }
 
@@ -101,7 +96,7 @@ h1, h2, h3, h4, h5, h6 {
   color: #5A4936;
 }
 
-[data-theme='dark'] .hero {
+[data-theme='dark'] .hero:not([class*='heroBanner']) {
   background: linear-gradient(135deg, #312E2C 0%, var(--ifm-background-color) 100%);
 }
 
@@ -252,6 +247,16 @@ html {
   background-color: var(--ifm-color-primary);
   border-color: var(--ifm-color-primary);
   color: #fff;
+}
+
+.button {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: transform 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
 }
 
 .button--primary:hover {
