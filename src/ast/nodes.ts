@@ -467,6 +467,8 @@ export interface TryExpression {
 export interface ValidateStep {
   type: 'ValidateStep';
   target: Expression;
+  /** Optional named Vague schema to validate before inline assumptions. */
+  schema?: string;
   constraints: ValidationConstraint[];
   /**
    * Optional `or { ... }` fallback: steps to run when a constraint fails,

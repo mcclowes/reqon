@@ -3,6 +3,7 @@ import type { StepHandler, StepHandlerDeps } from './types.js';
 import type { ExecutionContext } from '../context.js';
 import { evaluate } from '../evaluator.js';
 import { ValidationError } from '../../errors/index.js';
+import { validateSchema } from '../schema-matcher.js';
 
 export interface ValidateHandlerDeps extends StepHandlerDeps {
   /** Executes a step, used to run an `or { ... }` fallback block. */
@@ -21,6 +22,19 @@ export class ValidateHandler implements StepHandler<ValidateStep> {
 
   async execute(step: ValidateStep): Promise<void> {
     const target = evaluate(step.target, this.deps.ctx);
+
+    if (step.schema) {
+      const schema = this.deps.ctx.schemas.get(step.schema);
+      if (!schema)
+        throw new ValidationError(`Unknown schema: ${step.schema}`, { line: 1, column: 1 });
+      const errors = validateSchema(target, schema, this.deps.ctx.schemas, this.deps.ctx);
+      if (errors.length > 0) {
+        throw new ValidationError(
+          `Schema validation failed for ${step.schema}: ${errors.join('; ')}`,
+          { line: 1, column: 1 }
+        );
+      }
+    }
 
     for (const constraint of step.constraints) {
       const result = evaluate(constraint.condition, this.deps.ctx, target);

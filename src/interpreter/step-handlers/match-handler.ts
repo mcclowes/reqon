@@ -72,7 +72,11 @@ export class MatchHandler {
         if (!schema) {
           continue;
         }
-        if (!value.every((element) => matchesSchema(element, schema))) {
+        if (
+          !value.every((element) =>
+            matchesSchema(element, schema, this.deps.ctx.schemas, this.deps.ctx)
+          )
+        ) {
           continue;
         }
       } else if (arm.schema !== '_') {

@@ -16,6 +16,41 @@ describe('ValidateHandler', () => {
   });
 
   describe('passing validation', () => {
+    it('validates the target against a named Vague schema', async () => {
+      deps.ctx.response = { id: 1 };
+      deps.ctx.schemas.set('Record', {
+        type: 'SchemaDefinition',
+        name: 'Record',
+        fields: [
+          {
+            type: 'FieldDefinition',
+            name: 'id',
+            fieldType: { type: 'PrimitiveType', name: 'int' },
+          },
+        ],
+      });
+      const handler = new ValidateHandler(deps);
+
+      await expect(
+        handler.execute({
+          type: 'ValidateStep',
+          target: { type: 'Identifier', name: 'response' },
+          schema: 'Record',
+          constraints: [],
+        })
+      ).resolves.not.toThrow();
+
+      deps.ctx.response = { id: 'bad' };
+      await expect(
+        handler.execute({
+          type: 'ValidateStep',
+          target: { type: 'Identifier', name: 'response' },
+          schema: 'Record',
+          constraints: [],
+        })
+      ).rejects.toThrow('Schema validation failed for Record');
+    });
+
     it('passes when all constraints are met', async () => {
       deps.ctx.response = { age: 25, name: 'Alice' };
 
