@@ -64,8 +64,13 @@ code {
 /* Navbar styling - backdrop-filter only on desktop to avoid breaking mobile menu */
 @media (min-width: 997px) {
   .navbar {
+    padding-inline: 1.5rem;
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
+  }
+
+  .navbar__brand {
+    margin-right: 0.75rem;
   }
 }
 
@@ -76,8 +81,15 @@ code {
 
 /* Constrain navbar logo size */
 .navbar__logo img {
+  display: block;
   height: 28px;
   width: auto;
+}
+
+@media (max-width: 996px) {
+  .navbar {
+    padding-inline: 1rem;
+  }
 }
 
 /* Heading typography */
