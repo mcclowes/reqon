@@ -176,6 +176,45 @@ th {
   font-weight: 500;
 }
 
+/* Keep dark Reqon examples in step with the syntax palette used by the hero. */
+[data-theme='dark'] code[class*='language-vague'],
+[data-theme='dark'] code[class*='language-reqon'] {
+  color: #DED8CC;
+  background-color: #242321;
+}
+
+[data-theme='dark'] code[class*='language-vague'] .token.keyword,
+[data-theme='dark'] code[class*='language-reqon'] .token.keyword {
+  color: #6EA3A5;
+}
+
+[data-theme='dark'] code[class*='language-vague'] .token.builtin,
+[data-theme='dark'] code[class*='language-reqon'] .token.builtin {
+  color: #C6A66D;
+}
+
+[data-theme='dark'] code[class*='language-vague'] .token.string,
+[data-theme='dark'] code[class*='language-reqon'] .token.string {
+  color: #A8B98C;
+}
+
+[data-theme='dark'] code[class*='language-vague'] .token.number,
+[data-theme='dark'] code[class*='language-reqon'] .token.number {
+  color: #B5A0C9;
+}
+
+[data-theme='dark'] code[class*='language-vague'] .token.method,
+[data-theme='dark'] code[class*='language-vague'] .token.function,
+[data-theme='dark'] code[class*='language-reqon'] .token.method,
+[data-theme='dark'] code[class*='language-reqon'] .token.function {
+  color: #7EABC1;
+}
+
+[data-theme='dark'] code[class*='language-vague'] .token.comment,
+[data-theme='dark'] code[class*='language-reqon'] .token.comment {
+  color: #8E8982;
+}
+
 /* Feature cards on homepage */
 .feature-card {
   background: var(--ifm-background-surface-color);
