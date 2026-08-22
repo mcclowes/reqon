@@ -5,7 +5,7 @@ Use this skill when working on SQL/NoSQL store adapters or database-related func
 ## Capabilities
 
 ### Generating Store Implementations
-- Create PostgreSQL store adapters implementing the `StoreAdapter` interface from `src/stores/types.ts`
+- Create PostgreSQL store adapters implementing the `StoreAdapter` interface from `packages/reqon-dsl/src/stores/types.ts`
 - Create MySQL store adapters with appropriate driver usage
 - Create MongoDB/DynamoDB NoSQL adapters
 
@@ -28,9 +28,9 @@ Map Reqon/Vague DSL types to database column types:
 
 ## Context Files
 When using this skill, read:
-- `src/stores/types.ts` - StoreAdapter interface
-- `src/stores/memory.ts` - Reference implementation
-- `src/ast/nodes.ts` - Schema and type definitions
+- `packages/reqon-dsl/src/stores/types.ts` - StoreAdapter interface
+- `packages/reqon-dsl/src/stores/memory.ts` - Reference implementation
+- `packages/reqon-dsl/src/ast/nodes.ts` - Schema and type definitions
 
 ## Implementation Patterns
 

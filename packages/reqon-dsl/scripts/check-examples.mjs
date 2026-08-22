@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadMission, parse } from '../dist/index.js';
 
-const root = fileURLToPath(new URL('..', import.meta.url));
-const examplesDir = join(root, 'examples');
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+const examplesDir = join(repoRoot, 'examples');
 
 const targets = [];
 for (const entry of readdirSync(examplesDir)) {

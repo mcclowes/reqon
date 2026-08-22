@@ -134,7 +134,7 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./coverage
+          directory: ./packages/reqon-dsl/coverage
           fail_ci_if_error: false
           verbose: true
 
@@ -310,5 +310,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: benchmark-results
-          path: benchmark-results.json
+          path: packages/reqon-dsl/benchmark-results.json
           if-no-files-found: ignore

@@ -1,21 +1,27 @@
-name: Publish VSCode Extension
+name: Publish VS Code extension
 
-# The extension is versioned independently of reqon-dsl (bump the version in
-# vscode-reqon/package.json before dispatching), so it publishes on its own
-# cadence rather than on release tags.
+# Changesets versions and tags the extension but marks it private so npm never
+# sees it. Its package tag hands publishing to the VS Code Marketplace workflow.
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'reqon-lang@*'
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   publish:
-    name: Publish to VS Code Marketplace
+    name: Publish extension
     runs-on: ubuntu-latest
+    environment: Production
 
     steps:
-      - name: Checkout repository
+      - name: Checkout reqon
         uses: actions/checkout@v7
 
       - name: Setup Node.js
@@ -23,11 +29,9 @@ jobs:
         with:
           node-version: 22
 
-      # Grammar-only injection extension: no dependencies, no build step.
-      # --no-dependencies is required: without node_modules, vsce's npm-based
-      # file collection silently produces an empty VSIX.
+      # This is a grammar-only extension with no dependencies or build step.
       - name: Publish to VS Code Marketplace
         run: npx --yes @vscode/vsce publish --no-dependencies
-        working-directory: vscode-reqon
+        working-directory: packages/reqon-lang
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}

@@ -137,10 +137,10 @@ for customer in customers where .needs_geo == true {
 
 ```bash
 # Run enrichment pipeline
-node dist/cli.js examples/data-enrichment/enrichment.vague --verbose
+node packages/reqon-dsl/dist/cli.js examples/data-enrichment/enrichment.vague --verbose
 
 # With credentials
-node dist/cli.js examples/data-enrichment/enrichment.vague --auth credentials.json
+node packages/reqon-dsl/dist/cli.js examples/data-enrichment/enrichment.vague --auth credentials.json
 ```
 
 ## Best Practices

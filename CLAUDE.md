@@ -14,7 +14,7 @@ File extensions: `.vague` and `.reqon` (both supported; the loader tries `.vague
 ## Project Structure
 
 ```
-src/
+packages/reqon-dsl/src/
 ├── ast/           # Extended AST nodes (missions, actions, steps)
 ├── auth/          # Rate limiting (incl. a self-calibrating model for headerless limiters),
 │                  # circuit breaker, credential loading, token store, and auth providers
@@ -71,13 +71,13 @@ npm run dev        # Watch mode compilation
 npm run typecheck  # Type-check without emitting
 npm run test       # Run tests in watch mode
 npm run test:run   # Run tests once
-npm run test:crash # Crash-injection durability suite (src/durability/)
+npm run test:crash # Crash-injection durability suite
 npm run test:pg    # Postgres execution-log tests (needs a Postgres)
 npm run check:docs # Every reqon/vague block in the docs lexes; complete ones parse
 npm run check:examples # Every mission under examples/ parses
 npm run check:snippets # build + check:docs + check:examples
-npm run lint       # ESLint over src/
-npm run format     # Prettier write over src/
+npm run lint       # ESLint over the npm package source
+npm run format     # Prettier write over the npm package source
 npm run bench      # Run performance benchmarks
 ```
 

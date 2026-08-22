@@ -11,13 +11,13 @@ Reqon extends Vague's language infrastructure:
 ## Capabilities
 
 ### Implementing New DSL Constructs
-- Add new keywords to `src/lexer/tokens.ts`
-- Extend the lexer in `src/lexer/lexer.ts`
-- Add parser rules in `src/parser/parser.ts`
-- Define AST nodes in `src/ast/nodes.ts`
+- Add new keywords to `packages/reqon-dsl/src/lexer/tokens.ts`
+- Extend the lexer in `packages/reqon-dsl/src/lexer/lexer.ts`
+- Add parser rules in `packages/reqon-dsl/src/parser/parser.ts`
+- Define AST nodes in `packages/reqon-dsl/src/ast/nodes.ts`
 
 ### Writing Parser Tests
-- Create comprehensive test cases in `src/parser/parser.test.ts`
+- Create comprehensive test cases in `packages/reqon-dsl/src/parser/parser.test.ts`
 - Test edge cases and error conditions
 - Use Vitest's describe/it/expect patterns
 
@@ -28,11 +28,11 @@ Reqon extends Vague's language infrastructure:
 
 ## Context Files
 When using this skill, read:
-- `src/lexer/tokens.ts` - Token definitions
-- `src/lexer/lexer.ts` - Lexer implementation
-- `src/parser/parser.ts` - Main parser
-- `src/parser/base.ts` - Parser utilities
-- `src/ast/nodes.ts` - AST node types
+- `packages/reqon-dsl/src/lexer/tokens.ts` - Token definitions
+- `packages/reqon-dsl/src/lexer/lexer.ts` - Lexer implementation
+- `packages/reqon-dsl/src/parser/parser.ts` - Main parser
+- `packages/reqon-dsl/src/parser/base.ts` - Parser utilities
+- `packages/reqon-dsl/src/ast/nodes.ts` - AST node types
 
 ## Implementation Patterns
 

@@ -158,16 +158,16 @@ webhook racing to resume the same pause fire the resume exactly once.
 
 | Guarantee | Test |
 | --------- | ---- |
-| Event log records mission/step/effect in order | `src/interpreter/executor-eventlog.test.ts` → "executor emits an execution event log" |
-| Resume skips an already-applied store effect | `src/interpreter/executor-eventlog.test.ts` → "resume from the execution log skips applied effects" |
-| Mutating fetch carries a stable `Idempotency-Key`; GET does not; off when not durable | `src/interpreter/fetch-handler.test.ts` → "idempotency keys"; `src/interpreter/pipeline.test.ts` → "sends an Idempotency-Key …" |
-| Checkpoint advance and pause lifecycle are logged | `src/interpreter/executor-durable-events.test.ts` |
-| **Crash at every boundary → no lost record, no duplicated effect** | `src/durability/crash-injection.test.ts` → "survives a crash at EVERY boundary" |
-| Torn mid-write line is ignored and resume stays coherent | `src/durability/crash-injection.test.ts` → "ignores a torn final log line …" |
-| File log survives restart / tolerates a torn final line | `src/execution-log/file-store.test.ts` |
-| SQLite log is durable across reopen and continues `seq` | `src/execution-log/sqlite-store.test.ts` |
-| Postgres log is durable across reconnect; concurrent appenders get distinct, contiguous `seq`s | `src/execution-log/postgres-store.test.ts` (CI, against a Postgres service) |
-| Pause resume is single-shot under a timeout/webhook race | `src/pause/pause.test.ts` → "resume is single-shot under races" |
+| Event log records mission/step/effect in order | `packages/reqon-dsl/src/interpreter/executor-eventlog.test.ts` → "executor emits an execution event log" |
+| Resume skips an already-applied store effect | `packages/reqon-dsl/src/interpreter/executor-eventlog.test.ts` → "resume from the execution log skips applied effects" |
+| Mutating fetch carries a stable `Idempotency-Key`; GET does not; off when not durable | `packages/reqon-dsl/src/interpreter/fetch-handler.test.ts` → "idempotency keys"; `packages/reqon-dsl/src/interpreter/pipeline.test.ts` → "sends an Idempotency-Key …" |
+| Checkpoint advance and pause lifecycle are logged | `packages/reqon-dsl/src/interpreter/executor-durable-events.test.ts` |
+| **Crash at every boundary → no lost record, no duplicated effect** | `packages/reqon-dsl/src/durability/crash-injection.test.ts` → "survives a crash at EVERY boundary" |
+| Torn mid-write line is ignored and resume stays coherent | `packages/reqon-dsl/src/durability/crash-injection.test.ts` → "ignores a torn final log line …" |
+| File log survives restart / tolerates a torn final line | `packages/reqon-dsl/src/execution-log/file-store.test.ts` |
+| SQLite log is durable across reopen and continues `seq` | `packages/reqon-dsl/src/execution-log/sqlite-store.test.ts` |
+| Postgres log is durable across reconnect; concurrent appenders get distinct, contiguous `seq`s | `packages/reqon-dsl/src/execution-log/postgres-store.test.ts` (CI, against a Postgres service) |
+| Pause resume is single-shot under a timeout/webhook race | `packages/reqon-dsl/src/pause/pause.test.ts` → "resume is single-shot under races" |
 
 Run the durability proof on its own:
 

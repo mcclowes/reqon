@@ -24,7 +24,7 @@ github-sync/
 
 ```bash
 # Run from folder path
-node dist/cli.js examples/github-sync --auth credentials.json --verbose
+node packages/reqon-dsl/dist/cli.js examples/github-sync --auth credentials.json --verbose
 
 # Environment variables needed
 export GITHUB_OWNER=your-org

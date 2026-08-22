@@ -54,7 +54,7 @@ match webhook {
 
 ```bash
 # Start the mission (will wait for webhooks)
-node dist/cli.js examples/webhook-payment/payment.vague --verbose
+node packages/reqon-dsl/dist/cli.js examples/webhook-payment/payment.vague --verbose
 
 # The CLI will display the webhook endpoint URL
 # Configure your payment provider to send webhooks to that URL

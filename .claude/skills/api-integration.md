@@ -24,9 +24,9 @@ Use this skill when implementing API client functionality, authentication flows,
 
 ## Context Files
 When using this skill, read:
-- `src/interpreter/http.ts` - HTTP client implementation
-- `src/interpreter/executor.ts` - Fetch execution logic
-- `src/ast/nodes.ts` - FetchNode, PaginationConfig types
+- `packages/reqon-dsl/src/interpreter/http.ts` - HTTP client implementation
+- `packages/reqon-dsl/src/interpreter/executor.ts` - Fetch execution logic
+- `packages/reqon-dsl/src/ast/nodes.ts` - FetchNode, PaginationConfig types
 
 ## Implementation Patterns
 

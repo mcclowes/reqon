@@ -13,13 +13,13 @@ Demonstrates Reqon's mock data generation from OpenAPI schemas. When running wit
 From this directory:
 
 ```bash
-node ../../dist/cli.js sync.vague --dry-run --verbose
+node ../../packages/reqon-dsl/dist/cli.js sync.vague --dry-run --verbose
 ```
 
 Or from the project root:
 
 ```bash
-node dist/cli.js examples/mock-server-demo/sync.vague --dry-run --verbose
+node packages/reqon-dsl/dist/cli.js examples/mock-server-demo/sync.vague --dry-run --verbose
 ```
 
 ## What It Demonstrates

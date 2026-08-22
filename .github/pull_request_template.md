@@ -13,6 +13,7 @@
 
 - [ ] Tests pass locally (`npm run test:run`)
 - [ ] Build succeeds (`npm run build`)
+- [ ] Added a changeset for any publishable package change (`npm run changeset`)
 - [ ] Code follows project conventions
 - [ ] Self-reviewed the changes
 

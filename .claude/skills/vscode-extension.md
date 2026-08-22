@@ -32,9 +32,9 @@ Create snippets for common patterns:
 
 ## Context Files
 When using this skill, read:
-- `src/lexer/tokens.ts` - All token types and keywords
-- `src/ast/nodes.ts` - AST structure for symbols
-- `src/parser/parser.ts` - Syntax rules
+- `packages/reqon-dsl/src/lexer/tokens.ts` - All token types and keywords
+- `packages/reqon-dsl/src/ast/nodes.ts` - AST structure for symbols
+- `packages/reqon-dsl/src/parser/parser.ts` - Syntax rules
 
 ## Implementation Patterns
 

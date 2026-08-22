@@ -3,11 +3,11 @@
 // Demonstrates fetching data and processing it through a pipeline.
 //
 // Option 1: Use --dry-run to generate mock data from OpenAPI schemas:
-//   node dist/cli.js examples/mock-server-demo/sync.vague --dry-run --verbose --output ./output.json
+//   node packages/reqon-dsl/dist/cli.js examples/mock-server-demo/sync.vague --dry-run --verbose --output ./output.json
 //
 // Option 2: Start a Vague mock server and fetch from it:
 //   npx vague examples/mock-server-demo/mock-data.vague --serve 4000
-//   node dist/cli.js examples/mock-server-demo/sync.vague --verbose --output ./output.json
+//   node packages/reqon-dsl/dist/cli.js examples/mock-server-demo/sync.vague --verbose --output ./output.json
 //
 // Data is persisted to .reqon-data/ directory (file stores) and exported to output.json
 

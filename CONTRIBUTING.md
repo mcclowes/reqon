@@ -57,8 +57,8 @@ proxy pools).
 | `npm run check:docs` | Every reqon/vague block in the docs lexes; complete ones parse |
 | `npm run check:examples` | Every mission under `examples/` parses |
 | `npm run check:snippets` | `build` + `check:docs` + `check:examples` |
-| `npm run lint` | ESLint over `src/` |
-| `npm run format` | Prettier write over `src/` |
+| `npm run lint` | ESLint over `packages/reqon-dsl/src/` |
+| `npm run format` | Prettier write over `packages/reqon-dsl/src/` |
 | `npm run bench` | Performance benchmarks |
 
 The two snippet checkers import from `dist/`, so build first when running them on
@@ -77,7 +77,7 @@ pushing. It's what stops the docs drifting into syntax the parser never accepted
 ### Project Structure
 
 ```
-src/
+packages/reqon-dsl/src/
 ├── ast/           # Extended AST nodes (missions, actions, steps)
 ├── auth/          # Rate limiting, circuit breaker, credentials, auth providers
 ├── benchmark/     # Performance benchmarks
@@ -147,8 +147,8 @@ Reqon extends [Vague](https://github.com/mcclowes/vague), which provides the cor
 
 When adding features:
 - Extend Vague's lexer/parser if adding new expression syntax
-- Add new step types in `src/ast/` and handle them in `src/interpreter/executor.ts`
-- New store backends implement the `StoreAdapter` interface in `src/stores/`
+- Add new step types in `packages/reqon-dsl/src/ast/` and handle them in `packages/reqon-dsl/src/interpreter/executor.ts`
+- New store backends implement the `StoreAdapter` interface in `packages/reqon-dsl/src/stores/`
 
 ## Submitting Changes
 
@@ -187,96 +187,31 @@ When reporting bugs, please include:
 - Expected vs actual behavior
 - Error messages and stack traces
 
-## Release Process (Maintainers)
+## Release process
 
-This section documents how to release a new version of Reqon.
+Changesets manages the npm package and VS Code extension as independently versioned workspace packages.
 
-### Prerequisites
-
-- Push access to the repository
-- `NPM_TOKEN` configured in GitHub Secrets (for automated publishing)
-
-### Version Numbering
+### Version numbering
 
 We follow [Semantic Versioning](https://semver.org/):
 - **Patch** (1.1.0 → 1.1.1): Bug fixes, minor documentation updates
 - **Minor** (1.1.0 → 1.2.0): New features, backward-compatible changes
 - **Major** (1.1.0 → 2.0.0): Breaking changes
 
-### Release Steps
+### Pull requests
 
-1. **Update the version:**
-   ```bash
-   npm run version:patch  # or version:minor, version:major
-   ```
+Run `npm run changeset` when a pull request changes `reqon-dsl`, `reqon-lang`, or both. Select each affected package, choose its semantic version bump, and write a user-facing summary. Documentation, tests, examples, and internal tooling don't need a changeset unless they alter a published artifact.
 
-2. **Update the changelog** at `docusaurus/docs/changelog.md` (the root
-   `CHANGELOG.md` is just a pointer to the docs site). The release script
-   validates the format, so it needs both:
-   - a `## <version>` heading matching `package.json` exactly
-   - a `_Released YYYY-MM-DD_` line under it
+### Publishing
 
-3. **Commit the version bump:**
-   ```bash
-   git add package.json docusaurus/docs/changelog.md
-   git commit -m "chore: release v1.2.0"
-   git push origin main
-   ```
+Every push to `main` runs the release workflow. Pending changesets are collected into a `Release packages` pull request that updates package versions and changelogs. Review and merge that pull request to publish:
 
-4. **Run the release script:**
-   ```bash
-   npm run release
-   ```
+- `reqon-dsl` publishes to npm with provenance through trusted publishing.
+- `reqon-lang` receives its own package tag, which triggers the VS Code Marketplace workflow.
 
-   This will:
-   - Check the working tree is clean (it exits if not) and warn if you aren't on `main`
-   - Validate the changelog has the new version entry and a release date
-   - Check the tag doesn't already exist
-   - Run tests and build
-   - Create and push the git tag
+The curated release notes in `docusaurus/docs/changelog.md` remain separate from the package changelogs. Update them in the release pull request when `reqon-dsl` changes.
 
-5. **Monitor the release:**
-   - Check [GitHub Actions](https://github.com/mcclowes/reqon/actions) for the release workflow
-   - Verify the package appears on [npm](https://www.npmjs.com/package/reqon-dsl)
-
-### Pre-release Versions
-
-For alpha/beta/rc releases:
-
-```bash
-# Manually set version
-npm version 1.2.0-alpha.1 --no-git-tag-version
-# Update docusaurus/docs/changelog.md
-# Commit and run release
-npm run release
-```
-
-Pre-releases are published with the `next` npm tag:
-```bash
-npm install reqon-dsl@next
-```
-
-### Dry Run
-
-To preview a release without making changes:
-```bash
-npm run release -- --dry-run
-npm run release:dry-run  # Preview npm publish
-```
-
-### Troubleshooting
-
-**Tag already exists:**
-```bash
-# Delete local tag
-git tag -d v1.2.0
-# Delete remote tag (if pushed by mistake)
-git push origin :refs/tags/v1.2.0
-```
-
-**Release workflow failed:**
-- Check the [Actions tab](https://github.com/mcclowes/reqon/actions) for error details
-- Common issues: missing `NPM_TOKEN`, test failures, version mismatch
+Monitor publishing in [GitHub Actions](https://github.com/mcclowes/reqon/actions), then verify [reqon-dsl on npm](https://www.npmjs.com/package/reqon-dsl) or the VS Code Marketplace listing.
 
 ## Questions?
 

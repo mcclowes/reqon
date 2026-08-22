@@ -6,7 +6,7 @@ import { ReqonParser } from './parser/parser.js';
 import type { ForStep, MatchStep, ValidateStep, StoreStep, ActionDefinition } from './ast/nodes.js';
 import type { ObjectLiteralExpression } from './parser/expressions.js';
 
-const examplesDir = join(import.meta.dirname, '..', 'examples');
+const examplesDir = join(import.meta.dirname, '..', '..', '..', 'examples');
 const parseExample = (...segments: string[]) =>
   new ReqonParser(
     new ReqonLexer(readFileSync(join(examplesDir, ...segments), 'utf8')).tokenize()
@@ -43,7 +43,7 @@ describe('every shipped example parses', () => {
  * has to keep saying what the docs claim it says, not merely parse.
  */
 describe('fpl-sharded example', () => {
-  const dir = join(import.meta.dirname, '..', 'examples', 'fpl-sharded');
+  const dir = join(examplesDir, 'fpl-sharded');
   const parse = (file: string) =>
     new ReqonParser(new ReqonLexer(readFileSync(join(dir, file), 'utf8')).tokenize()).parse();
 
@@ -100,7 +100,7 @@ describe('fpl-sharded example', () => {
  * file, so there's no orchestrator and no 500k-line input to hand-write.
  */
 describe('fpl-sharded first-500k bulk example', () => {
-  const dir = join(import.meta.dirname, '..', 'examples', 'fpl-sharded');
+  const dir = join(examplesDir, 'fpl-sharded');
   const parse = (file: string) =>
     new ReqonParser(new ReqonLexer(readFileSync(join(dir, file), 'utf8')).tokenize()).parse();
 

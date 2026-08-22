@@ -1,7 +1,3 @@
 # Changelog
 
-The changelog has moved to the documentation site:
-
-**[https://reqon.mcclowes.com/changelog](https://reqon.mcclowes.com/changelog)**
-
-This keeps the changelog alongside the rest of the documentation and ensures it stays up to date.
+The package changelog lives at [`packages/reqon-dsl/CHANGELOG.md`](./packages/reqon-dsl/CHANGELOG.md). The curated release notes are published on the [documentation site](https://reqon.mcclowes.com/changelog).

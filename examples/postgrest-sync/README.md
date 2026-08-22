@@ -18,7 +18,7 @@ the recommended option for production persistence.
 ## Run
 
 ```bash
-node dist/cli.js examples/postgrest-sync/sync.vague --verbose
+node packages/reqon-dsl/dist/cli.js examples/postgrest-sync/sync.vague --verbose
 ```
 
 You need a running PostgREST server (default `http://localhost:3000`) with

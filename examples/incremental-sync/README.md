@@ -32,13 +32,13 @@ sinceFormat: "date-only"  // 2024-01-15
 
 ```bash
 # First run - fetches all data
-node dist/cli.js examples/incremental-sync/sync.vague --verbose
+node packages/reqon-dsl/dist/cli.js examples/incremental-sync/sync.vague --verbose
 
 # Subsequent runs - only fetches changes
-node dist/cli.js examples/incremental-sync/sync.vague --verbose
+node packages/reqon-dsl/dist/cli.js examples/incremental-sync/sync.vague --verbose
 
 # Reset checkpoint (full resync)
-node dist/cli.js examples/incremental-sync/sync.vague --reset-checkpoints
+node packages/reqon-dsl/dist/cli.js examples/incremental-sync/sync.vague --reset-checkpoints
 ```
 
 ## Checkpoint Storage

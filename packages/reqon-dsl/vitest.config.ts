@@ -1,24 +1,27 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Tests keep the repository root as their working directory because shipped
+  // examples and runtime data directories live outside this workspace.
+  root: '.',
   test: {
     // Test file patterns
-    include: ['src/**/*.test.ts'],
+    include: ['packages/reqon-dsl/src/**/*.test.ts'],
 
     // Coverage configuration
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'html'],
-      reportsDirectory: './coverage',
+      reportsDirectory: './packages/reqon-dsl/coverage',
 
       // Include all source files
-      include: ['src/**/*.ts'],
+      include: ['packages/reqon-dsl/src/**/*.ts'],
 
       // Exclude test files and index re-exports
       exclude: [
-        'src/**/*.test.ts',
-        'src/**/index.ts',
-        'src/cli.ts', // CLI is hard to test
+        'packages/reqon-dsl/src/**/*.test.ts',
+        'packages/reqon-dsl/src/**/index.ts',
+        'packages/reqon-dsl/src/cli.ts', // CLI is hard to test
       ],
 
       // Thresholds (can be made stricter over time)

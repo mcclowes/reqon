@@ -16,7 +16,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ReqonLexer, parse } from '../dist/index.js';
 
-const root = fileURLToPath(new URL('..', import.meta.url));
+const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const DEFAULT_TARGETS = [
   'docusaurus/docs',
   'README.md',
@@ -27,7 +27,7 @@ const DEFAULT_TARGETS = [
   // The agent-facing DSL reference drifts the same way the docs do, and nothing
   // else reads it closely enough to notice.
   '.claude/skills/reqon',
-].map((p) => join(root, p));
+].map((p) => join(repoRoot, p));
 const targets = process.argv.length > 2 ? process.argv.slice(2) : DEFAULT_TARGETS;
 
 const LANGS = new Set(['reqon', 'vague']);
@@ -105,7 +105,7 @@ for (const file of files) {
   }
 }
 
-const rel = (f) => relative(root, f);
+const rel = (f) => relative(repoRoot, f);
 if (failures.length === 0) {
   console.log(`OK: ${blocks} reqon/vague blocks (${parsed} full missions parsed), 0 failures`);
   process.exit(0);

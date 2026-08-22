@@ -141,7 +141,7 @@ for product in products {
 
 ```bash
 # Run the sync. --dev is required: without it the sql/nosql stores throw.
-node dist/cli.js examples/database-sync/sync.vague --dev --verbose
+node packages/reqon-dsl/dist/cli.js examples/database-sync/sync.vague --dev --verbose
 ```
 
 Under `--dev`, `sql()` writes to `.reqon-data/sql/` and `nosql()` to

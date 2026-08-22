@@ -12,7 +12,7 @@ Demonstrates comprehensive error handling with schema matching and all flow cont
 ## Run
 
 ```bash
-node dist/cli.js examples/error-handling/payment-processor.vague --auth credentials.json --verbose
+node packages/reqon-dsl/dist/cli.js examples/error-handling/payment-processor.vague --auth credentials.json --verbose
 ```
 
 ## Flow Control Directives

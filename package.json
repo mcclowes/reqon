@@ -1,118 +1,42 @@
 {
-  "name": "reqon-dsl",
-  "version": "1.1.0",
-  "description": "A DSL framework for fetch, map, validate pipelines - built on Vague",
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "bin": {
-    "reqon": "dist/cli.js",
-    "reqon-mcp": "dist/mcp/server.js"
-  },
+  "name": "reqon",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "docusaurus"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
-    "dev": "tsc -p tsconfig.build.json --watch",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage",
-    "test:integration": "RUN_NETWORK_TESTS=1 vitest run src/api-integration.test.ts",
-    "test:crash": "vitest run src/durability/",
-    "test:pg": "vitest run src/execution-log/postgres-store.test.ts",
-    "check:docs": "node scripts/check-doc-snippets.mjs",
-    "check:examples": "node scripts/check-examples.mjs",
-    "check:snippets": "npm run build && npm run check:docs && npm run check:examples",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
-    "format": "prettier --write src/",
-    "format:check": "prettier --check src/",
-    "bench": "npx tsx src/benchmark/index.ts",
-    "bench:lexer": "npx tsx src/benchmark/index.ts --suite lexer",
-    "bench:parser": "npx tsx src/benchmark/index.ts --suite parser",
-    "bench:evaluator": "npx tsx src/benchmark/index.ts --suite evaluator",
-    "bench:store": "npx tsx src/benchmark/index.ts --suite store",
-    "bench:resilience": "npx tsx src/benchmark/index.ts --suite resilience",
-    "bench:e2e": "npx tsx src/benchmark/index.ts --suite e2e",
-    "prerelease": "npm run test:run && npm run build",
-    "release": "node scripts/release.js",
-    "release:dry-run": "npm publish --dry-run",
-    "version:patch": "npm version patch --no-git-tag-version",
-    "version:minor": "npm version minor --no-git-tag-version",
-    "version:major": "npm version major --no-git-tag-version",
+    "build": "npm run build --workspace reqon-dsl",
+    "dev": "npm run dev --workspace reqon-dsl",
+    "typecheck": "npm run typecheck --workspace reqon-dsl",
+    "test": "npm run test --workspace reqon-dsl",
+    "test:run": "npm run test:run --workspace reqon-dsl",
+    "test:coverage": "npm run test:coverage --workspace reqon-dsl",
+    "test:integration": "npm run test:integration --workspace reqon-dsl",
+    "test:crash": "npm run test:crash --workspace reqon-dsl",
+    "test:pg": "npm run test:pg --workspace reqon-dsl",
+    "check:docs": "npm run check:docs --workspace reqon-dsl",
+    "check:examples": "npm run check:examples --workspace reqon-dsl",
+    "check:snippets": "npm run check:snippets --workspace reqon-dsl",
+    "lint": "npm run lint --workspace reqon-dsl",
+    "lint:fix": "npm run lint:fix --workspace reqon-dsl",
+    "format": "npm run format --workspace reqon-dsl",
+    "format:check": "npm run format:check --workspace reqon-dsl",
+    "bench": "npm run bench --workspace reqon-dsl",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish",
     "prepare": "husky"
   },
-  "files": [
-    "dist",
-    "CHANGELOG.md",
-    "README.md"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/mcclowes/reqon.git"
-  },
-  "bugs": {
-    "url": "https://github.com/mcclowes/reqon/issues"
-  },
-  "homepage": "https://github.com/mcclowes/reqon#readme",
-  "keywords": [
-    "dsl",
-    "data-pipeline",
-    "fetch",
-    "api",
-    "declarative",
-    "etl",
-    "vague"
-  ],
-  "author": "Max Clayton Clowes <max@mcclowes.com>",
-  "license": "ISC",
-  "dependencies": {
-    "@apidevtools/swagger-parser": "^12.1.0",
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "dotenv": "^17.2.3",
-    "vague-lang": "^3.4.3",
-    "zod": "^4.2.1"
-  },
-  "peerDependencies": {
-    "better-sqlite3": ">=11",
-    "pg": ">=8",
-    "undici": ">=6"
-  },
-  "peerDependenciesMeta": {
-    "better-sqlite3": {
-      "optional": true
-    },
-    "pg": {
-      "optional": true
-    },
-    "undici": {
-      "optional": true
-    }
-  },
   "lint-staged": {
-    "src/**/*.{ts,tsx}": [
+    "packages/reqon-dsl/src/**/*.{ts,tsx}": [
       "eslint --fix",
       "prettier --write"
     ]
   },
   "devDependencies": {
-    "@eslint/js": "^9.17.0",
-    "@types/node": "^25.0.3",
-    "@vitest/coverage-v8": "^4.0.16",
-    "better-sqlite3": "^12.11.1",
-    "eslint": "^10.8.0",
+    "@changesets/cli": "^2.29.7",
     "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
-    "pg": "^8.22.0",
-    "prettier": "^3.4.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.18.2",
-    "undici": "^8.9.0",
-    "vitest": "^4.0.15"
-  },
-  "allowScripts": {
-    "better-sqlite3": true
+    "lint-staged": "^16.2.7"
   }
 }

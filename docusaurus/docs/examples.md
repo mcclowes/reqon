@@ -471,7 +471,7 @@ mission GitHubSync {
 
 ## Runnable example projects
 
-The repository ships a set of complete, runnable example projects in the [`examples/` directory](https://github.com/mcclowes/reqon/tree/main/examples). Each is a mission you can run with `node dist/cli.js examples/<name>/<file>.vague` after `npm run build`.
+The repository ships a set of complete, runnable example projects in the [`examples/` directory](https://github.com/mcclowes/reqon/tree/main/examples). Each is a mission you can run with `node packages/reqon-dsl/dist/cli.js examples/<name>/<file>.vague` after `npm run build`.
 
 | Example | What it shows |
 |---------|---------------|

@@ -29,7 +29,7 @@ Adds highlighting for Reqon-specific keywords:
 
 1. Package the extension:
    ```bash
-   cd vscode-reqon
+   cd packages/reqon-lang
    npx @vscode/vsce package
    ```
 
@@ -40,7 +40,7 @@ Adds highlighting for Reqon-specific keywords:
 
 ### Development Mode
 
-1. Open the `vscode-reqon` folder in VS Code
+1. Open the `packages/reqon-lang` folder in VS Code
 2. Press `F5` to launch Extension Development Host
 3. Open any `.vague` file to see Reqon syntax highlighting
 

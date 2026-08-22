@@ -304,16 +304,16 @@ See: [file-export](./file-export/)
 npm run build
 
 # Run any example
-node dist/cli.js examples/<example>/<file>.vague --verbose
+node packages/reqon-dsl/dist/cli.js examples/<example>/<file>.vague --verbose
 
 # Run multi-file mission (folder)
-node dist/cli.js examples/github-sync --verbose
+node packages/reqon-dsl/dist/cli.js examples/github-sync --verbose
 
 # Dry run (no actual API calls)
-node dist/cli.js examples/xero/invoices.vague --dry-run
+node packages/reqon-dsl/dist/cli.js examples/xero/invoices.vague --dry-run
 
 # With credentials
-node dist/cli.js examples/xero/invoices.vague --auth credentials.json
+node packages/reqon-dsl/dist/cli.js examples/xero/invoices.vague --auth credentials.json
 ```
 
 ## Credentials Format

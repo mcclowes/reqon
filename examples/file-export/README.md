@@ -21,7 +21,7 @@ daily at 2 AM (`schedule: cron "0 2 * * *"`).
 ## Run
 
 ```bash
-node dist/cli.js examples/file-export/export.vague --verbose
+node packages/reqon-dsl/dist/cli.js examples/file-export/export.vague --verbose
 ```
 
 Outputs land in `.reqon-data/`, one JSON file per `file()` store (e.g.

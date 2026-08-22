@@ -61,13 +61,13 @@ mission ScheduledMission {
 
 ```bash
 # Run as daemon (continuous scheduling)
-node dist/cli.js examples/scheduled-reports/reports.vague --daemon
+node packages/reqon-dsl/dist/cli.js examples/scheduled-reports/reports.vague --daemon
 
 # Run once (ignore schedule, execute immediately)
-node dist/cli.js examples/scheduled-reports/reports.vague --run-now
+node packages/reqon-dsl/dist/cli.js examples/scheduled-reports/reports.vague --run-now
 
 # Dry run to test schedule parsing
-node dist/cli.js examples/scheduled-reports/reports.vague --dry-run
+node packages/reqon-dsl/dist/cli.js examples/scheduled-reports/reports.vague --dry-run
 ```
 
 ## Common Cron Patterns

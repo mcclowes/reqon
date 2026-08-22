@@ -12,7 +12,7 @@ Demonstrates a real-world sync pipeline with OAuth2 authentication, pagination, 
 ## Run
 
 ```bash
-node dist/cli.js examples/xero/invoices.vague --auth credentials.json --verbose
+node packages/reqon-dsl/dist/cli.js examples/xero/invoices.vague --auth credentials.json --verbose
 ```
 
 Requires a `credentials.json`:

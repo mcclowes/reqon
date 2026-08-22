@@ -24,10 +24,10 @@ Use this skill when implementing property-based tests, fuzzing the parser, or ge
 
 ## Context Files
 When using this skill, read:
-- `src/parser/parser.test.ts` - Existing parser tests
-- `src/integration.test.ts` - Integration test patterns
-- `src/ast/nodes.ts` - AST structure for generation
-- `src/lexer/tokens.ts` - Valid tokens for fuzzing
+- `packages/reqon-dsl/src/parser/parser.test.ts` - Existing parser tests
+- `packages/reqon-dsl/src/integration.test.ts` - Integration test patterns
+- `packages/reqon-dsl/src/ast/nodes.ts` - AST structure for generation
+- `packages/reqon-dsl/src/lexer/tokens.ts` - Valid tokens for fuzzing
 
 ## Implementation Patterns
 

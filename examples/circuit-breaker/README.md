@@ -106,10 +106,10 @@ store {
 
 ```bash
 # Normal run
-node dist/cli.js examples/circuit-breaker/resilient-fetch.vague --verbose
+node packages/reqon-dsl/dist/cli.js examples/circuit-breaker/resilient-fetch.vague --verbose
 
 # With environment variables
-FALLBACK_API_TOKEN=xxx node dist/cli.js examples/circuit-breaker/resilient-fetch.vague
+FALLBACK_API_TOKEN=xxx node packages/reqon-dsl/dist/cli.js examples/circuit-breaker/resilient-fetch.vague
 ```
 
 ## Best Practices

@@ -11,7 +11,11 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execute, FileExecutionLog, LogBackedPauseStore } from '../../src/index.js';
+import {
+  execute,
+  FileExecutionLog,
+  LogBackedPauseStore,
+} from '../../packages/reqon-dsl/src/index.js';
 
 const source = `
   mission Approval {
