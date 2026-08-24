@@ -362,7 +362,7 @@ for item in items onError queue dlq { ... }   // failed items land in the dlq st
 
 The steps valid anywhere a step goes (action body, `for` body, `match` arm block,
 validate `or` block): `get`/`post`/`put`/`patch`/`delete`, `call`, `for`, `map`,
-`apply`, `validate`, `store`, `match`, `let`, `wait`, `pause`.
+`apply`, `validate`, `store`, `match`, `let`, `generate`, `wait`, `pause`.
 
 ## Built-in Functions
 

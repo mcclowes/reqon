@@ -13,6 +13,12 @@ File extensions: `.vague` and `.reqon` (both supported; the loader tries `.vague
 
 ## Project Structure
 
+npm workspaces monorepo:
+
+- `packages/reqon-dsl` - the npm package (runtime, CLI, MCP server)
+- `packages/reqon-lang` - VS Code grammar extension (Reqon keywords injected into the Vague grammar; published to the Marketplace, not npm)
+- `docusaurus` - docs site (`check:docs` scans `docusaurus/docs/`, the root markdown docs, and `.claude/skills/reqon`)
+
 ```
 packages/reqon-dsl/src/
 ├── ast/           # Extended AST nodes (missions, actions, steps)
@@ -38,7 +44,7 @@ packages/reqon-dsl/src/
 │   ├── signals.ts       # Execution signals (abort, skip, pause, etc.)
 │   ├── source-manager.ts # Source resolution and lifecycle
 │   ├── store-manager.ts  # Store resolution and lifecycle
-│   └── step-handlers/   # Individual step type handlers (for, map, validate, store, match, webhook, apply, pause)
+│   └── step-handlers/   # Individual step type handlers (for, map, validate, store, match, generate, webhook, apply, pause)
 ├── lexer/         # Reqon keywords (uses Vague's lexer via plugin)
 ├── loader/        # Mission loader (single file or folder with action files)
 ├── mcp/           # Model Context Protocol integration
@@ -89,6 +95,11 @@ CI gates on `typecheck`, `lint`, `format:check`, `test:run`, `build`,
 (critical, production deps only). The pre-commit hook runs lint-staged (eslint +
 prettier) and the full test suite, but not `typecheck` - vitest strips types
 without checking them, so run `typecheck` yourself before pushing.
+
+Releases go through Changesets: run `npm run changeset` when a PR changes
+`reqon-dsl` or `reqon-lang`. Pushes to `main` open/refresh a "Release packages"
+PR; merging it publishes `reqon-dsl` to npm and tags `reqon-lang`, which
+triggers the VS Code Marketplace publish. Details in CONTRIBUTING.md.
 
 ## DSL Syntax
 

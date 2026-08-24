@@ -96,6 +96,7 @@ packages/reqon-dsl/src/
 ├── observability/ # Structured events, logging, OpenTelemetry
 ├── parser/        # Parser for mission/action/fetch/store syntax
 ├── pause/         # Resource-free long pauses
+├── reporting/     # Vague-backed dataset reports and golden comparisons
 ├── scheduler/     # Cron/interval scheduling for missions
 ├── stores/        # Store adapters (memory, file, postgrest) + batching wrapper
 ├── sync/          # Incremental sync checkpointing

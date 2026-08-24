@@ -35,8 +35,8 @@ mission SyncData {
 - `proxy: [...]` - Egress proxy pool, rotated per request; limiter/breaker keyed per IP
 - `source Name from "./spec.yaml"` - OAS-based source
 - `store` - Storage: `memory("name")`, `file("name")` (writes `.reqon-data/name.json`),
-  `postgrest("table")`. `sql()`/`nosql()` have no adapter and throw unless `--dev` falls
-  them back to local JSON
+  `postgrest("table")`. `sql()` uses the PostgREST adapter when PostgREST options are
+  set; otherwise `sql()`/`nosql()` throw unless `--dev` falls them back to local JSON
 - `action` - Pipeline step: fetch, map, validate, store, wait
 - `run [A, B] then C` - Parallel then sequential execution
 - `match response { Schema -> ..., _ -> skip }` - Pattern matching
