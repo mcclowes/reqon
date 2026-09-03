@@ -852,7 +852,9 @@ export class MissionExecutor {
             (s) => !isParallelStage(s) && s.action === error.action
           );
           if (targetIndex === -1) {
-            throw new Error(`Jump target action not found in pipeline: ${error.action}`);
+            throw new Error(`Jump target action not found in pipeline: ${error.action}`, {
+              cause: error,
+            });
           }
           this.log(`Jump to action '${error.action}' (stage ${targetIndex})`);
           i = targetIndex - 1; // loop's i++ lands on the target stage
@@ -1156,7 +1158,9 @@ export class MissionExecutor {
           const maxAttempts = error.backoff?.maxAttempts ?? MAX_RETRY_FALLBACK;
           attempt++;
           if (attempt >= maxAttempts) {
-            throw new Error(`Action ${action.name} exhausted ${maxAttempts} retry attempt(s)`);
+            throw new Error(`Action ${action.name} exhausted ${maxAttempts} retry attempt(s)`, {
+              cause: error,
+            });
           }
           const delay = this.computeRetryDelay(error.backoff, attempt);
           this.log(`Action ${action.name}: retry ${attempt}/${maxAttempts} in ${delay}ms`);

@@ -421,10 +421,9 @@ export class ActionParser extends FetchParser {
       this.consume(TokenType.ASSUME, "Expected 'assume'");
       const condition = this.parseExpression();
 
-      let message: string | undefined;
       const severity: ValidationConstraint['severity'] = 'error';
 
-      constraints.push({ type: 'ValidationConstraint', condition, message, severity });
+      constraints.push({ type: 'ValidationConstraint', condition, severity });
       this.match(TokenType.COMMA);
     }
 
