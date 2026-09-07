@@ -93,9 +93,7 @@ source API {
 }
 ```
 
-:::warning Not sent yet
-A source `headers` block parses, but the runtime currently drops it: the HTTP client is built without those headers. Track [#321](https://github.com/mcclowes/reqon/issues/321).
-:::
+Header values are expressions, so `env("API_VERSION")` works. An auth provider's own headers win if a name collides.
 
 ## Response handling
 

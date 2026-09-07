@@ -97,9 +97,11 @@ export class SourceManager {
     this.configureRateLimiter(source);
     this.configureCircuitBreaker(source);
     const proxyPool = this.buildProxyPool(source, ctx);
+    const headers = this.resolveHeaders(source, ctx);
 
     const client = new HttpClient({
       baseUrl,
+      headers,
       auth: authProvider,
       rateLimiter: this.deps.rateLimiter,
       circuitBreaker: this.deps.circuitBreaker,
@@ -164,6 +166,27 @@ export class SourceManager {
    * without a proxy provider, and there is no pool to overload. It is logged
    * loudly because it means requests leave from this host's own address.
    */
+  /**
+   * Evaluate a source's `headers` block once at init. Values are expressions
+   * (so `env()` works); they sit under per-request and auth headers in the
+   * client's merge order, so an auth provider always wins on collision.
+   */
+  private resolveHeaders(
+    source: SourceDefinition,
+    ctx: ExecutionContext
+  ): Record<string, string> | undefined {
+    const entries = source.config.headers;
+    if (!entries) return undefined;
+
+    const headers: Record<string, string> = {};
+    for (const [name, expr] of Object.entries(entries)) {
+      const value = evaluate(expr, ctx);
+      if (value === undefined || value === null) continue;
+      headers[name] = String(value);
+    }
+    return Object.keys(headers).length > 0 ? headers : undefined;
+  }
+
   private buildProxyPool(source: SourceDefinition, ctx: ExecutionContext): ProxyPool | undefined {
     const entries = source.config.proxy;
     if (!entries?.length) return undefined;

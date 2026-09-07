@@ -164,3 +164,51 @@ describe('SourceManager auth providers (#200)', () => {
     ).rejects.toThrow(/Refusing to send an unauthenticated request/);
   });
 });
+
+describe('SourceManager source headers (#321)', () => {
+  const requestHeadersFor = async (
+    config: string,
+    auth?: AuthConfig
+  ): Promise<Record<string, string>> => {
+    const manager = new SourceManager(
+      { auth: auth ? { API: auth } : undefined },
+      { rateLimiter: new AdaptiveRateLimiter(), circuitBreaker: new CircuitBreaker() }
+    );
+    const ctx = createContext();
+    await manager.initializeSource(sourceFrom(config), ctx);
+    const client = ctx.sources.get('API')!;
+    let headers: Record<string, string> = {};
+    const original = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      headers = Object.fromEntries(Object.entries(init?.headers || {}));
+      return new Response('{}', { status: 200 });
+    });
+    try {
+      await client.request({ method: 'GET', path: '/items' });
+    } finally {
+      globalThis.fetch = original;
+    }
+    return headers;
+  };
+
+  afterEach(() => {
+    delete process.env.TEST_SOURCE_HEADER;
+  });
+
+  it('sends a source headers block on every request, evaluating expressions', async () => {
+    process.env.TEST_SOURCE_HEADER = 'from-env';
+    const headers = await requestHeadersFor(
+      `headers: { "X-Api-Version": "2.0", "X-From-Env": env("TEST_SOURCE_HEADER") }`
+    );
+    expect(headers['X-Api-Version']).toBe('2.0');
+    expect(headers['X-From-Env']).toBe('from-env');
+  });
+
+  it('lets the auth provider win when a source header collides with it', async () => {
+    const headers = await requestHeadersFor(`headers: { "Authorization": "not-this" }`, {
+      type: 'bearer',
+      token: 't-1',
+    });
+    expect(headers['Authorization']).toBe('Bearer t-1');
+  });
+});

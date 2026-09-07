@@ -159,9 +159,7 @@ source CustomAPI {
 }
 ```
 
-:::warning Not sent yet
-The `headers` block parses, but the runtime currently drops it: the HTTP client is built without those headers. Track [#321](https://github.com/mcclowes/reqon/issues/321).
-:::
+Values are expressions, so `env("API_VERSION")` works. Headers apply to every request through the source; an auth provider's own headers win if a name collides.
 
 ### Rate limiting
 
