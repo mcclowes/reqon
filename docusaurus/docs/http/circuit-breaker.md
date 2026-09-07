@@ -39,9 +39,9 @@ source API {
   base: "https://api.example.com",
   circuitBreaker: {
     failureThreshold: 5,
-    resetTimeout: 30000,
+    resetTimeout: 30,
     successThreshold: 2,
-    failureWindow: 60000
+    failureWindow: 60
   }
 }
 ```
@@ -51,9 +51,13 @@ source API {
 | Option | Description | Default |
 |--------|-------------|---------|
 | `failureThreshold` | Failures before opening circuit | 5 |
-| `resetTimeout` | Time before trying half-open (ms) | 30000 |
+| `resetTimeout` | Time before trying half-open, in **seconds** | 30 |
 | `successThreshold` | Successes needed to close circuit | 2 |
-| `failureWindow` | Window for counting failures (ms) | 60000 |
+| `failureWindow` | Window for counting failures, in **seconds** | 60 |
+| `failureRate` | Open when this percentage of requests in the window failed, instead of on an absolute count. Suits bulk runs where a fixed threshold would sit permanently open | none |
+| `minimumRequests` | Requests needed in the window before `failureRate` applies | 20 |
+
+Durations are seconds, not milliseconds: `resetTimeout: 30000` would wait over eight hours.
 
 ## States explained
 
@@ -129,7 +133,7 @@ source API {
   base: "https://api.example.com",
   circuitBreaker: {
     failureThreshold: 5,
-    resetTimeout: 30000
+    resetTimeout: 30
   }
 }
 
@@ -167,7 +171,7 @@ source API {
   },
   circuitBreaker: {
     failureThreshold: 5,
-    resetTimeout: 30000
+    resetTimeout: 30
   }
 }
 ```
@@ -195,7 +199,7 @@ mission MultiSourceSync {
     base: "https://flaky.api.com",
     circuitBreaker: {
       failureThreshold: 3,  // Trip quickly
-      resetTimeout: 60000   // Wait longer before retry
+      resetTimeout: 60   // Wait longer before retry
     }
   }
 
@@ -300,19 +304,19 @@ mission FallbackSync {
 // For stable APIs
 circuitBreaker: {
   failureThreshold: 10,
-  resetTimeout: 30000
+  resetTimeout: 30
 }
 
 // For flaky APIs
 circuitBreaker: {
   failureThreshold: 3,
-  resetTimeout: 60000
+  resetTimeout: 60
 }
 
 // For critical APIs (fail fast)
 circuitBreaker: {
   failureThreshold: 2,
-  resetTimeout: 10000
+  resetTimeout: 10
 }
 ```
 
@@ -338,12 +342,12 @@ action RobustFetch {
 ```vague
 // For fast recovery APIs
 circuitBreaker: {
-  resetTimeout: 10000  // 10 seconds
+  resetTimeout: 10  // 10 seconds
 }
 
 // For slow recovery APIs
 circuitBreaker: {
-  resetTimeout: 300000  // 5 minutes
+  resetTimeout: 300  // 5 minutes
 }
 ```
 
@@ -353,13 +357,13 @@ circuitBreaker: {
 // For burst-tolerant scenarios
 circuitBreaker: {
   failureThreshold: 5,
-  failureWindow: 60000  // 1 minute window
+  failureWindow: 60  // 1 minute window
 }
 
 // For strict scenarios
 circuitBreaker: {
   failureThreshold: 3,
-  failureWindow: 10000  // 10 second window
+  failureWindow: 10  // 10 second window
 }
 ```
 
@@ -372,7 +376,7 @@ Increase threshold or window:
 ```vague
 circuitBreaker: {
   failureThreshold: 10,  // More tolerance
-  failureWindow: 120000  // Longer window
+  failureWindow: 120  // Longer window
 }
 ```
 
@@ -382,7 +386,7 @@ Decrease reset timeout:
 
 ```vague
 circuitBreaker: {
-  resetTimeout: 10000  // Try sooner
+  resetTimeout: 10  // Try sooner
 }
 ```
 

@@ -81,7 +81,7 @@ source StripeAPI {
 }
 ```
 
-`headerName` defaults to `X-API-Key`. API keys are placed in a header only; there's no query-parameter option. (As noted above, `api_key` isn't applied at runtime yet.)
+`headerName` defaults to `X-API-Key`. Set `apiKeyLocation: "query"` to send the key as a query parameter instead; see [API key authentication](../authentication/api-key) for the details.
 
 ### Basic authentication
 
@@ -159,6 +159,10 @@ source CustomAPI {
 }
 ```
 
+:::warning Not sent yet
+The `headers` block parses, but the runtime currently drops it: the HTTP client is built without those headers. Track [#321](https://github.com/mcclowes/reqon/issues/321).
+:::
+
 ### Rate limiting
 
 ```vague
@@ -177,6 +181,7 @@ Options:
 - `strategy` (unquoted identifier) - one of `pause`, `throttle`, or `fail`
 - `maxWait` - longest wait in seconds before giving up (default 300)
 - `fallbackRpm` - requests per minute to assume when the API sends no rate-limit headers (default 60)
+- `model` - a description of the server's own limiter so `throttle` can pace under it; see [Rate limiting](../http/rate-limiting#modelling-the-servers-limiter)
 
 Strategies:
 - `pause` - wait when the limit is reached
@@ -193,13 +198,13 @@ source UnreliableAPI {
   base: "https://flaky-api.example.com",
   circuitBreaker: {
     failureThreshold: 5,
-    resetTimeout: 30000,
+    resetTimeout: 30,
     successThreshold: 2
   }
 }
 ```
 
-The full set of options is `failureThreshold` (default 5), `resetTimeout` in milliseconds (default 30000), `successThreshold` (default 2), and `failureWindow` in milliseconds (default 60000). See [Circuit Breaker](../http/circuit-breaker) for details.
+The full set of options is `failureThreshold` (default 5), `resetTimeout` in seconds (default 30), `successThreshold` (default 2), `failureWindow` in seconds (default 60), and the rate-based pair `failureRate` and `minimumRequests` (default 20). See [Circuit Breaker](../http/circuit-breaker) for details.
 
 ## Using sources
 

@@ -26,7 +26,6 @@ source API {
 |--------|-------------|---------|
 | `strategy` | How to handle limits: `pause`, `throttle`, or `fail` (unquoted) | `pause` |
 | `maxWait` | Maximum time to wait, in **seconds**, before giving up | 300 |
-| `notifyAt` | Log a warning after waiting this many **seconds** | 10 |
 | `fallbackRpm` | Requests per minute to assume when the API sends no rate limit headers | 60 |
 | `model` | A model of the server's own limiter, so throttle paces under it. See [Modelling the server's limiter](#modelling-the-servers-limiter) | none |
 

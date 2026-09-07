@@ -280,8 +280,11 @@ the remaining items are not started.
 
 - **Rate limiting** still applies. Concurrency is an upper bound on iterations
   in flight, not a licence to exceed the source's configured rate. Pair a high
-  concurrency with a [proxy pool](../http/rate-limiting.md) if you need the
+  concurrency with a [proxy pool](../http/proxies.md) if you need the
   extra throughput to actually land.
+- **A hard ceiling of 8.** `concurrency` is clamped to the executor's
+  `maxParallel` (default 8); a higher number logs a warning and runs 8 in
+  flight. Raise `maxParallel` in `ExecutorConfig` to go above it.
 - **The debugger** forces sequential iteration, so stepping stays deterministic.
 - **Durable resume** is safe: concurrent iterations get their own step-index
   namespace derived from item position, so step ids stay stable across replays.
@@ -289,8 +292,9 @@ the remaining items are not started.
 ### Picking a number
 
 Start at roughly the number of independent egress lanes you have, and raise it
-only while the source keeps up. A concurrency far above what the rate limiter
-allows just parks iterations in the limiter's queue.
+only while the source keeps up (and raise `maxParallel` alongside it past 8). A
+concurrency far above what the rate limiter allows just parks iterations in the
+limiter's queue.
 
 ## Performance considerations
 

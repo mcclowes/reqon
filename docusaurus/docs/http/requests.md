@@ -27,7 +27,7 @@ delete "/users/123"
 
 ## Request options
 
-A fetch step accepts only these options: `source`, `body`, `paginate`, `until`, `retry`, `since`, and `backfill`. There's no `params`, `headers`, `timeout`, or `method` option on a request.
+A fetch step accepts only these options: `source`, `body`, `paginate`, `until`, `retry`, `since`, `allow`, and `backfill`. There's no `params`, `headers`, `timeout`, or `method` option on a request.
 
 ### Query parameters
 
@@ -92,6 +92,10 @@ source API {
   }
 }
 ```
+
+:::warning Not sent yet
+A source `headers` block parses, but the runtime currently drops it: the HTTP client is built without those headers. Track [#321](https://github.com/mcclowes/reqon/issues/321).
+:::
 
 ## Response handling
 

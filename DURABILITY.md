@@ -143,16 +143,24 @@ A `pause` suspends a run without holding resources. In durable mode the lifecycl
 is recorded in the log (`pause.created`, `pause.resumed`), so the folded state
 knows a run is paused and on what.
 
-**The resume is driven by you, not by a background timer.** The runtime records
-the `resumeOn:` triggers but never dispatches them: nothing calls
-`PauseManager.startMonitoring()` or `PauseManager.handleWebhook()` in the shipped
-CLI or executor. A paused run continues when it is re-run with the same log and
-execution id (`--resume <id>` / `execute(…, { resumeFrom })`), at which point the
-replay records `pause.resumed` and carries on past the pause. If you want
-deadline polling or webhook-driven resume, drive `PauseManager` yourself.
+**The triggers fire only while something is listening.** The executor records
+the `resumeOn:` triggers and stops; it does not run a timer loop itself. To let
+the triggers fire, run under `executeWithResume(source, { executionLog,
+webhookServer })`: it starts a `PauseOrchestrator` over the same log, which
+routes an inbound webhook on the pause's path into a resume, polls for expired
+timeouts, and re-invokes `execute({ resumeFrom })` so the replay records
+`pause.resumed` and continues past the pause. It loops until the run finishes,
+so a mission with several pauses completes in one call. Custom hosts can build
+the same wiring with `PauseOrchestrator` directly.
 
-`PauseManager`'s own resume is **single-shot**: a timeout poll and an inbound
-webhook racing to resume the same pause fire the resume exactly once.
+Without an orchestrator (a plain CLI run), a paused run continues when it is
+re-run with the same log and execution id (`--resume <id>` /
+`execute(…, { resumeFrom })`).
+
+Resume is **single-shot**: a timeout poll and an inbound webhook racing to
+resume the same pause fire the resume exactly once, and the orchestrator
+re-registers a lost webhook registration on start so a restart does not strand
+a waiting pause.
 
 ## Guarantee → proving test
 
@@ -167,7 +175,9 @@ webhook racing to resume the same pause fire the resume exactly once.
 | File log survives restart / tolerates a torn final line | `packages/reqon-dsl/src/execution-log/file-store.test.ts` |
 | SQLite log is durable across reopen and continues `seq` | `packages/reqon-dsl/src/execution-log/sqlite-store.test.ts` |
 | Postgres log is durable across reconnect; concurrent appenders get distinct, contiguous `seq`s | `packages/reqon-dsl/src/execution-log/postgres-store.test.ts` (CI, against a Postgres service) |
-| Pause resume is single-shot under a timeout/webhook race | `packages/reqon-dsl/src/pause/pause.test.ts` → "resume is single-shot under races" |
+| Pause resume is single-shot under a timeout/webhook race | `packages/reqon-dsl/src/pause/pause.test.ts` → "resume is single-shot under races"; `packages/reqon-dsl/src/pause/orchestrator.test.ts` → "resumes exactly once when a webhook and an expired timeout race" |
+| A webhook over real HTTP, or an expired timeout, resumes a paused mission end to end; the tail runs exactly once | `packages/reqon-dsl/src/interpreter/executor-pause-resume-e2e.test.ts` |
+| Orchestrator restart re-registers a lost webhook registration | `packages/reqon-dsl/src/pause/orchestrator.test.ts` → "re-registers a lost webhook registration on start (restart recovery)" |
 
 Run the durability proof on its own:
 
@@ -186,9 +196,11 @@ npm run test:crash
 - **Exactly-once needs API cooperation**: without server-side idempotency-key
   honouring, mutating fetches are at-least-once. Design downstream effects to be
   idempotent (keyed writes, idempotency keys) where correctness depends on it.
-- **Pause-across-restart**: the pause lifecycle is recorded and pause state is
-  persisted by the pause store, but full end-to-end resumption of a long timer
-  across a process restart is not yet covered by the crash-injection suite.
-- **No pause dispatcher**: `resumeOn: timeout | webhook` is recorded metadata.
-  Reqon does not run a timer loop or route inbound webhooks into paused runs;
-  something outside the process has to re-invoke the mission with `resumeFrom`.
+- **Pause-across-restart**: the pause lifecycle is recorded in the log and the
+  orchestrator recovers a lost webhook registration on start, but resumption of
+  a long timer across a process restart is not yet covered by the
+  crash-injection suite.
+- **Pause triggers need a live host**: `resumeOn: timeout | webhook` fires only
+  while `executeWithResume` (or a `PauseOrchestrator`) is running. A plain CLI
+  run exits on pause, and something outside the process has to re-invoke the
+  mission with `--resume` / `resumeFrom`.

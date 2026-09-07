@@ -158,7 +158,8 @@ fallback with `--dev`. For production storage, use `postgrest`.
 
 ```vague
 action Name {
-  // Steps: get/post/put/patch/delete, call, for, map, validate, store
+  // Steps: get/post/put/patch/delete, call, for, map, apply, validate, store,
+  // match, let, generate, wait, pause
 }
 ```
 

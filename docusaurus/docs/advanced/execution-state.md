@@ -17,7 +17,8 @@ By default, state lives under `.reqon-data/`:
 ├── executions/        # Execution records (one JSON file per run)
 ├── sync/              # Incremental-sync checkpoints, one per mission
 ├── traces/            # Trace snapshots (when trace is enabled)
-└── pauses/            # Pause state (for long pauses)
+├── pauses/            # Pause state (for long pauses)
+└── execution-log/     # Durable event log (FileExecutionLog default)
 ```
 
 The base directory is configurable with the `dataDir` option.

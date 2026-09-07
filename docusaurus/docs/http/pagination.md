@@ -72,6 +72,29 @@ Parameters:
 - `100` - Page size
 - `"meta.nextCursor"` - Path to next cursor in response
 
+### Telling Reqon where the items are
+
+Each strategy takes an optional trailing `itemsPath` string: the path to the
+records array inside a response envelope.
+
+```vague
+get "/users" {
+  paginate: offset(offset, 100, "data"),
+  until: length(response.data) == 0
+}
+
+get "/users" {
+  paginate: cursor(cursor, 100, "meta.nextCursor", "data"),
+  until: response.meta.nextCursor == null
+}
+```
+
+Reqon uses that array to count records and to detect a short or empty page.
+Without it, Reqon guesses the first array-valued key in the response, which
+picks the wrong one on envelopes like `{ warnings: [], data: [...] }`, and it
+logs a warning when it has to guess. Declare `itemsPath` whenever the response
+isn't a bare array.
+
 ## Termination conditions
 
 The `until` option specifies when to stop paginating:

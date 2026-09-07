@@ -148,7 +148,7 @@ Reqon extends [Vague](https://github.com/mcclowes/vague), which provides the cor
 
 When adding features:
 - Extend Vague's lexer/parser if adding new expression syntax
-- Add new step types in `packages/reqon-dsl/src/ast/` and handle them in `packages/reqon-dsl/src/interpreter/executor.ts`
+- Add new step types in `packages/reqon-dsl/src/ast/`, parse them in `packages/reqon-dsl/src/parser/action-parser.ts`, and give them a handler in `packages/reqon-dsl/src/interpreter/step-handlers/`
 - New store backends implement the `StoreAdapter` interface in `packages/reqon-dsl/src/stores/`
 
 ## Submitting Changes

@@ -109,6 +109,28 @@ const result2 = await fromPath('./missions/customer-sync/');
 
 **Returns:** `Promise<ExecutionResult>`
 
+### executeWithResume
+
+Execute a mission and automatically resume it when a `pause` step's trigger fires. It stays live after a pause, routes an inbound webhook on the pause's path (or an expired timeout) into a resume, and re-executes with `resumeFrom` until the run finishes. Requires `executionLog`; webhook triggers also need `webhookServer`.
+
+```typescript
+import { executeWithResume, FileExecutionLog } from 'reqon-dsl';
+
+const result = await executeWithResume(source, {
+  executionLog: new FileExecutionLog('.reqon-data/execution-log'),
+  webhookServer,
+});
+```
+
+**Parameters:**
+- `source: string` - Reqon source code
+- `config: ExecutorConfig` - must include `executionLog`
+- `options?: ExecuteWithResumeOptions` - `pollInterval` (timeout poll in ms, default one minute) and `maxResumes` (safety cap on resume cycles, default 1000)
+
+**Returns:** `Promise<ExecutionResult>`
+
+See [Pause](./durability/pause) for the full lifecycle.
+
 ### reqon (tagged template)
 
 Parse an inline mission with a tagged template literal. It returns a `ReqonProgram`, the same as `parse`; there is no `program.execute()` method, so pass the source to `execute` to run it.
@@ -165,21 +187,26 @@ interface ExecutorConfig {
 }
 ```
 
-There are further advanced keys (`metadata`, `executionStore`, `syncStore`, `traceStore`, `pauseStore`, `pauseManager`, `eventEmitter`, `logger`, `debugController`, `rateLimitCallbacks`, `circuitBreakerCallbacks`, `backfillMaxItemsPerRun`, `proxyAgentFactory`, `proxyFetchFactory`); see `ExecutorConfig` in `packages/reqon-dsl/src/interpreter/executor.ts` for the full list.
+There are further advanced keys (`metadata`, `executionStore`, `syncStore`, `traceStore`, `pauseStore`, `pauseManager`, `eventEmitter`, `logger`, `debugController`, `rateLimitCallbacks`, `circuitBreakerCallbacks`, `backfillMaxItemsPerRun`, `maxParallel`, `maxPaginationPages`, `maxPaginationItems`, `proxyAgentFactory`, `proxyFetchFactory`); see `ExecutorConfig` in `packages/reqon-dsl/src/interpreter/executor.ts` for the full list. `maxParallel` (default 8) caps both parallel pipeline stages and `for ... concurrency N`.
 
 ### AuthConfig
 
-Credentials passed programmatically. Only `bearer` and `oauth2` attach auth to outgoing requests at runtime.
+Credentials passed programmatically, keyed by source name. All four credentialed types attach auth to outgoing requests; a type configured without its credentials throws at source init.
 
 ```typescript
 interface AuthConfig {
-  type: 'bearer' | 'oauth2' | 'none';
+  type: 'bearer' | 'oauth2' | 'basic' | 'api_key' | 'none';
   token?: string; // bearer
   accessToken?: string; // oauth2
   refreshToken?: string; // oauth2
   tokenEndpoint?: string; // oauth2
   clientId?: string; // oauth2
   clientSecret?: string; // oauth2
+  username?: string; // basic
+  password?: string; // basic
+  apiKey?: string; // api_key
+  headerName?: string; // api_key (default 'X-API-Key')
+  apiKeyLocation?: 'header' | 'query'; // api_key (default 'header')
 }
 ```
 
@@ -269,7 +296,7 @@ interface StoreFilter {
 
 ### Built-in stores and createStore
 
-Reqon exports `MemoryStore`, `FileStore`, `PostgRESTStore`, and a `createStore` factory.
+Reqon exports `MemoryStore`, `FileStore`, and a `createStore` factory. `PostgRESTStore` isn't re-exported from the package root; construct one through `createStore` with PostgREST options, or declare it in the mission.
 
 ```typescript
 import { createStore, MemoryStore, FileStore } from 'reqon-dsl';
@@ -405,9 +432,9 @@ type EventType =
   | 'mission.start' | 'mission.complete' | 'mission.failed' | 'mission.paused'
   | 'stage.start' | 'stage.complete'
   | 'step.start' | 'step.complete'
-  | 'fetch.start' | 'fetch.complete' | 'fetch.retry' | 'fetch.error' | 'fetch.heartbeat'
+  | 'fetch.start' | 'fetch.complete' | 'fetch.retry' | 'fetch.error' | 'fetch.heartbeat' | 'fetch.truncated'
   | 'data.transform' | 'data.validate' | 'data.store'
-  | 'loop.start' | 'loop.iteration' | 'loop.complete' | 'loop.heartbeat'
+  | 'loop.start' | 'loop.iteration' | 'loop.item.failed' | 'loop.complete' | 'loop.heartbeat'
   | 'match.attempt' | 'match.result'
   | 'webhook.register' | 'webhook.event' | 'webhook.complete'
   | 'checkpoint.save' | 'checkpoint.resume'

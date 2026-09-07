@@ -121,7 +121,8 @@ Durability state is stored under `.reqon-data/`:
 ├── executions/         # Execution records
 ├── traces/             # Trace snapshots
 ├── pauses/             # Pause state
-└── sync/               # Incremental-sync checkpoints (one per mission)
+├── sync/               # Incremental-sync checkpoints (one per mission)
+└── execution-log/      # Durable event log (FileExecutionLog default)
 ```
 
 ### Programmatic access

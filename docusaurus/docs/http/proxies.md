@@ -76,9 +76,12 @@ source API {
 ## Failure modes
 
 **An unset env var is an error, not a smaller pool.** If `env("PROXY_3")`
-resolves to nothing, the mission fails at startup naming the offending index.
-Silently dropping a proxy would concentrate the run's whole request rate onto
-the survivors, which is the exact failure a pool exists to prevent.
+resolves to nothing while the others resolve, the mission fails at startup
+naming the offending index. Silently dropping a proxy would concentrate the
+run's whole request rate onto the survivors, which is the exact failure a pool
+exists to prevent. The one exception is when *every* entry resolves empty: the
+source logs that no proxies resolved and sends requests direct, so a mission
+can run unproxied locally without editing the source block.
 
 **A proxy that can't be dialled fails the request.** Reqon never falls back to
 direct egress, which would leak the real IP the pool exists to hide. It also
@@ -103,7 +106,9 @@ for entry in shard concurrency 8 {
 
 A reasonable starting point is roughly twice the pool size: enough to keep every
 proxy busy while one waits on the wire, low enough that the per-proxy throttle
-paces the run rather than the socket count.
+paces the run rather than the socket count. Loop concurrency is capped at the
+executor's `maxParallel` (default 8), so a pool bigger than four also needs that
+raised.
 
 See [examples/fpl-sharded](https://github.com/mcclowes/reqon/tree/main/examples/fpl-sharded)
 for the full pattern, including how workers are sharded.

@@ -27,7 +27,7 @@ delete "/users/123"
 
 ## Request options
 
-A fetch option block accepts only these keys: `source`, `body`, `paginate`, `until`, `retry`, `since`, and `backfill`. Anything else is a parse error.
+A fetch option block accepts only these keys: `source`, `body`, `paginate`, `until`, `retry`, `since`, `allow`, and `backfill`. Anything else is a parse error.
 
 ### Query parameters
 
@@ -63,6 +63,10 @@ source API {
   }
 }
 ```
+
+:::warning Not sent yet
+A source `headers` block parses, but the runtime currently drops it: the HTTP client is built without those headers. Track [#321](https://github.com/mcclowes/reqon/issues/321).
+:::
 
 ## Pagination
 

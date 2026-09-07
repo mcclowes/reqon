@@ -92,8 +92,8 @@ Supported formats:
 
 - `iso` — ISO 8601 (default): `2024-01-20T10:30:00.000Z`
 - `unix` — Unix timestamp in seconds: `1705748400`
-- `unix-ms` — Unix timestamp in milliseconds: `1705748400000`
-- `date-only` — date portion only: `2024-01-20`
+
+Those are the only two the parser accepts. `unix-ms` and `date-only` exist as internal format names but can't be written in a mission, because a format has to be a single identifier.
 
 ### Custom checkpoint key
 

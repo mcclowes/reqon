@@ -13,7 +13,7 @@ call SourceName.operationId
 call SourceName.operationId { options }
 ```
 
-The method and path come from the spec. The options block accepts the same keys as a fetch step: `body`, `paginate`, `until`, `retry`, `since`, and `backfill`. There's no `params` or `headers` option.
+The method and path come from the spec. The options block accepts the same keys as a fetch step: `source`, `body`, `paginate`, `until`, `retry`, `since`, `allow`, and `backfill`. There's no `params` or `headers` option.
 
 ## Simple calls
 

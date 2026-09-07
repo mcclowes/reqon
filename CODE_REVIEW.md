@@ -391,7 +391,9 @@ These need a dedicated change with its own design and integration test; a rushed
 
 - **C2 — page-completed-before-persist crash window.** A correct fix defers the resume-cursor advance until after the downstream store step, which restructures how backfill pagination and the store step interact. Documented honestly in the `page.completed` type; the cheap docstring lie is gone.
 - **C3 (the dead wiring half).** The corruption is fixed, but `handleWebhook`/`startMonitoring` still need an orchestration layer to actually re-invoke a paused mission. That's a feature, not a patch, and needs an end-to-end test that delivers a real webhook over HTTP.
+  _Since landed:_ `PauseOrchestrator` and `executeWithResume` (`src/pause/orchestrator.ts`, `src/index.ts`) wire the triggers, with the HTTP end-to-end test in `src/interpreter/executor-pause-resume-e2e.test.ts`.
 - **H4 — non-determinism vs exactly-once.** Detecting `now()`/`anyOf` in durable contexts generally is non-trivial; left documented.
 - **H5/H6 — replay determinism claim, file-log fsync.** Event-sourced replay-of-outputs and power-loss durability are design-level changes to the log format.
 - **M1/M2/M3 — redaction and pause checkpoint typing.** Tightening the redaction denylist risks under-redacting real secrets (over-redaction is the safer failure), and pause checkpoints can't both redact a secret and restore it on resume; both are inherent tradeoffs worth a deliberate decision, not a drive-by edit.
 - **`basic`/`api_key` providers.** Lives in a separate credential path; needs the real credential schema to implement correctly.
+  _Since landed:_ both providers exist and `createAuthProvider` throws on missing credentials instead of sending an unauthenticated request (`src/interpreter/source-manager.ts`).

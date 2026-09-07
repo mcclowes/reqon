@@ -81,7 +81,7 @@ servers:
 source API from "./spec.yaml" {
   auth: bearer,
   validateResponses: true,  // Validate responses against schema
-  headers: {                // Additional headers
+  headers: {                // Additional headers (parsed but not sent yet, see #321)
     "X-Custom": "value"
   }
 }

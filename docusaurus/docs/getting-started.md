@@ -15,7 +15,7 @@ This guide helps you install Reqon and run your first data pipeline.
 
 ## Installation
 
-Reqon is published as `reqon-dsl`. Installing it adds the `reqon` CLI binary.
+Reqon is published as `reqon-dsl`. Installing it adds two binaries: `reqon` (the CLI) and `reqon-mcp` (the Model Context Protocol server).
 
 ```bash
 npm install reqon-dsl
