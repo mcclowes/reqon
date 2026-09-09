@@ -95,7 +95,6 @@ export class FetchParser extends ScheduleParser {
   protected parseFetchOptions(): Partial<FetchStep> {
     let source: string | undefined;
     let body: Expression | undefined;
-    let headers: Record<string, Expression> | undefined;
     let paginate: PaginationConfig | undefined;
     let until: Expression | undefined;
     let retry: RetryConfig | undefined;
@@ -145,7 +144,7 @@ export class FetchParser extends ScheduleParser {
       this.consume(TokenType.RBRACE, "Expected '}'");
     }
 
-    return { source, body, headers, paginate, until, retry, since, backfill, allow };
+    return { source, body, paginate, until, retry, since, backfill, allow };
   }
 
   /**
