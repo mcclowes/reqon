@@ -17,7 +17,7 @@ npm workspaces monorepo:
 
 - `packages/reqon-dsl` - the npm package (runtime, CLI, MCP server)
 - `packages/reqon-lang` - VS Code grammar extension (Reqon keywords injected into the Vague grammar; published to the Marketplace, not npm)
-- `docusaurus` - docs site (`check:docs` scans `docusaurus/docs/`, the root markdown docs, and `.claude/skills/reqon`)
+- `docusaurus` - docs site (`check:docs` scans `docusaurus/docs/`, the root markdown docs, `examples/README.md`, and `.claude/skills/reqon`)
 
 ```
 packages/reqon-dsl/src/
@@ -51,8 +51,8 @@ packages/reqon-dsl/src/
 ├── oas/           # OpenAPI spec integration (loader, validator)
 ├── observability/ # Structured events, logging, OpenTelemetry integration
 ├── parser/        # Reqon mission parser plus Vague expression compatibility checks
+├── pause/         # Resource-free long pauses (state, store, log-backed store, manager, orchestrator)
 ├── reporting/     # Vague-backed dataset reports and golden comparisons
-├── pause/         # Resource-free long pauses (state, store, log-backed store, manager)
 ├── scheduler/     # Cron/interval scheduling for missions
 ├── stores/        # Store adapters (memory, file, postgrest) + a batching wrapper.
 │                  # sql falls through to the PostgREST adapter when PostgREST
@@ -77,6 +77,7 @@ npm run dev        # Watch mode compilation
 npm run typecheck  # Type-check without emitting
 npm run test       # Run tests in watch mode
 npm run test:run   # Run tests once
+npm run test:integration # Live-network API tests (sets RUN_NETWORK_TESTS=1)
 npm run test:crash # Crash-injection durability suite
 npm run test:pg    # Postgres execution-log tests (needs a Postgres)
 npm run check:docs # Every reqon/vague block in the docs lexes; complete ones parse
@@ -84,6 +85,7 @@ npm run check:examples # Every mission under examples/ parses
 npm run check:snippets # build + check:docs + check:examples
 npm run lint       # ESLint over the npm package source
 npm run format     # Prettier write over the npm package source
+npm run format:check # Prettier check (what CI runs)
 npm run bench      # Run performance benchmarks
 ```
 

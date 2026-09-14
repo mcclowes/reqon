@@ -37,7 +37,8 @@ mission SyncData {
 - `store` - Storage: `memory("name")`, `file("name")` (writes `.reqon-data/name.json`),
   `postgrest("table")`. `sql()` uses the PostgREST adapter when PostgREST options are
   set; otherwise `sql()`/`nosql()` throw unless `--dev` falls them back to local JSON
-- `action` - Pipeline step: fetch, map, validate, store, wait
+- `action` - Pipeline step: get/post/put/patch/delete, call, for, map, apply, validate,
+  store, match, let, generate, wait, pause
 - `run [A, B] then C` - Parallel then sequential execution
 - `match response { Schema -> ..., _ -> skip }` - Pattern matching
 - `for item in store where .active { ... }` - Iteration with filter

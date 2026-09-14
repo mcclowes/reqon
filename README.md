@@ -112,7 +112,7 @@ Sources can be defined with explicit base URLs or by referencing an OpenAPI spec
 ```vague
 // Traditional: explicit base URL
 source Name {
-  auth: oauth2 | bearer | basic | api_key,
+  auth: oauth2 | bearer | basic | api_key | none,
   base: "https://api.example.com"
 }
 
