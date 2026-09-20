@@ -11,49 +11,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Build vague dependency once and cache it
-  build-vague:
-    name: Build Vague Dependency
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout vague
-        uses: actions/checkout@v7
-        with:
-          repository: mcclowes/vague
-          path: vague
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: 'npm'
-          cache-dependency-path: vague/package-lock.json
-
-      - name: Cache vague build
-        id: cache-vague
-        uses: actions/cache@v6
-        with:
-          path: vague
-          key: vague-build-${{ hashFiles('vague/package-lock.json', 'vague/src/**', 'vague/tsconfig.json') }}
-
-      - name: Install and build vague
-        if: steps.cache-vague.outputs.cache-hit != 'true'
-        run: |
-          cd vague
-          npm ci
-          npm run build
-
-      - name: Upload vague artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: vague-build
-          path: vague
-          retention-days: 1
 
   test:
     name: Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
-    needs: build-vague
 
     strategy:
       fail-fast: false
@@ -63,12 +24,6 @@ jobs:
     steps:
       - name: Checkout reqon
         uses: actions/checkout@v7
-
-      - name: Download vague build
-        uses: actions/download-artifact@v8
-        with:
-          name: vague-build
-          path: ../vague
 
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v6
@@ -103,17 +58,10 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
-    needs: build-vague
 
     steps:
       - name: Checkout reqon
         uses: actions/checkout@v7
-
-      - name: Download vague build
-        uses: actions/download-artifact@v8
-        with:
-          name: vague-build
-          path: ../vague
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -141,17 +89,10 @@ jobs:
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
-    needs: build-vague
 
     steps:
       - name: Checkout reqon
         uses: actions/checkout@v7
-
-      - name: Download vague build
-        uses: actions/download-artifact@v8
-        with:
-          name: vague-build
-          path: ../vague
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -174,17 +115,10 @@ jobs:
   security:
     name: Security Audit
     runs-on: ubuntu-latest
-    needs: build-vague
 
     steps:
       - name: Checkout reqon
         uses: actions/checkout@v7
-
-      - name: Download vague build
-        uses: actions/download-artifact@v8
-        with:
-          name: vague-build
-          path: ../vague
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -205,17 +139,10 @@ jobs:
   crash-injection:
     name: Crash injection
     runs-on: ubuntu-latest
-    needs: build-vague
 
     steps:
       - name: Checkout reqon
         uses: actions/checkout@v7
-
-      - name: Download vague build
-        uses: actions/download-artifact@v8
-        with:
-          name: vague-build
-          path: ../vague
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -236,7 +163,6 @@ jobs:
   postgres-adapter:
     name: Postgres adapter
     runs-on: ubuntu-latest
-    needs: build-vague
 
     services:
       postgres:
@@ -256,12 +182,6 @@ jobs:
     steps:
       - name: Checkout reqon
         uses: actions/checkout@v7
-
-      - name: Download vague build
-        uses: actions/download-artifact@v8
-        with:
-          name: vague-build
-          path: ../vague
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -287,12 +207,6 @@ jobs:
     steps:
       - name: Checkout reqon
         uses: actions/checkout@v7
-
-      - name: Download vague build
-        uses: actions/download-artifact@v8
-        with:
-          name: vague-build
-          path: ../vague
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
