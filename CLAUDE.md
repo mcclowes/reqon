@@ -24,7 +24,7 @@ packages/reqon-dsl/src/
 ├── ast/           # Extended AST nodes (missions, actions, steps)
 ├── auth/          # Rate limiting (incl. a self-calibrating model for headerless limiters),
 │                  # circuit breaker, credential loading, token store, and auth providers
-├── benchmark/     # Performance benchmarks (lexer, parser, evaluator, store, e2e)
+├── benchmark/     # Performance benchmarks (lexer, parser, evaluator, store, resilience, e2e)
 ├── config/        # Runtime configuration and constants
 ├── control/       # Control server for pause/resume, status queries, heartbeats
 ├── debug/         # CLI debugger and debug controller
