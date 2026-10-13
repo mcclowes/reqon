@@ -26,7 +26,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "changeset publish",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "lint-staged": {
     "packages/reqon-dsl/src/**/*.{ts,tsx}": [
