@@ -133,8 +133,9 @@ jobs:
         # Gate on critical vulnerabilities in production dependencies only.
         # Dev tooling (vitest/vite/rollup/esbuild) and transitive high-severity
         # advisories are tracked/bumped via Dependabot rather than blocking every
-        # merge on an always-red check.
-        run: npm audit --omit=dev --audit-level=critical
+        # merge on an always-red check. The docs site is excluded: Docusaurus
+        # pins tinypool@1, which has a critical advisory and no 1.x fix.
+        run: npm audit --omit=dev --audit-level=critical -w packages/reqon-dsl -w packages/reqon-lang
 
   crash-injection:
     name: Crash injection
