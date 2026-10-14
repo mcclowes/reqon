@@ -354,6 +354,12 @@ export interface SinceConfig {
   expression?: Expression;
   /** Field in response to use as the new "since" value for next sync */
   updateFrom?: string;
+  /**
+   * Path to an opaque sync token in the response (e.g. "nextSyncToken"). The
+   * checkpoint then stores that token, read from the last page, and sends it
+   * verbatim next run instead of a timestamp. No token yet means a full sync.
+   */
+  token?: string;
 }
 
 export interface OperationRef {

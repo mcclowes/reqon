@@ -186,6 +186,10 @@ interface ExecutorConfig {
   executionLog?: ExecutionLogStore;
   // Refuse requests and redirects to non-public addresses (default: false)
   blockPrivateNetworks?: boolean;
+  // Cancel the run: aborts in-flight requests, no retries, no further steps
+  signal?: AbortSignal;
+  // Per-run values read with input("name")
+  inputs?: Record<string, unknown>;
 }
 ```
 

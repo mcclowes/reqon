@@ -65,6 +65,8 @@ export interface SourceManagerConfig {
   onRetry?: (info: RetryInfo) => void;
   /** Block requests and redirects to non-public addresses (see HttpClientConfig). */
   blockPrivateNetworks?: boolean;
+  /** Cancels the run's requests (see HttpClientConfig.signal). */
+  signal?: AbortSignal;
 }
 
 export interface SourceManagerDeps {
@@ -111,6 +113,7 @@ export class SourceManager {
       proxyPool,
       onRetry: this.config.onRetry,
       blockPrivateNetworks: this.config.blockPrivateNetworks,
+      signal: this.config.signal,
     });
 
     ctx.sources.set(source.name, client);

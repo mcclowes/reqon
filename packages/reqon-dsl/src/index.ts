@@ -104,6 +104,8 @@ export {
   LexerError,
   RuntimeError,
   ValidationError,
+  FetchError,
+  ExecutionAbortedError,
   formatErrors,
   getSourceLine,
   getSourceContext,
