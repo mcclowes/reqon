@@ -65,6 +65,10 @@ if (error instanceof FetchError && error.statusCode === 410) {
 }
 ```
 
+## Partial results
+
+A paginated fetch that hits a page or item cap stops early, and the run still succeeds. `result.truncated` lists each one, with its `path`, `reason` (`page-cap` or `item-cap`) and how far it got. Its sync checkpoint isn't advanced. If you need every record, treat a truncated result as a failure. Raise the caps with `maxPaginationPages` and `maxPaginationItems`.
+
 ## Untrusted URLs
 
 When a mission's URLs come from users, set `blockPrivateNetworks: true` so requests and redirects can't reach loopback, private or cloud metadata addresses. See [ExecutorConfig](../api-reference.md#executorconfig).

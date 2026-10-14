@@ -55,7 +55,7 @@ import {
   FileExecutionStore,
 } from '../execution/index.js';
 import { type SyncStore, FileSyncStore, LogBackedSyncStore } from '../sync/index.js';
-import { FetchHandler } from './fetch-handler.js';
+import { FetchHandler, type TruncationInfo } from './fetch-handler.js';
 import {
   ForHandler,
   MapHandler,
@@ -128,6 +128,11 @@ export interface ExecutionResult {
   pauseId?: string;
   /** Items skipped by a loop's onError policy rather than failing the run. */
   toleratedFailures?: { action: string; index: number; error: string }[];
+  /**
+   * Paginated fetches that stopped at a safety cap, so their data is partial.
+   * The run still succeeds; hosts that need every record should check this.
+   */
+  truncated?: (TruncationInfo & { path: string })[];
 }
 
 export interface ExecutionError {
@@ -295,6 +300,7 @@ export class MissionExecutor {
    * 401s would otherwise report success having stored nothing.
    */
   private toleratedFailures: { action: string; index: number; error: string }[] = [];
+  private truncations: (TruncationInfo & { path: string })[] = [];
   private actionsRun: string[] = [];
   /** Monotonic key generator for queued values lacking an id. */
   private queueCounter = 0;
@@ -701,6 +707,7 @@ export class MissionExecutor {
       traceId: this.traceExecutionId,
       pauseId: this.currentPauseId,
       toleratedFailures: this.toleratedFailures,
+      ...(this.truncations.length ? { truncated: this.truncations } : {}),
     };
   }
 
@@ -1472,6 +1479,7 @@ export class MissionExecutor {
     // never ask for again — permanent, silent data loss (#246). Skip the
     // checkpoint; the truncation is already surfaced via the fetch.truncated
     // event. The next run re-fetches from the same watermark.
+    if (result.truncated) this.truncations.push({ ...result.truncated, path: result.path });
     if (result.truncated && result.checkpointKey && this.syncStore) {
       this.log(
         `Sync checkpoint '${result.checkpointKey}' NOT advanced: paginated fetch was truncated ` +

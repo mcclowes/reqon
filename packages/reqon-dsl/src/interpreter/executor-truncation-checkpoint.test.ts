@@ -64,6 +64,19 @@ describe('a truncated paginated sync does not advance the checkpoint (#246)', ()
     expect(advanced).toBeUndefined();
   });
 
+  it('reports the truncation on the result', async () => {
+    endlessServer();
+
+    const result = await execute(source, {
+      executionLog: new MemoryExecutionLog(),
+      maxPaginationPages: 3,
+    });
+
+    expect(result.truncated).toEqual([
+      { reason: 'page-cap', pagesFetched: 3, itemsFetched: 6, path: '/items' },
+    ]);
+  });
+
   it('a second run repeats the same since window instead of skipping the gap', async () => {
     const log = new MemoryExecutionLog();
 

@@ -81,6 +81,8 @@ export interface FetchResult {
   truncated?: TruncationInfo;
   /** Opaque sync token read from the last page, for `since: lastSync { token }`. */
   syncToken?: string;
+  /** The resolved request path. */
+  path: string;
 }
 
 /** Why a paginated fetch stopped early, and how far it got. */
@@ -135,7 +137,7 @@ export class FetchHandler {
     if (this.deps.dryRun) {
       const mockData = this.generateDryRunMockData(resolved.sourceName, resolved.operationId);
       this.deps.log('(dry run - skipping actual request)');
-      return { data: mockData, checkpointKey };
+      return { data: mockData, checkpointKey, path: resolved.path };
     }
 
     // Execute with or without pagination
@@ -229,7 +231,14 @@ export class FetchHandler {
       throw error;
     }
 
-    return { data, checkpointKey, status: statusCode, truncated, syncToken };
+    return {
+      data,
+      checkpointKey,
+      status: statusCode,
+      truncated,
+      syncToken,
+      path: resolved.path,
+    };
   }
 
   private isRetryableError(error: unknown): boolean {

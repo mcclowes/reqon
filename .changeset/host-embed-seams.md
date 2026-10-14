@@ -8,3 +8,4 @@ Make Reqon embeddable in apps and serverless functions:
 - `ExecutorConfig.inputs` plus `input("name")` pass per-run values into a mission.
 - `ExecutorConfig.signal` cancels a run: in-flight requests abort, nothing retries, and the run fails with `ExecutionAbortedError`.
 - `FetchError.body` carries the parsed JSON error body (credential keys redacted). `FetchError` and `ExecutionAbortedError` are now exported.
+- `ExecutionResult.truncated` lists paginated fetches that stopped at a safety cap, so a host can tell a partial result from a complete one.
