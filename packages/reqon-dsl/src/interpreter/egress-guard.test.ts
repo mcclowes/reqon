@@ -100,6 +100,18 @@ describe('assertPublicUrl', () => {
 });
 
 describe('guardFetch', () => {
+  it('keeps credentials on a same-origin redirect', async () => {
+    const base = vi
+      .fn()
+      .mockResolvedValueOnce(redirect(302, '/next'))
+      .mockResolvedValueOnce(new Response('ok'));
+    const guarded = guardFetch(base, { lookup: publicLookup });
+
+    await guarded('https://example.com/', { headers: { 'X-API-Key': 'key' } });
+
+    expect(new Headers(base.mock.calls[1][1].headers).get('x-api-key')).toBe('key');
+  });
+
   it('passes a public request through with manual redirects', async () => {
     const base = vi.fn(async () => new Response('ok'));
     const guarded = guardFetch(base, { lookup: publicLookup });
@@ -189,12 +201,18 @@ describe('guardFetch', () => {
     const guarded = guardFetch(base, { lookup: publicLookup });
 
     await guarded('https://example.com/', {
-      headers: { Authorization: 'Bearer secret', Cookie: 'a=b', Accept: 'application/json' },
+      headers: {
+        Authorization: 'Bearer secret',
+        Cookie: 'a=b',
+        'X-API-Key': 'key',
+        Accept: 'application/json',
+      },
     });
 
     const headers = new Headers(base.mock.calls[1][1].headers);
     expect(headers.get('authorization')).toBeNull();
     expect(headers.get('cookie')).toBeNull();
+    expect(headers.get('x-api-key')).toBeNull();
     expect(headers.get('accept')).toBe('application/json');
   });
 });

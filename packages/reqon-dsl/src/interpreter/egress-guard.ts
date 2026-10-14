@@ -32,7 +32,16 @@ export class EgressBlockedError extends Error {
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
-const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'proxy-authorization'];
+// Anything else (auth, cookies, API-key headers from auth providers or source
+// `headers` blocks) stays with the origin that was asked for.
+const CROSS_ORIGIN_SAFE_HEADERS = new Set([
+  'accept',
+  'accept-language',
+  'content-type',
+  'content-length',
+  'user-agent',
+  'idempotency-key',
+]);
 const DEFAULT_MAX_REDIRECTS = 5;
 
 const blocked = new BlockList();
@@ -189,7 +198,11 @@ function redirectedRequest(
   const toGet =
     status === 303 ? method !== 'HEAD' : [301, 302].includes(status) && method === 'POST';
   const headers = new Headers(request.headers);
-  if (crossOrigin) for (const name of CREDENTIAL_HEADERS) headers.delete(name);
+  if (crossOrigin) {
+    for (const name of [...headers.keys()]) {
+      if (!CROSS_ORIGIN_SAFE_HEADERS.has(name)) headers.delete(name);
+    }
+  }
   if (toGet) {
     headers.delete('content-type');
     headers.delete('content-length');
