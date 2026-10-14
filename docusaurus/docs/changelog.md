@@ -10,6 +10,19 @@ All notable changes to Reqon are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.2.0
+
+_Released 2026-10-14_
+
+### Added
+
+- **`blockPrivateNetworks`** on `ExecutorConfig`, for missions whose URLs come from untrusted input. When it's on, every request and redirect hop must resolve to a public address. Loopback, private, CGNAT, link-local (including cloud metadata), unique-local, multicast and reserved ranges throw `EgressBlockedError` and aren't retried. Only non-credential headers follow a redirect to a different origin. Off by default.
+
+### Fixed
+
+- **A source's `headers` block is sent on every request.** It parsed but never reached the HTTP client.
+- **The release job builds `better-sqlite3` again.** `allowScripts` had moved out of the root `package.json`, where npm 12 looks for it.
+
 ## 1.1.0
 
 _Released 2026-07-27_
