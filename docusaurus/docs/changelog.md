@@ -10,6 +10,24 @@ All notable changes to Reqon are documented here.
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 1.3.0
+
+_Released 2026-10-14_
+
+Makes Reqon practical to run inside an app or serverless function, per user. See [Embedding Reqon](./advanced/embedding.md).
+
+### Added
+
+- **Opaque sync tokens.** `since: lastSync { param: "syncToken", token: "nextSyncToken" }` stores the token from the last page and sends it back verbatim next run. This is how Google People and Microsoft Graph delta queries work. With no token yet the fetch is a full sync, and a response without a token leaves the checkpoint alone.
+- **Inputs.** `ExecutorConfig.inputs` and `input("name")` pass per-run values into a mission.
+- **Cancellation.** `ExecutorConfig.signal` aborts in-flight requests and retry backoffs, starts no further steps, and fails the run with `ExecutionAbortedError`.
+- **Error bodies.** `FetchError.body` is the parsed JSON error body (credential keys redacted, up to 64 KiB). `FetchError` and `ExecutionAbortedError` are now exported.
+- **Truncation on the result.** `ExecutionResult.truncated` lists paginated fetches that stopped at a safety cap.
+
+### Fixed
+
+- **Query strings in paths.** Pagination, `since` and auth parameters are joined with `&` when the path already has a query. They used to be joined with a second `?`, which broke the URL.
+
 ## 1.2.0
 
 _Released 2026-10-14_
