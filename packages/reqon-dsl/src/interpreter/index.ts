@@ -17,6 +17,7 @@ export {
   type HttpClientConfig,
   type AuthProvider,
 } from './http.js';
+export { EgressBlockedError, guardFetch, assertPublicUrl } from './egress-guard.js';
 export {
   SourceManager,
   type SourceManagerConfig,

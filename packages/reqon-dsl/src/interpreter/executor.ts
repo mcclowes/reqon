@@ -263,6 +263,12 @@ export interface ExecutorConfig {
    * (loudly). Defaults to CONCURRENCY_DEFAULTS.MAX_PARALLEL.
    */
   maxParallel?: number;
+  /**
+   * Refuse HTTP requests, and redirects, to loopback, private, link-local and
+   * other non-public addresses. Turn on when mission URLs come from untrusted
+   * input. Off by default.
+   */
+  blockPrivateNetworks?: boolean;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -326,6 +332,7 @@ export class MissionExecutor {
         missionDir: config.missionDir,
         proxyAgentFactory: config.proxyAgentFactory,
         proxyFetchFactory: config.proxyFetchFactory,
+        blockPrivateNetworks: config.blockPrivateNetworks,
       },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
@@ -428,6 +435,7 @@ export class MissionExecutor {
         missionDir: config.missionDir,
         proxyAgentFactory: config.proxyAgentFactory,
         proxyFetchFactory: config.proxyFetchFactory,
+        blockPrivateNetworks: config.blockPrivateNetworks,
         log: (msg) => this.log(msg),
         // Surface in-client retries as events so the progress line can count them.
         onRetry: this.eventEmitter

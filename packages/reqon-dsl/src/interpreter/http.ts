@@ -9,6 +9,7 @@ import { redactText } from '../utils/redact.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
 import type { ProxyPool } from './proxy.js';
+import { EgressBlockedError, guardFetch, type FetchFn } from './egress-guard.js';
 
 // Re-exported for compatibility: the parser lives with the other header
 // parsing in auth/rate-limiter.ts so both consumers share one implementation.
@@ -38,6 +39,11 @@ export interface HttpClientConfig {
    * Retries happen inside this loop, invisible to the caller otherwise.
    */
   onRetry?: (info: RetryInfo) => void;
+  /**
+   * Refuse requests, and redirects, to loopback, private, link-local and other
+   * non-public addresses. For missions whose URLs come from untrusted input.
+   */
+  blockPrivateNetworks?: boolean;
 }
 
 /** A single retry attempt about to be made after a backoff. */
@@ -207,12 +213,13 @@ export class HttpClient {
           : fetchOptions;
         // Dispatch through the fetch that owns this dispatcher; see
         // ProxyLane.fetchImpl. Falls back to global fetch off the proxy path.
+        const transport: FetchFn = lane?.fetchImpl ?? fetch;
         const response = await this.fetchWithTimeout(
           url,
           attemptOptions,
           timeout,
           req.method,
-          lane?.fetchImpl ?? fetch
+          this.config.blockPrivateNetworks ? guardFetch(transport) : transport
         );
 
         const responseHeaders: Record<string, string> = {};
@@ -338,8 +345,8 @@ export class HttpClient {
       } catch (error) {
         lastError = error as Error;
 
-        // Re-throw circuit breaker errors immediately
-        if (error instanceof CircuitBreakerError) {
+        // Re-throw circuit breaker and egress policy errors immediately
+        if (error instanceof CircuitBreakerError || error instanceof EgressBlockedError) {
           throw error;
         }
 
@@ -381,7 +388,7 @@ export class HttpClient {
     options: RequestInit,
     timeoutMs: number,
     method: string,
-    fetchImpl: typeof globalThis.fetch = fetch
+    fetchImpl: FetchFn = fetch
   ): Promise<Response> {
     if (!timeoutMs || timeoutMs <= 0) {
       return fetchImpl(url, options);
