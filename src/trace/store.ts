@@ -5,11 +5,12 @@
  * enabling replay and step-by-step inspection of past runs.
  */
 
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { ExecutionTrace, TraceSnapshot } from './state.js';
+import { isValidSnapshot } from './state.js';
 import {
   ensureDirectory,
-  writeJsonFile,
+  writeJsonFileAtomic,
   readJsonFile,
   listFiles,
   deleteFile,
@@ -92,7 +93,14 @@ export class FileTraceStore implements TraceStore {
     const traceDir = this.getTraceDir(trace.id);
     await ensureDirectory(traceDir);
 
-    // Save metadata separately from snapshots for efficient listing
+    // Save each snapshot first (atomically), then metadata last. Metadata is the
+    // source of truth for the snapshot count, so it must never claim more
+    // snapshots than are durably on disk. Each write is temp-file + rename, so a
+    // crash can only leave orphan temp files, never a half-written snapshot.
+    for (let i = 0; i < trace.snapshots.length; i++) {
+      await writeJsonFileAtomic(this.getSnapshotPath(trace.id, i), trace.snapshots[i]);
+    }
+
     const metadata: Omit<ExecutionTrace, 'snapshots'> & { snapshotCount: number } = {
       id: trace.id,
       mission: trace.mission,
@@ -104,12 +112,7 @@ export class FileTraceStore implements TraceStore {
       metadata: trace.metadata,
       snapshotCount: trace.snapshots.length,
     };
-    await writeJsonFile(this.getMetadataPath(trace.id), metadata);
-
-    // Save each snapshot separately for efficient random access
-    for (let i = 0; i < trace.snapshots.length; i++) {
-      await writeJsonFile(this.getSnapshotPath(trace.id, i), trace.snapshots[i]);
-    }
+    await writeJsonFileAtomic(this.getMetadataPath(trace.id), metadata);
   }
 
   async appendSnapshot(traceId: string, snapshot: TraceSnapshot): Promise<void> {

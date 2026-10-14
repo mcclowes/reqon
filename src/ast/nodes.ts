@@ -292,6 +292,8 @@ export interface PaginationConfig {
   param: string; // Query param name: "page", "offset", "cursor"
   pageSize: number;
   cursorPath?: string; // For cursor pagination: where to find next cursor in response
+  maxPages?: number; // Cap on pages fetched (defaults to MAX_PAGINATION_PAGES)
+  maxItems?: number; // Cap on total items accumulated, bounding memory
 }
 
 export interface RetryConfig {

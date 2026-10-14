@@ -1,5 +1,82 @@
 import type { StoreAdapter, StoreFilter } from './types.js';
 
+/**
+ * Allowlist for PostgREST column/field names.
+ *
+ * A field name is used as the *key* of a query parameter, which PostgREST
+ * interprets structurally: a key like `or`, `and`, `select`, or `not.is.null`
+ * is a logical operator / reserved word, not a column filter. If we let
+ * arbitrary field names through, a caller-controlled key could inject
+ * additional filter logic and bypass the intended `where` clause.
+ *
+ * We therefore restrict field names to plain identifiers: a leading letter or
+ * underscore followed by letters, digits, or underscores. This covers ordinary
+ * Postgres column names while rejecting operators, dots, parentheses, commas,
+ * and other PostgREST syntax characters.
+ */
+const VALID_FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * PostgREST reserved query parameters that must never be supplied as a column
+ * filter, even if they happen to match {@link VALID_FIELD_NAME}.
+ */
+const RESERVED_FIELD_NAMES = new Set([
+  'or',
+  'and',
+  'not',
+  'select',
+  'order',
+  'limit',
+  'offset',
+  'on_conflict',
+  'columns',
+]);
+
+function assertValidFieldName(field: string): void {
+  if (!VALID_FIELD_NAME.test(field) || RESERVED_FIELD_NAMES.has(field.toLowerCase())) {
+    throw new PostgRESTError(
+      `Invalid field name in filter: ${JSON.stringify(field)}. ` +
+        `Field names must be plain column identifiers (letters, digits, underscores).`,
+      400
+    );
+  }
+}
+
+/**
+ * Encode a value for use inside a PostgREST operator expression (e.g. the
+ * `<value>` in `eq.<value>`).
+ *
+ * `URLSearchParams` already percent-encodes the value when serialized, which
+ * neutralizes `&`/`=` separators. But PostgREST also treats commas, parentheses,
+ * and dots as structural inside its operator grammar, so a raw string value like
+ * `foo,or=(...)` could still alter parsing. PostgREST allows any value to be
+ * double-quoted, with `"` and `\` backslash-escaped, which removes that
+ * ambiguity. We always quote string values to keep them strictly literal.
+ */
+function encodeFilterValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+/**
+ * Append a single `field = value` filter to the query params, validating the
+ * field name and quoting/encoding the value so neither can inject PostgREST
+ * operators. `URLSearchParams` percent-encodes the serialized output.
+ */
+function appendWhere(params: URLSearchParams, field: string, value: unknown): void {
+  assertValidFieldName(field);
+
+  if (value === null || value === undefined) {
+    params.append(field, 'is.null');
+  } else if (typeof value === 'string') {
+    params.append(field, `eq.${encodeFilterValue(value)}`);
+  } else if (typeof value === 'number' || typeof value === 'boolean') {
+    params.append(field, `eq.${encodeFilterValue(String(value))}`);
+  } else {
+    // Complex values (objects/arrays) are serialized to JSON, then quoted.
+    params.append(field, `eq.${encodeFilterValue(JSON.stringify(value))}`);
+  }
+}
+
 export interface PostgRESTOptions {
   /** Base URL for the PostgREST API (e.g., https://xxx.supabase.co/rest/v1) */
   url: string;
@@ -11,6 +88,14 @@ export interface PostgRESTOptions {
   primaryKey?: string;
   /** Optional schema (for Supabase, typically 'public') */
   schema?: string;
+  /**
+   * Allow {@link PostgRESTStore.clear} to issue a full-table DELETE.
+   *
+   * Defaults to `false`: clearing the entire table is a destructive operation
+   * that is easy to trigger by accident (e.g. if a `sql` store config ever
+   * resolves to this adapter), so it must be explicitly opted into.
+   */
+  allowClearAll?: boolean;
 }
 
 /**
@@ -30,12 +115,18 @@ export class PostgRESTStore implements StoreAdapter {
   private baseUrl: string;
   private headers: Record<string, string>;
   private primaryKey: string;
+  private allowClearAll: boolean;
 
   constructor(private options: PostgRESTOptions) {
     // Normalize URL (remove trailing slash)
     const url = options.url.replace(/\/$/, '');
     this.baseUrl = `${url}/${options.table}`;
     this.primaryKey = options.primaryKey ?? 'id';
+    this.allowClearAll = options.allowClearAll ?? false;
+
+    // A primary key that is not a plain column identifier would be interpolated
+    // straight into filter URLs by get/update/delete, so reject it up front.
+    assertValidFieldName(this.primaryKey);
 
     this.headers = {
       'Content-Type': 'application/json',
@@ -120,16 +211,7 @@ export class PostgRESTStore implements StoreAdapter {
     // Apply where clause
     if (filter?.where) {
       for (const [field, value] of Object.entries(filter.where)) {
-        if (value === null) {
-          params.append(field, 'is.null');
-        } else if (typeof value === 'string') {
-          params.append(field, `eq.${value}`);
-        } else if (typeof value === 'number' || typeof value === 'boolean') {
-          params.append(field, `eq.${value}`);
-        } else {
-          // For complex values, try JSON
-          params.append(field, `eq.${JSON.stringify(value)}`);
-        }
+        appendWhere(params, field, value);
       }
     }
 
@@ -158,6 +240,16 @@ export class PostgRESTStore implements StoreAdapter {
   }
 
   async clear(): Promise<void> {
+    // Full-table DELETE: refuse unless explicitly opted into. Without this guard
+    // an accidental clear() (e.g. a misrouted `sql` store) would wipe the table.
+    if (!this.allowClearAll) {
+      throw new PostgRESTError(
+        'Refusing to clear all records: full-table DELETE is disabled. ' +
+          'Set { allowClearAll: true } in the PostgREST store options to enable it.',
+        400
+      );
+    }
+
     // Delete all records - PostgREST requires a filter, so we use a always-true condition
     // This deletes where primary key is not null (i.e., all records)
     const url = `${this.baseUrl}?${this.primaryKey}=not.is.null`;
@@ -203,11 +295,7 @@ export class PostgRESTStore implements StoreAdapter {
 
     if (filter?.where) {
       for (const [field, value] of Object.entries(filter.where)) {
-        if (value === null) {
-          params.append(field, 'is.null');
-        } else {
-          params.append(field, `eq.${value}`);
-        }
+        appendWhere(params, field, value);
       }
     }
 

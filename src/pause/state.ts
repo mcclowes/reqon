@@ -67,6 +67,50 @@ export interface PauseCheckpoint {
 }
 
 /**
+ * Maximum delay Node's setTimeout can represent (signed 32-bit ms, ~24.8 days).
+ * Larger delays overflow and fire almost immediately, so they must be chunked.
+ */
+export const MAX_TIMER_DELAY = 2 ** 31 - 1;
+
+/**
+ * Schedule a callback after an arbitrarily long delay.
+ *
+ * Node's setTimeout overflows for delays beyond ~24.8 days, firing instantly.
+ * This re-arms the timer in segments until the real deadline is reached, so
+ * multi-week pauses fire at the right time. The delay is recomputed against an
+ * absolute deadline each segment to avoid drift.
+ *
+ * Returns a handle whose `clear()` cancels the pending timer.
+ */
+export function setLongTimeout(
+  callback: () => void,
+  delayMs: number
+): { clear: () => void } {
+  const deadline = Date.now() + delayMs;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cleared = false;
+
+  const arm = () => {
+    if (cleared) return;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      callback();
+      return;
+    }
+    timer = setTimeout(arm, Math.min(remaining, MAX_TIMER_DELAY));
+  };
+
+  arm();
+
+  return {
+    clear: () => {
+      cleared = true;
+      if (timer) clearTimeout(timer);
+    },
+  };
+}
+
+/**
  * Generate a unique pause ID
  */
 export function generatePauseId(executionId: string): string {

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, access, readdir, unlink } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, access, readdir, unlink, rename, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 /**
@@ -31,6 +31,48 @@ export function serialize(data: unknown, pretty = true): string {
  */
 export async function writeJsonFile(filePath: string, data: unknown, pretty = true): Promise<void> {
   await writeFile(filePath, serialize(data, pretty), 'utf-8');
+}
+
+/**
+ * Atomically write data to a file.
+ *
+ * Writes to a unique temporary file in the same directory, flushes it to disk,
+ * then renames it over the target. `rename` is atomic on POSIX filesystems, so a
+ * reader never observes a partially written file: it sees either the old contents
+ * or the complete new contents. A crash mid-write leaves only an orphan temp file.
+ */
+export async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+  const dir = dirname(filePath);
+  const tmpPath = join(
+    dir,
+    `.${Math.random().toString(36).slice(2)}-${process.pid}.tmp`
+  );
+  const handle = await open(tmpPath, 'w');
+  try {
+    await handle.writeFile(content, 'utf-8');
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    await unlink(tmpPath).catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * Atomically write JSON data to a file (temp file + rename).
+ *
+ * Prevents partial/corrupt files from being read back: see {@link writeFileAtomic}.
+ */
+export async function writeJsonFileAtomic(
+  filePath: string,
+  data: unknown,
+  pretty = true
+): Promise<void> {
+  await writeFileAtomic(filePath, serialize(data, pretty));
 }
 
 /**

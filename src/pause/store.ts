@@ -43,6 +43,20 @@ export interface PauseStore {
 
   /** Update pause state (e.g., when resumed) */
   update(id: string, updates: Partial<PauseState>): Promise<void>;
+
+  /**
+   * Atomically transition a pause's status.
+   *
+   * Applies `updates` only if the pause currently has `expectedStatus`.
+   * Returns the updated state if the transition won, or null if another
+   * caller already moved the pause out of `expectedStatus`. Used to make
+   * resume idempotent across racing triggers (timeout poller vs webhook).
+   */
+  compareAndSetStatus(
+    id: string,
+    expectedStatus: PauseState['status'],
+    updates: Partial<PauseState>
+  ): Promise<PauseState | null>;
 }
 
 /**

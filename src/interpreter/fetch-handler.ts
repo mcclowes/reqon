@@ -17,6 +17,9 @@ import { createPaginationStrategy, type PaginationContext } from './pagination.j
 /** Maximum pages to fetch to prevent infinite loops */
 const MAX_PAGINATION_PAGES = 100;
 
+/** Default cap on total accumulated items, to bound memory on large result sets */
+const DEFAULT_MAX_PAGINATION_ITEMS = 100_000;
+
 export interface FetchHandlerDeps {
   ctx: ExecutionContext;
   oasSources: Map<string, OASSource>;
@@ -316,6 +319,9 @@ export class FetchHandler {
     const paginate = step.paginate!;
     const strategy = createPaginationStrategy(paginate);
 
+    const maxPages = paginate.maxPages ?? MAX_PAGINATION_PAGES;
+    const maxItems = paginate.maxItems ?? DEFAULT_MAX_PAGINATION_ITEMS;
+
     const ctx: PaginationContext = {
       page: 0,
       pageSize: paginate.pageSize,
@@ -337,23 +343,11 @@ export class FetchHandler {
       // Temporarily set response for until condition evaluation
       this.deps.ctx.response = response.data;
 
-      // Check until condition
-      if (step.until) {
-        const shouldStop = evaluate(step.until, this.deps.ctx);
-        if (shouldStop) {
-          break;
-        }
-      }
-
-      // Extract results using strategy
+      // Extract results using strategy, then append BEFORE checking `until` so the
+      // page that triggers the stop is not silently dropped.
       const pageResult = strategy.extractResults(response.data, ctx);
       allResults.push(...pageResult.items);
       hasMore = pageResult.hasMore;
-
-      // Update cursor for next iteration
-      if (pageResult.nextCursor) {
-        ctx.cursor = pageResult.nextCursor;
-      }
 
       ctx.page++;
 
@@ -366,9 +360,33 @@ export class FetchHandler {
         hasMore,
       });
 
-      // Safety limit
-      if (ctx.page >= MAX_PAGINATION_PAGES) {
-        this.deps.log(`Warning: pagination limit (${MAX_PAGINATION_PAGES}) reached`);
+      // Stop after appending if the `until` condition is satisfied.
+      if (step.until && evaluate(step.until, this.deps.ctx)) {
+        break;
+      }
+
+      // Detect a non-advancing cursor: if the API returns the same cursor it was
+      // given, following it would loop to the page cap and duplicate items.
+      if (pageResult.nextCursor !== undefined && pageResult.nextCursor === previousCursor) {
+        this.deps.log('Warning: pagination cursor did not advance; stopping');
+        break;
+      }
+
+      // Update cursor for next iteration
+      if (pageResult.nextCursor) {
+        previousCursor = ctx.cursor;
+        ctx.cursor = pageResult.nextCursor;
+      }
+
+      // Bound memory: stop once we have accumulated the maximum allowed items.
+      if (allResults.length >= maxItems) {
+        this.deps.log(`Warning: pagination item limit (${maxItems}) reached`);
+        break;
+      }
+
+      // Safety limit on page count.
+      if (ctx.page >= maxPages) {
+        this.deps.log(`Warning: pagination limit (${maxPages}) reached`);
         hasMore = false;
       }
     }

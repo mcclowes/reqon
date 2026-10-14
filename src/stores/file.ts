@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { writeFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { StoreAdapter, StoreFilter } from './types.js';
 import { applyStoreFilter } from './types.js';
@@ -7,7 +7,11 @@ import {
   ensureDirectory,
   readJsonFile,
   serialize,
+  writeFileAtomic,
+  writeFileAtomicSync,
 } from '../utils/file.js';
+import { assertSafePathSegment, resolveWithin } from '../utils/path.js';
+import { deepMerge } from '../utils/merge.js';
 
 export interface FileStoreOptions {
   /** Base directory for data files (default: '.reqon-data') */
@@ -64,7 +68,10 @@ export class FileStore implements StoreAdapter {
    */
   constructor(name: string, options: FileStoreOptions = {}) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
-    this.filePath = join(this.options.baseDir, `${name}.json`);
+    // Confine the store file to baseDir: a name with `../`, a separator, or an
+    // absolute path must not be able to read/write outside the data directory.
+    assertSafePathSegment(name, 'store name');
+    this.filePath = resolveWithin(this.options.baseDir, `${name}.json`);
     // Lazy initialization - init() is called on first operation
   }
 
@@ -139,7 +146,7 @@ export class FileStore implements StoreAdapter {
   private async writeToDisk(): Promise<void> {
     const obj = Object.fromEntries(this.data);
     const content = serialize(obj, this.options.pretty);
-    await writeFile(this.filePath, content, 'utf-8');
+    await writeFileAtomic(this.filePath, content);
     this.dirty = false;
   }
 
@@ -147,7 +154,7 @@ export class FileStore implements StoreAdapter {
   private writeToDiskSync(): void {
     const obj = Object.fromEntries(this.data);
     const content = serialize(obj, this.options.pretty);
-    writeFileSync(this.filePath, content, 'utf-8');
+    writeFileAtomicSync(this.filePath, content);
     this.dirty = false;
   }
 
@@ -176,12 +183,7 @@ export class FileStore implements StoreAdapter {
     await this.ensureInitialized();
     // Upsert all records in memory first (no disk I/O per record)
     for (const { key, value } of records) {
-      const existing = this.data.get(key);
-      if (existing) {
-        this.data.set(key, { ...existing, ...value });
-      } else {
-        this.data.set(key, { ...value });
-      }
+      this.data.set(key, this.mergeRecord(this.data.get(key), value));
     }
     // Single persist operation for all records
     await this.persist();
@@ -189,13 +191,27 @@ export class FileStore implements StoreAdapter {
 
   async update(key: string, value: Partial<Record<string, unknown>>): Promise<void> {
     await this.ensureInitialized();
-    const existing = this.data.get(key);
-    if (existing) {
-      this.data.set(key, { ...existing, ...value });
-    } else {
-      this.data.set(key, value as Record<string, unknown>);
-    }
+    this.data.set(key, this.mergeRecord(this.data.get(key), value));
     await this.persist();
+  }
+
+  /**
+   * Merge an incoming record into an existing one. When the record is flagged
+   * partial (`_partial: true`), nested objects are deep-merged so updating one
+   * nested field does not clobber sibling fields; otherwise the incoming record
+   * replaces the existing one (a plain spread is fine for a full replacement).
+   */
+  private mergeRecord(
+    existing: Record<string, unknown> | undefined,
+    value: Record<string, unknown>
+  ): Record<string, unknown> {
+    if (!existing) {
+      return { ...value };
+    }
+    if (value._partial === true) {
+      return deepMerge(existing, value);
+    }
+    return { ...existing, ...value };
   }
 
   async delete(key: string): Promise<void> {

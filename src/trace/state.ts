@@ -87,6 +87,34 @@ export interface ExecutionTrace {
   snapshots: TraceSnapshot[];
   /** Metadata from execution */
   metadata?: Record<string, unknown>;
+  /**
+   * Set when the trace could not be fully reconstructed from storage: some
+   * snapshots were missing or corrupt (e.g. an interrupted write). Replay
+   * consumers should treat such traces as untrustworthy rather than complete.
+   */
+  incomplete?: boolean;
+}
+
+/**
+ * Validate that a parsed object has the required shape of a {@link TraceSnapshot}.
+ * Used to reject partially-written / corrupt snapshot files during replay.
+ */
+export function isValidSnapshot(value: unknown): value is TraceSnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const s = value as Record<string, unknown>;
+  return (
+    typeof s.id === 'string' &&
+    typeof s.index === 'number' &&
+    Number.isInteger(s.index) &&
+    s.index >= 0 &&
+    typeof s.mission === 'string' &&
+    typeof s.action === 'string' &&
+    (s.phase === 'before' || s.phase === 'after') &&
+    typeof s.variables === 'object' &&
+    s.variables !== null &&
+    typeof s.stores === 'object' &&
+    s.stores !== null
+  );
 }
 
 /**

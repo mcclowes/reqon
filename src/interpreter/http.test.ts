@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HttpClient, BearerAuthProvider, OAuth2AuthProvider } from './http.js';
+import { FetchError } from '../errors/index.js';
 
 describe('HttpClient', () => {
   let originalFetch: typeof globalThis.fetch;
@@ -360,6 +361,220 @@ describe('HttpClient', () => {
       });
 
       expect(capturedBody).toBe(JSON.stringify({ name: 'Test', email: 'test@example.com' }));
+    });
+  });
+});
+
+  describe('timeout (#120)', () => {
+    it('aborts a request that exceeds the configured timeout', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      // fetch that respects the AbortSignal it is given
+      globalThis.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal) {
+            signal.addEventListener('abort', () => {
+              reject(new DOMException('The operation was aborted.', 'AbortError'));
+            });
+          }
+        });
+      }) as typeof fetch;
+
+      await expect(
+        client.request(
+          { method: 'GET', path: '/slow', timeout: 20 },
+          { maxAttempts: 1, backoff: 'constant', initialDelay: 1 }
+        )
+      ).rejects.toThrow(/timed out/i);
+
+      vi.useFakeTimers();
+    });
+
+    it('passes an AbortSignal to fetch', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      let capturedSignal: AbortSignal | undefined | null;
+
+      globalThis.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+        capturedSignal = init?.signal;
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      await client.request({ method: 'GET', path: '/users' });
+
+      expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  describe('idempotency-gated retries (#121)', () => {
+    it('does not retry POST on network error', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn(async () => {
+        throw new Error('Network error');
+      });
+
+      await expect(
+        client.request(
+          { method: 'POST', path: '/payments', body: { amount: 10 } },
+          { maxAttempts: 3, backoff: 'constant', initialDelay: 1 }
+        )
+      ).rejects.toThrow('Network error');
+
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      vi.useFakeTimers();
+    });
+
+    it('does not retry POST on 5xx', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn(async () => {
+        return new Response(JSON.stringify({ error: 'boom' }), { status: 503 });
+      });
+
+      await expect(
+        client.request(
+          { method: 'POST', path: '/payments', body: { amount: 10 } },
+          { maxAttempts: 3, backoff: 'constant', initialDelay: 1 }
+        )
+      ).rejects.toThrow();
+
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      vi.useFakeTimers();
+    });
+
+    it('retries GET on network error', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      let callCount = 0;
+      globalThis.fetch = vi.fn(async () => {
+        callCount++;
+        if (callCount < 2) throw new Error('Network error');
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      });
+
+      const result = await client.request(
+        { method: 'GET', path: '/users' },
+        { maxAttempts: 3, backoff: 'constant', initialDelay: 1 }
+      );
+
+      expect(callCount).toBe(2);
+      expect(result.status).toBe(200);
+      vi.useFakeTimers();
+    });
+
+    it('retries POST when explicitly marked idempotent', async () => {
+      vi.useRealTimers();
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      let callCount = 0;
+      globalThis.fetch = vi.fn(async () => {
+        callCount++;
+        if (callCount < 2) throw new Error('Network error');
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      });
+
+      const result = await client.request(
+        { method: 'POST', path: '/idempotent', idempotent: true },
+        { maxAttempts: 3, backoff: 'constant', initialDelay: 1 }
+      );
+
+      expect(callCount).toBe(2);
+      expect(result.status).toBe(200);
+      vi.useFakeTimers();
+    });
+  });
+
+  describe('error responses (#127)', () => {
+    it('raises a structured error on 4xx', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn(async () => {
+        return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
+      });
+
+      await expect(
+        client.request({ method: 'GET', path: '/missing' })
+      ).rejects.toThrow(/404/);
+    });
+
+    it('does not treat a 400 body as data', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn(async () => {
+        return new Response(JSON.stringify({ error: 'bad' }), { status: 422 });
+      });
+
+      let caught: unknown;
+      try {
+        await client.request({ method: 'GET', path: '/bad' });
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(FetchError);
+      expect((caught as FetchError).statusCode).toBe(422);
+    });
+
+    it('handles 204 No Content without throwing', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn(async () => {
+        return new Response(null, { status: 204 });
+      });
+
+      const result = await client.request({ method: 'DELETE', path: '/users/1' });
+      expect(result.status).toBe(204);
+      expect(result.data).toBeNull();
+    });
+
+    it('handles empty 200 body without throwing', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn(async () => {
+        return new Response('', { status: 200 });
+      });
+
+      const result = await client.request({ method: 'GET', path: '/empty' });
+      expect(result.status).toBe(200);
+      expect(result.data).toBeNull();
+    });
+
+    it('returns text for non-JSON content-type without throwing', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+
+      globalThis.fetch = vi.fn(async () => {
+        const headers = new Headers();
+        headers.set('content-type', 'text/plain');
+        return new Response('pong', { status: 200, headers });
+      });
+
+      const result = await client.request({ method: 'GET', path: '/ping' });
+      expect(result.status).toBe(200);
+      expect(result.data).toBe('pong');
+    });
+
+    it('rejects a response that exceeds the size cap', async () => {
+      const client = new HttpClient({
+        baseUrl: 'https://api.example.com',
+        maxResponseBytes: 10,
+      });
+
+      globalThis.fetch = vi.fn(async () => {
+        const headers = new Headers();
+        headers.set('content-length', '1000000');
+        return new Response(JSON.stringify({ big: 'x'.repeat(1000) }), {
+          status: 200,
+          headers,
+        });
+      });
+
+      await expect(
+        client.request({ method: 'GET', path: '/big' })
+      ).rejects.toThrow(/too large|size/i);
     });
   });
 });

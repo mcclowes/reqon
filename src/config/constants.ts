@@ -25,6 +25,23 @@ export const HTTP_RETRY_DEFAULTS = {
 } as const;
 
 /**
+ * General HTTP client defaults (timeouts, response limits, idempotency)
+ */
+export const HTTP_CLIENT_DEFAULTS = {
+  /** Per-request timeout in milliseconds before the request is aborted */
+  TIMEOUT_MS: 30000,
+  /** Maximum response body size to buffer, in bytes (10 MB) */
+  MAX_RESPONSE_BYTES: 10 * 1024 * 1024,
+  /**
+   * HTTP methods considered safe to retry automatically. Per HTTP semantics
+   * GET/HEAD are safe and PUT is idempotent. POST/PATCH/DELETE are excluded by
+   * default because a retry can duplicate or repeat a server-side write; callers
+   * must opt in via `idempotent: true` or an idempotency key to retry those.
+   */
+  IDEMPOTENT_METHODS: ['GET', 'HEAD', 'PUT'] as readonly string[],
+} as const;
+
+/**
  * Default HTTP headers
  */
 export const HTTP_DEFAULT_HEADERS = {
@@ -90,12 +107,42 @@ export const CIRCUIT_BREAKER_DEFAULTS = {
 export const WEBHOOK_DEFAULTS = {
   /** Default port for webhook server */
   PORT: 3000,
-  /** Default host binding */
-  HOST: '0.0.0.0',
+  /**
+   * Default host binding. Loopback by default so the server is not exposed on
+   * all interfaces without an explicit opt-in. Override via `host` when the
+   * webhook must be reachable from outside the host.
+   */
+  HOST: '127.0.0.1',
   /** Default timeout for wait steps (5 minutes in ms) */
   DEFAULT_TIMEOUT_MS: 300000,
   /** Cleanup interval for expired registrations (1 minute in ms) */
   CLEANUP_INTERVAL_MS: 60000,
+  /** Maximum accepted request body size in bytes (1 MB) */
+  MAX_BODY_BYTES: 1024 * 1024,
+  /** Socket inactivity timeout in milliseconds (30 seconds) */
+  SOCKET_TIMEOUT_MS: 30000,
+} as const;
+
+// ============================================
+// Control Server Configuration
+// ============================================
+
+/**
+ * Default control server configuration
+ */
+export const CONTROL_DEFAULTS = {
+  /** Default port for control server */
+  PORT: 3001,
+  /**
+   * Default host binding. Loopback by default; the control server exposes
+   * state-changing endpoints and full execution state, so it must not bind all
+   * interfaces without an explicit opt-in.
+   */
+  HOST: '127.0.0.1',
+  /** Maximum accepted request body size in bytes (64 KB) */
+  MAX_BODY_BYTES: 64 * 1024,
+  /** Socket inactivity timeout in milliseconds (30 seconds) */
+  SOCKET_TIMEOUT_MS: 30000,
 } as const;
 
 // ============================================

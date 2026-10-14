@@ -264,6 +264,12 @@ export class CursorPaginationStrategy implements PaginationStrategy {
       nextCursor = cursorValue ? String(cursorValue) : undefined;
     }
 
+    // Guard against APIs that echo back the same cursor: following it would
+    // loop until the page cap, re-fetching and duplicating the same page.
+    if (nextCursor !== undefined && nextCursor === ctx.cursor) {
+      return { items, hasMore: false, nextCursor: undefined };
+    }
+
     return {
       items,
       hasMore: !!nextCursor,

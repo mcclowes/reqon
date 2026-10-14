@@ -3,7 +3,7 @@ import type { RateLimiter, RateLimitInfo } from '../auth/types.js';
 import { parseRateLimitHeaders } from '../auth/rate-limiter.js';
 import { CircuitBreaker, CircuitBreakerError } from '../auth/circuit-breaker.js';
 import { sleep } from '../utils/async.js';
-import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
+import { HTTP_RETRY_DEFAULTS, HTTP_CLIENT_DEFAULTS } from '../config/index.js';
 import { FetchError } from '../errors/index.js';
 
 export interface HttpClientConfig {
@@ -14,6 +14,10 @@ export interface HttpClientConfig {
   circuitBreaker?: CircuitBreaker;
   /** Source name for rate limit and circuit breaker tracking */
   sourceName?: string;
+  /** Default per-request timeout in ms (overridable per request) */
+  timeout?: number;
+  /** Maximum response body size to buffer, in bytes */
+  maxResponseBytes?: number;
 }
 
 export interface AuthProvider {
@@ -27,6 +31,14 @@ export interface HttpRequest {
   body?: unknown;
   headers?: Record<string, string>;
   query?: Record<string, string>;
+  /** Per-request timeout in ms; falls back to client/default timeout */
+  timeout?: number;
+  /**
+   * Opt-in flag marking an otherwise non-idempotent method (POST/PATCH/DELETE)
+   * as safe to retry. Set this only when the endpoint is idempotent or guarded
+   * by an idempotency key. Idempotent methods (GET/HEAD/PUT) retry regardless.
+   */
+  idempotent?: boolean;
 }
 
 export interface HttpResponse<T = unknown> {
@@ -59,6 +71,12 @@ export class HttpClient {
     const backoff = retry?.backoff ?? HTTP_RETRY_DEFAULTS.BACKOFF;
     const initialDelay = retry?.initialDelay ?? HTTP_RETRY_DEFAULTS.INITIAL_DELAY_MS;
     const maxDelay = retry?.maxDelay ?? HTTP_RETRY_DEFAULTS.MAX_DELAY_MS;
+    const timeoutMs = req.timeout ?? this.config.timeout ?? HTTP_CLIENT_DEFAULTS.TIMEOUT_MS;
+
+    // Only retry methods that are safe to repeat. Non-idempotent verbs
+    // (POST/PATCH/DELETE) are retried solely when the caller opts in, to avoid
+    // duplicate server-side writes (#121).
+    const canRetry = this.isRetryable(req);
 
     let lastError: Error | null = null;
 
