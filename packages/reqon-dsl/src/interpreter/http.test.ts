@@ -95,6 +95,20 @@ describe('HttpClient', () => {
 
       expect(capturedUrl).toBe('https://api.example.com/users?page=1&limit=10');
     });
+
+    it('appends query parameters to a path that already has a query', async () => {
+      const client = new HttpClient({ baseUrl: 'https://api.example.com' });
+      let capturedUrl = '';
+
+      globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
+        capturedUrl = url.toString();
+        return new Response(JSON.stringify({}), { status: 200 });
+      });
+
+      await client.request({ method: 'GET', path: '/users?fields=a,b', query: { page: '2' } });
+
+      expect(capturedUrl).toBe('https://api.example.com/users?fields=a,b&page=2');
+    });
   });
 
   describe('timeout', () => {

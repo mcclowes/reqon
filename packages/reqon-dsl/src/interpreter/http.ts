@@ -577,8 +577,9 @@ export class HttpClient {
     let url = `${base}${cleanPath}`;
 
     if (query && Object.keys(query).length > 0) {
+      // Paths may carry their own query (the docs suggest it for fixed params).
       const params = new URLSearchParams(query);
-      url += `?${params.toString()}`;
+      url += `${url.includes('?') ? '&' : '?'}${params.toString()}`;
     }
 
     return url;
