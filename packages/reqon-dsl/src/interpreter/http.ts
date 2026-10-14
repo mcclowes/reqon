@@ -16,6 +16,9 @@ import { EgressBlockedError, guardFetch, type FetchFn } from './egress-guard.js'
 // parsing in auth/rate-limiter.ts so both consumers share one implementation.
 export { parseRetryAfterMs };
 
+/** Error bodies larger than this aren't parsed onto FetchError.body. */
+const MAX_ERROR_BODY_CHARS = 64 * 1024;
+
 /** Maximum buffered response body size (10 MiB) before the request is rejected. */
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
@@ -270,7 +273,7 @@ export class HttpClient {
             this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
           this.notifyRetry(req, attempt, maxAttempts, '429', delay);
           await this.drainBody(response);
-          await sleep(delay);
+          await sleep(delay, this.config.signal);
           continue;
         }
 
@@ -285,7 +288,7 @@ export class HttpClient {
             const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
             this.notifyRetry(req, attempt, maxAttempts, `${response.status}`, delay);
             await this.drainBody(response);
-            await sleep(delay);
+            await sleep(delay, this.config.signal);
             continue;
           }
           // Non-idempotent without an idempotency key: do not re-send a write
@@ -379,7 +382,7 @@ export class HttpClient {
         if (attempt < maxAttempts) {
           const delay = this.calculateDelay(attempt, backoff, initialDelay, maxDelay);
           this.notifyRetry(req, attempt, maxAttempts, lastError.message || 'network error', delay);
-          await sleep(delay);
+          await sleep(delay, this.config.signal);
         }
       }
     }
@@ -560,6 +563,7 @@ export class HttpClient {
     }
     const text = redactText(raw);
     const snippet = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+    if (raw.length > MAX_ERROR_BODY_CHARS) return { snippet };
     try {
       return { snippet, body: redactSecrets(JSON.parse(raw) as unknown) };
     } catch {

@@ -97,6 +97,26 @@ describe('signal', () => {
     expect(result.errors[0].details).toBeInstanceOf(ExecutionAbortedError);
   });
 
+  it('cuts a retry backoff short when aborted', async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        setTimeout(() => controller.abort(), 5);
+        return json({ error: 'busy' }, 503);
+      })
+    );
+
+    const started = Date.now();
+    const result = await execute(
+      mission('get "/busy" { retry: { maxAttempts: 3, backoff: constant, initialDelay: 5000 } }'),
+      { signal: controller.signal }
+    );
+
+    expect(result.success).toBe(false);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
   it('does not start when the signal is already aborted', async () => {
     const fetchMock = vi.fn(async () => json([{ id: 1 }]));
     vi.stubGlobal('fetch', fetchMock);
@@ -135,6 +155,17 @@ describe('error detail', () => {
       error: { status: 'FAILED_PRECONDITION', details: [{ reason: 'EXPIRED_SYNC_TOKEN' }] },
     });
     expect(JSON.stringify((error as FetchError).body)).not.toContain('leaked');
+  });
+
+  it('does not parse an oversized error body', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json({ error: 'x'.repeat(70 * 1024) }, 400))
+    );
+
+    const result = await execute(mission('get "/items"'));
+
+    expect((result.errors[0].details as FetchError).body).toBeUndefined();
   });
 
   it('leaves body undefined for a non-JSON error response', async () => {

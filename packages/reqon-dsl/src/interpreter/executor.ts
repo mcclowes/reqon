@@ -1186,7 +1186,7 @@ export class MissionExecutor {
           }
           const delay = this.computeRetryDelay(error.backoff, attempt);
           this.log(`Action ${action.name}: retry ${attempt}/${maxAttempts} in ${delay}ms`);
-          if (delay > 0) await sleep(delay);
+          if (delay > 0) await sleep(delay, this.config.signal);
           continue;
         }
         // JumpSignal, PauseSignal, and real errors propagate. The action's
