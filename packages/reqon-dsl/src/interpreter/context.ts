@@ -53,6 +53,9 @@ export interface ExecutionContext {
   // Variable bindings for current scope
   variables: Map<string, unknown>;
 
+  // Host-supplied per-run values, read with input("name")
+  inputs?: Readonly<Record<string, unknown>>;
+
   // Current response from last fetch
   response?: unknown;
   /**
@@ -69,13 +72,14 @@ export interface ExecutionContext {
   actionScope?: ActionScope;
 }
 
-export function createContext(): ExecutionContext {
+export function createContext(inputs?: Record<string, unknown>): ExecutionContext {
   return {
     stores: new Map(),
     storeTypes: new Map(),
     sources: new Map(),
     schemas: new Map(),
     variables: new Map(),
+    inputs,
   };
 }
 
@@ -86,6 +90,7 @@ export function childContext(parent: ExecutionContext): ExecutionContext {
     sources: parent.sources,
     schemas: parent.schemas,
     variables: new Map(),
+    inputs: parent.inputs,
     parent,
     // Nested scopes (for/match) share the action's scope so the step counter
     // and checkpoint list stay coherent across the whole action.

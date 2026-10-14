@@ -7,7 +7,8 @@ import { laneKey } from '../auth/lane.js';
 import { sleep } from '../utils/async.js';
 import { redactText } from '../utils/redact.js';
 import { HTTP_RETRY_DEFAULTS } from '../config/index.js';
-import { FetchError } from '../errors/index.js';
+import { ExecutionAbortedError, FetchError } from '../errors/index.js';
+import { redactSecrets } from '../utils/redact.js';
 import type { ProxyPool } from './proxy.js';
 import { EgressBlockedError, guardFetch, type FetchFn } from './egress-guard.js';
 
@@ -44,6 +45,8 @@ export interface HttpClientConfig {
    * non-public addresses. For missions whose URLs come from untrusted input.
    */
   blockPrivateNetworks?: boolean;
+  /** Cancels in-flight and future requests. An abort is never retried. */
+  signal?: AbortSignal;
 }
 
 /** A single retry attempt about to be made after a backoff. */
@@ -179,6 +182,7 @@ export class HttpClient {
     let hasRefreshed = false;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      this.throwIfAborted();
       // Outside the try on purpose. A proxy that can't be constructed is a
       // configuration fault, not a transient network error: retrying it wastes
       // attempts, and swallowing it would silently fall back to direct egress
@@ -323,11 +327,11 @@ export class HttpClient {
           ) {
             this.config.circuitBreaker.recordFailure(requestLane, undefined, response.status);
           }
-          const snippet = await this.safeReadSnippet(response, timeout);
+          const { snippet, body } = await this.readErrorBody(response, timeout);
           throw new FetchError(
             `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}` +
               (snippet ? `: ${snippet}` : ''),
-            { url, method: req.method, statusCode: response.status }
+            { url, method: req.method, statusCode: response.status, body }
           );
         }
 
@@ -345,10 +349,15 @@ export class HttpClient {
       } catch (error) {
         lastError = error as Error;
 
-        // Re-throw circuit breaker and egress policy errors immediately
-        if (error instanceof CircuitBreakerError || error instanceof EgressBlockedError) {
+        // Re-throw circuit breaker, egress policy and cancellation immediately
+        if (
+          error instanceof CircuitBreakerError ||
+          error instanceof EgressBlockedError ||
+          error instanceof ExecutionAbortedError
+        ) {
           throw error;
         }
+        this.throwIfAborted();
 
         // HTTP-status errors (4xx, exhausted 5xx) and body parse/size errors
         // are definitive — don't burn retries re-fetching them.
@@ -391,14 +400,23 @@ export class HttpClient {
     fetchImpl: FetchFn = fetch
   ): Promise<Response> {
     if (!timeoutMs || timeoutMs <= 0) {
-      return fetchImpl(url, options);
+      try {
+        return await fetchImpl(url, { ...options, signal: this.config.signal });
+      } catch (error) {
+        this.throwIfAborted();
+        throw error;
+      }
     }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const signal = this.config.signal
+      ? AbortSignal.any([controller.signal, this.config.signal])
+      : controller.signal;
     try {
-      return await fetchImpl(url, { ...options, signal: controller.signal });
+      return await fetchImpl(url, { ...options, signal });
     } catch (error) {
+      this.throwIfAborted();
       if ((error as Error).name === 'AbortError') {
         throw new FetchError(`Request timed out after ${timeoutMs}ms`, {
           url,
@@ -529,14 +547,28 @@ export class HttpClient {
    * Bounded by `timeoutMs`: an error body that never finishes yields an empty
    * snippet rather than hanging the error path.
    */
-  private async safeReadSnippet(response: Response, timeoutMs?: number): Promise<string> {
+  /** A short redacted snippet for the message, plus the parsed JSON body for hosts. */
+  private async readErrorBody(
+    response: Response,
+    timeoutMs?: number
+  ): Promise<{ snippet: string; body?: unknown }> {
+    let raw: string;
     try {
-      const raw = await this.readCappedText(response, '', '', timeoutMs);
-      const text = redactText(raw.trim());
-      return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+      raw = (await this.readCappedText(response, '', '', timeoutMs)).trim();
     } catch {
-      return '';
+      return { snippet: '' };
     }
+    const text = redactText(raw);
+    const snippet = text.length > 200 ? `${text.slice(0, 200)}…` : text;
+    try {
+      return { snippet, body: redactSecrets(JSON.parse(raw) as unknown) };
+    } catch {
+      return { snippet };
+    }
+  }
+
+  private throwIfAborted(): void {
+    if (this.config.signal?.aborted) throw new ExecutionAbortedError(this.config.signal.reason);
   }
 
   private buildUrl(path: string, query?: Record<string, string>): string {

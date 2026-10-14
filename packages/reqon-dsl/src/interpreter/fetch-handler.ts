@@ -79,6 +79,8 @@ export interface FetchResult {
    * watermark and would never be requested again. See #246.
    */
   truncated?: TruncationInfo;
+  /** Opaque sync token read from the last page, for `since: lastSync { token }`. */
+  syncToken?: string;
 }
 
 /** Why a paginated fetch stopped early, and how far it got. */
@@ -140,6 +142,7 @@ export class FetchHandler {
     let data: unknown;
     let pagesFetched: number | undefined;
     let truncated: TruncationInfo | undefined;
+    let syncToken: string | undefined;
     let statusCode = 200;
 
     try {
@@ -157,6 +160,7 @@ export class FetchHandler {
         data = result.items;
         truncated = result.truncated;
         pagesFetched = result.pages;
+        syncToken = result.syncToken;
       } else {
         const body = step.body ? evaluate(step.body, this.deps.ctx) : undefined;
         const response = await client.request(
@@ -175,6 +179,7 @@ export class FetchHandler {
         await this.validateOASResponse(resolved.sourceName, resolved.operationId, response.data);
         data = response.data;
         statusCode = response.status ?? 200;
+        syncToken = readSyncToken(step, response.data);
       }
 
       const ms = Date.now() - fetchStartTime;
@@ -224,7 +229,7 @@ export class FetchHandler {
       throw error;
     }
 
-    return { data, checkpointKey, status: statusCode, truncated };
+    return { data, checkpointKey, status: statusCode, truncated, syncToken };
   }
 
   private isRetryableError(error: unknown): boolean {
@@ -253,9 +258,19 @@ export class FetchHandler {
     key: string,
     step: FetchStep,
     data: unknown,
-    fallbackTime?: Date
+    fallbackTime?: Date,
+    syncToken?: string
   ): Promise<Date | undefined> {
     if (!this.deps.syncStore) return undefined;
+
+    // A token checkpoint without a new token would erase the old one and force
+    // a full resync next run, so leave it where it is.
+    if (step.since?.token && !syncToken) {
+      this.deps.log(
+        `Sync checkpoint '${key}' NOT advanced: response had no token at '${step.since.token}'`
+      );
+      return undefined;
+    }
 
     // Prefer the data's own clock; otherwise fall back to when the request was
     // issued (not now), so records written server-side during the fetch are
@@ -289,6 +304,7 @@ export class FetchHandler {
       key,
       syncedAt,
       recordCount,
+      cursor: syncToken,
       mission: this.deps.missionName,
       executionId: this.deps.executionId,
     });
@@ -377,7 +393,16 @@ export class FetchHandler {
 
     const checkpointKey = step.since.key ?? generateCheckpointKey(sourceName, operationId, path);
 
-    if (step.since.type === 'lastSync') {
+    if (step.since.type === 'lastSync' && step.since.token) {
+      const token = (await this.deps.syncStore.getCheckpoint(checkpointKey))?.cursor;
+      if (token) {
+        if (step.since.header) headers[step.since.header] = token;
+        else query[step.since.param ?? 'since'] = token;
+      }
+      this.deps.log(
+        `Incremental sync: ${token ? 'sending stored token' : 'no token yet, full sync'} (key: ${checkpointKey})`
+      );
+    } else if (step.since.type === 'lastSync') {
       const lastSync = await this.deps.syncStore.getLastSync(checkpointKey);
       const format = step.since.format ?? 'iso';
       const formattedDate = formatSinceDate(lastSync, format);
@@ -431,8 +456,14 @@ export class FetchHandler {
     operationId?: string,
     sinceQuery: Record<string, string> = {},
     sinceHeaders: Record<string, string> = {}
-  ): Promise<{ items: unknown[]; pages: number; truncated?: TruncationInfo }> {
+  ): Promise<{
+    items: unknown[];
+    pages: number;
+    truncated?: TruncationInfo;
+    syncToken?: string;
+  }> {
     const allResults: unknown[] = [];
+    let syncToken: string | undefined;
     const paginate = step.paginate!;
     const strategy = createPaginationStrategy(paginate);
 
@@ -494,6 +525,7 @@ export class FetchHandler {
       // the page that satisfies `until` is not silently dropped.
       const pageResult = strategy.extractResults(response.data, ctx);
       allResults.push(...pageResult.items);
+      syncToken = readSyncToken(step, response.data) ?? syncToken;
       hasMore = pageResult.hasMore;
 
       // Advance the cursor. If the API echoes the cursor we just used, stop
@@ -565,7 +597,7 @@ export class FetchHandler {
     }
 
     this.deps.log(`Fetched ${allResults.length} total items`);
-    return { items: allResults, pages: ctx.page, truncated };
+    return { items: allResults, pages: ctx.page, truncated, syncToken };
   }
 
   private countRecords(data: unknown): number | undefined {
@@ -630,6 +662,15 @@ export class FetchHandler {
     // Fallback to simple placeholder
     return { _dryRun: true, _message: 'No OAS schema available for mock generation' };
   }
+}
+
+/** The `since.token` field from a response body, when it holds a usable token. */
+function readSyncToken(step: FetchStep, data: unknown): string | undefined {
+  if (!step.since?.token || !data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined;
+  }
+  const value = extractNestedValue(data as Record<string, unknown>, step.since.token);
+  return typeof value === 'string' && value ? value : undefined;
 }
 
 /** Parse a value extracted from response data into a valid Date, or undefined. */

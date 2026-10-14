@@ -35,6 +35,7 @@ import type {
   PipelineStage,
 } from '../ast/nodes.js';
 import { isParallelStage } from '../ast/nodes.js';
+import { ExecutionAbortedError } from '../errors/index.js';
 import type { ExecutionContext, ActionScope } from './context.js';
 import { createContext, childContext, setVariable } from './context.js';
 import { createHash } from 'node:crypto';
@@ -269,6 +270,14 @@ export interface ExecutorConfig {
    * input. Off by default.
    */
   blockPrivateNetworks?: boolean;
+  /**
+   * Cancel the run, e.g. at a request deadline. In-flight requests are aborted,
+   * nothing is retried, no further steps start, and the run fails with an
+   * ExecutionAbortedError.
+   */
+  signal?: AbortSignal;
+  /** Per-run values a mission reads with `input("name")`, e.g. a user id. */
+  inputs?: Record<string, unknown>;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -321,7 +330,7 @@ export class MissionExecutor {
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
-    this.ctx = createContext();
+    this.ctx = createContext(config.inputs);
     this.rateLimiter = new AdaptiveRateLimiter();
     this.circuitBreaker = new CircuitBreaker();
 
@@ -333,6 +342,7 @@ export class MissionExecutor {
         proxyAgentFactory: config.proxyAgentFactory,
         proxyFetchFactory: config.proxyFetchFactory,
         blockPrivateNetworks: config.blockPrivateNetworks,
+        signal: config.signal,
       },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
@@ -436,6 +446,7 @@ export class MissionExecutor {
         proxyAgentFactory: config.proxyAgentFactory,
         proxyFetchFactory: config.proxyFetchFactory,
         blockPrivateNetworks: config.blockPrivateNetworks,
+        signal: config.signal,
         log: (msg) => this.log(msg),
         // Surface in-client retries as events so the progress line can count them.
         onRetry: this.eventEmitter
@@ -1228,6 +1239,7 @@ export class MissionExecutor {
     // NOTE: ctx is used for action-scoped operations (response, variables)
     // this.ctx is still used for mission-level resources (stores, sources)
     const execCtx = ctx ?? this.ctx;
+    if (this.config.signal?.aborted) throw new ExecutionAbortedError(this.config.signal.reason);
 
     // Track step index per-action so parallel actions don't share a counter.
     const scope = this.scopeFor(execCtx);
@@ -1474,14 +1486,22 @@ export class MissionExecutor {
     if (!result.truncated && result.checkpointKey && this.syncStore) {
       const key = result.checkpointKey;
       const data = result.data;
+      const syncToken = result.syncToken;
       this.scopeFor(ctx).pendingCheckpoints.push(async () => {
-        const syncedAt = await fetchHandler.recordCheckpoint(key, step, data, fetchStartedAt);
+        const syncedAt = await fetchHandler.recordCheckpoint(
+          key,
+          step,
+          data,
+          fetchStartedAt,
+          syncToken
+        );
         if (syncedAt) {
           await this.logEvent({
             type: 'checkpoint.advanced',
             key,
             syncedAt: syncedAt.toISOString(),
             recordCount: Array.isArray(data) ? data.length : undefined,
+            cursor: syncToken,
             mission: this.missionName,
           });
         }

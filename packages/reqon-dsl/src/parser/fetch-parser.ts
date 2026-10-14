@@ -185,6 +185,7 @@ export class FetchParser extends ScheduleParser {
       let header: string | undefined;
       let format: SinceConfig['format'];
       let updateFrom: string | undefined;
+      let token: string | undefined;
 
       // Check for optional key: lastSync("key")
       if (this.match(TokenType.LPAREN)) {
@@ -212,6 +213,9 @@ export class FetchParser extends ScheduleParser {
             case 'updateFrom':
               updateFrom = this.consume(TokenType.STRING, 'Expected field path').value;
               break;
+            case 'token':
+              token = this.consume(TokenType.STRING, 'Expected token field path').value;
+              break;
             default:
               throw this.error(`Unknown since option: ${optionKey}`);
           }
@@ -228,6 +232,7 @@ export class FetchParser extends ScheduleParser {
         header,
         format,
         updateFrom,
+        token,
       };
     }
 
