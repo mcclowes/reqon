@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Extending Reqon
 
-Reqon's extension model is dependency injection, not a plugin registry. You implement an interface and pass the instance to the executor through `ExecutorConfig`. There's no global `register*` API and no hook system.
+Reqon accepts runtime integrations through dependency injection. Implement an interface and pass the instance to the executor through `ExecutorConfig`. Its integration with Vague uses a separate language plugin, described below.
 
 ## Custom store adapters
 
@@ -66,7 +66,7 @@ class MyOutput implements LogOutput {
 
 ## Vague plugin integration
 
-Reqon extends [Vague](https://github.com/mcclowes/vague) (the underlying DSL layer) through its plugin system. The plugin teaches Vague's lexer about Reqon's keywords.
+Reqon extends [Vague](https://github.com/mcclowes/vague) through a language plugin that registers keywords and delegates mission statements to Reqon's parser. [How Reqon extends Vague](./architecture) explains the lexer, parser, and runtime boundaries.
 
 ### Registering the plugin
 

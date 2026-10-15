@@ -139,6 +139,9 @@ describe('FeatureName', () => {
 
 ### Architecture
 
+See [How Reqon extends Vague](docusaurus/docs/advanced/architecture.md) for the
+lexer, parser, and runtime boundaries and the source files that own them.
+
 Reqon extends [Vague](https://github.com/mcclowes/vague), which provides the core DSL layer (lexer, parser, expression syntax). Reqon adds:
 
 - Mission/action/step AST nodes

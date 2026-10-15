@@ -174,6 +174,7 @@ const sidebars: SidebarsConfig = {
         description: 'Deep dive into advanced Reqon features',
       },
       items: [
+        'advanced/architecture',
         'advanced/multi-file-missions',
         'advanced/execution-state',
         'advanced/parallel-execution',
