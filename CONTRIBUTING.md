@@ -71,6 +71,14 @@ lint-staged (eslint + prettier) and the full test suite, but not `typecheck` -
 vitest compiles with esbuild, which strips types without checking them. Run
 `npm run typecheck` yourself before pushing.
 
+Docusaurus 3.10.2 currently requires Tinypool 1.x. The root manifest temporarily
+pins Tinypool 2.1.2 under `@docusaurus/core` to address its critical advisories
+without downgrading Docusaurus or narrowing the audit. Remove the override when
+Docusaurus supports a patched version directly. After changing this pin, build
+the docs with `DOCUSAURUS_SSG_WORKER_THREAD_COUNT=2 npm run build --workspace reqon-docs`
+to exercise the worker pool as well as the default build. See
+[the dependency follow-up](https://github.com/mcclowes/reqon/issues/338).
+
 If you change a documented DSL snippet, run `npm run check:snippets` before
 pushing. It's what stops the docs drifting into syntax the parser never accepted.
 
