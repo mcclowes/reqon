@@ -67,9 +67,10 @@ their own. `npm run check:snippets` does that for you.
 CI gates on `typecheck`, `lint`, `format:check`, `test:run`, `build`,
 `check:docs`, `check:examples`, `test:crash`, `test:pg`, and `npm audit`
 (critical severity, production dependencies only). The pre-commit hook runs
-lint-staged (eslint + prettier) and the full test suite, but not `typecheck` -
-vitest compiles with esbuild, which strips types without checking them. Run
-`npm run typecheck` yourself before pushing.
+read-only `lint` and `format:check` across the package source, then the full test
+suite. It preserves partially staged edits; format the files you own before
+committing. It does not run `typecheck` - vitest strips types without checking
+them, so run `npm run typecheck` yourself before pushing.
 
 Docusaurus 3.10.2 currently requires Tinypool 1.x. The root manifest temporarily
 pins Tinypool 2.1.2 under `@docusaurus/core` to address its critical advisories

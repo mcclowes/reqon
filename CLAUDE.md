@@ -94,9 +94,11 @@ on their own (or use `check:snippets`, which builds first).
 
 CI gates on `typecheck`, `lint`, `format:check`, `test:run`, `build`,
 `check:docs`, `check:examples`, `test:crash`, `test:pg`, and `npm audit`
-(critical, production deps only). The pre-commit hook runs lint-staged (eslint +
-prettier) and the full test suite, but not `typecheck` - vitest strips types
-without checking them, so run `typecheck` yourself before pushing.
+(critical, production deps only). The pre-commit hook runs read-only `lint` and
+`format:check` across the package source, then the full test suite. It preserves
+partially staged edits; format the files you own before committing. It does not
+run `typecheck` - vitest strips types without checking them, so run `typecheck`
+yourself before pushing.
 
 Releases go through Changesets: run `npm run changeset` when a PR changes
 `reqon-dsl` or `reqon-lang`. Pushes to `main` open/refresh a "Release packages"
