@@ -61,6 +61,13 @@ proxy pools).
 | `npm run format` | Prettier write over `packages/reqon-dsl/src/` |
 | `npm run bench` | Performance benchmarks |
 
+Pass workspace tool arguments after `--`. The root tasks forward them to the corresponding `reqon-dsl` script:
+
+```bash
+npm run build -- --noEmit
+npm run test:run -- packages/reqon-dsl/src/root-commands.test.ts
+```
+
 The two snippet checkers import from `dist/`, so build first when running them on
 their own. `npm run check:snippets` does that for you.
 
