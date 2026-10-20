@@ -22,6 +22,10 @@ updates:
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 5
+    ignore:
+      # changesets/action v2 requires Changesets CLI v3; the workspace is on v2.
+      - dependency-name: "changesets/action"
+        update-types: ["version-update:semver-major"]
     groups:
       github-actions:
         patterns:

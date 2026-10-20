@@ -50,7 +50,7 @@ jobs:
         run: npm run build
 
       - name: Create release PR or publish packages
-        uses: changesets/action@v2
+        uses: changesets/action@v1
         with:
           publish: npm run release
           title: Release packages
