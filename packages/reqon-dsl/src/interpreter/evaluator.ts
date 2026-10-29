@@ -404,6 +404,18 @@ export function evaluate(
           }
           return process.env[String(args[0])] ?? '';
         }
+        case 'input': {
+          // Static name for the same reason as env(): fetched data must not pick
+          // which host value is read.
+          const nameExpr = expr.arguments[0];
+          if (!nameExpr || nameExpr.type !== 'Literal') {
+            throw new EvaluatorError(
+              `input() requires a string-literal input name, not a dynamic expression`,
+              { expression: 'input' }
+            );
+          }
+          return ctx.inputs?.[String(args[0])] ?? null;
+        }
         default:
           throw new UnsupportedOperationError(`function: ${expr.callee}`, 'call expression');
       }

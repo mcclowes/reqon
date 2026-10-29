@@ -179,6 +179,7 @@ const sidebars: SidebarsConfig = {
         'advanced/execution-state',
         'advanced/parallel-execution',
         'advanced/extending-reqon',
+        'advanced/embedding',
         'advanced/mcp-integration',
       ],
     },

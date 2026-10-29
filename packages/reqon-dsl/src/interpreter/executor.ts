@@ -35,6 +35,7 @@ import type {
   PipelineStage,
 } from '../ast/nodes.js';
 import { isParallelStage } from '../ast/nodes.js';
+import { ExecutionAbortedError } from '../errors/index.js';
 import type { ExecutionContext, ActionScope } from './context.js';
 import { createContext, childContext, setVariable } from './context.js';
 import { createHash } from 'node:crypto';
@@ -54,7 +55,7 @@ import {
   FileExecutionStore,
 } from '../execution/index.js';
 import { type SyncStore, FileSyncStore, LogBackedSyncStore } from '../sync/index.js';
-import { FetchHandler } from './fetch-handler.js';
+import { FetchHandler, type TruncationInfo } from './fetch-handler.js';
 import {
   ForHandler,
   MapHandler,
@@ -127,6 +128,11 @@ export interface ExecutionResult {
   pauseId?: string;
   /** Items skipped by a loop's onError policy rather than failing the run. */
   toleratedFailures?: { action: string; index: number; error: string }[];
+  /**
+   * Paginated fetches that stopped at a safety cap, so their data is partial.
+   * The run still succeeds; hosts that need every record should check this.
+   */
+  truncated?: (TruncationInfo & { path: string })[];
 }
 
 export interface ExecutionError {
@@ -263,6 +269,20 @@ export interface ExecutorConfig {
    * (loudly). Defaults to CONCURRENCY_DEFAULTS.MAX_PARALLEL.
    */
   maxParallel?: number;
+  /**
+   * Refuse HTTP requests, and redirects, to loopback, private, link-local and
+   * other non-public addresses. Turn on when mission URLs come from untrusted
+   * input. Off by default.
+   */
+  blockPrivateNetworks?: boolean;
+  /**
+   * Cancel the run, e.g. at a request deadline. In-flight requests are aborted,
+   * nothing is retried, no further steps start, and the run fails with an
+   * ExecutionAbortedError.
+   */
+  signal?: AbortSignal;
+  /** Per-run values a mission reads with `input("name")`, e.g. a user id. */
+  inputs?: Record<string, unknown>;
 }
 
 // AuthConfig is now exported from source-manager.ts
@@ -280,6 +300,7 @@ export class MissionExecutor {
    * 401s would otherwise report success having stored nothing.
    */
   private toleratedFailures: { action: string; index: number; error: string }[] = [];
+  private truncations: (TruncationInfo & { path: string })[] = [];
   private actionsRun: string[] = [];
   /** Monotonic key generator for queued values lacking an id. */
   private queueCounter = 0;
@@ -315,7 +336,7 @@ export class MissionExecutor {
 
   constructor(config: ExecutorConfig = {}) {
     this.config = config;
-    this.ctx = createContext();
+    this.ctx = createContext(config.inputs);
     this.rateLimiter = new AdaptiveRateLimiter();
     this.circuitBreaker = new CircuitBreaker();
 
@@ -326,6 +347,8 @@ export class MissionExecutor {
         missionDir: config.missionDir,
         proxyAgentFactory: config.proxyAgentFactory,
         proxyFetchFactory: config.proxyFetchFactory,
+        blockPrivateNetworks: config.blockPrivateNetworks,
+        signal: config.signal,
       },
       { rateLimiter: this.rateLimiter, circuitBreaker: this.circuitBreaker }
     );
@@ -428,6 +451,8 @@ export class MissionExecutor {
         missionDir: config.missionDir,
         proxyAgentFactory: config.proxyAgentFactory,
         proxyFetchFactory: config.proxyFetchFactory,
+        blockPrivateNetworks: config.blockPrivateNetworks,
+        signal: config.signal,
         log: (msg) => this.log(msg),
         // Surface in-client retries as events so the progress line can count them.
         onRetry: this.eventEmitter
@@ -682,6 +707,7 @@ export class MissionExecutor {
       traceId: this.traceExecutionId,
       pauseId: this.currentPauseId,
       toleratedFailures: this.toleratedFailures,
+      ...(this.truncations.length ? { truncated: this.truncations } : {}),
     };
   }
 
@@ -1160,7 +1186,7 @@ export class MissionExecutor {
           }
           const delay = this.computeRetryDelay(error.backoff, attempt);
           this.log(`Action ${action.name}: retry ${attempt}/${maxAttempts} in ${delay}ms`);
-          if (delay > 0) await sleep(delay);
+          if (delay > 0) await sleep(delay, this.config.signal);
           continue;
         }
         // JumpSignal, PauseSignal, and real errors propagate. The action's
@@ -1220,6 +1246,7 @@ export class MissionExecutor {
     // NOTE: ctx is used for action-scoped operations (response, variables)
     // this.ctx is still used for mission-level resources (stores, sources)
     const execCtx = ctx ?? this.ctx;
+    if (this.config.signal?.aborted) throw new ExecutionAbortedError(this.config.signal.reason);
 
     // Track step index per-action so parallel actions don't share a counter.
     const scope = this.scopeFor(execCtx);
@@ -1452,6 +1479,7 @@ export class MissionExecutor {
     // never ask for again — permanent, silent data loss (#246). Skip the
     // checkpoint; the truncation is already surfaced via the fetch.truncated
     // event. The next run re-fetches from the same watermark.
+    if (result.truncated) this.truncations.push({ ...result.truncated, path: result.path });
     if (result.truncated && result.checkpointKey && this.syncStore) {
       this.log(
         `Sync checkpoint '${result.checkpointKey}' NOT advanced: paginated fetch was truncated ` +
@@ -1466,14 +1494,22 @@ export class MissionExecutor {
     if (!result.truncated && result.checkpointKey && this.syncStore) {
       const key = result.checkpointKey;
       const data = result.data;
+      const syncToken = result.syncToken;
       this.scopeFor(ctx).pendingCheckpoints.push(async () => {
-        const syncedAt = await fetchHandler.recordCheckpoint(key, step, data, fetchStartedAt);
+        const syncedAt = await fetchHandler.recordCheckpoint(
+          key,
+          step,
+          data,
+          fetchStartedAt,
+          syncToken
+        );
         if (syncedAt) {
           await this.logEvent({
             type: 'checkpoint.advanced',
             key,
             syncedAt: syncedAt.toISOString(),
             recordCount: Array.isArray(data) ? data.length : undefined,
+            cursor: syncToken,
             mission: this.missionName,
           });
         }

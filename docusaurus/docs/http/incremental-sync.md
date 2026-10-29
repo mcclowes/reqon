@@ -115,6 +115,23 @@ get "/items" {
 }
 ```
 
+### Opaque sync tokens
+
+Some APIs don't filter by time. Google People, Microsoft Graph delta queries and similar APIs return an opaque token on the last page, and you send it back verbatim to get only what changed. Point `token` at that field:
+
+```vague
+get "/people/me/connections?requestSyncToken=true" {
+  paginate: cursor(pageToken, 1000, "nextPageToken", "connections"),
+  since: lastSync("people") { param: "syncToken", token: "nextSyncToken" }
+}
+```
+
+- The first run sends no token, which is a full sync.
+- The checkpoint stores the token from the last page that had one. It's sent unchanged in `param` (or `header`) on every page of the next run.
+- If no page returns a token, the checkpoint doesn't move, so the old token isn't lost.
+
+When the API rejects an expired token (Google returns `410`), clear the checkpoint and run again for a full sync.
+
 ## Combining with pagination
 
 ```vague

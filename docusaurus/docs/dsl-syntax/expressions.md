@@ -138,6 +138,9 @@ now()
 
 // Environment variable (name must be a string literal)
 env("API_KEY")
+
+// Value the host passed in ExecutorConfig.inputs (null when absent)
+input("userId")
 ```
 
 `range()` materialises the whole array, because a `for` loop consumes an array. That makes it the way to drive a bulk fetch over contiguous ids without writing an input file first:
@@ -174,6 +177,16 @@ env("DEBUG") == "true"
 ```
 
 The argument to `env` must be a string literal, not a dynamic expression.
+
+## Inputs
+
+An app that runs missions passes values for each run through `ExecutorConfig.inputs`, and the mission reads them with `input`:
+
+```vague
+get concat("/users/", input("userId"), "/items")
+```
+
+Like `env`, the name must be a string literal. An input that wasn't passed is `null`. See [Embedding Reqon](../advanced/embedding.md).
 
 ## Pattern matching in expressions
 

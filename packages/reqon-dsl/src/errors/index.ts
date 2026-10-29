@@ -234,18 +234,39 @@ export class FetchError extends Error {
   readonly url?: string;
   readonly method?: string;
   readonly statusCode?: number;
+  /** Parsed JSON error body (credential-looking keys redacted), when there was one. */
+  readonly body?: unknown;
   readonly cause?: Error;
 
   constructor(
     message: string,
-    options?: { url?: string; method?: string; statusCode?: number; cause?: Error }
+    options?: {
+      url?: string;
+      method?: string;
+      statusCode?: number;
+      body?: unknown;
+      cause?: Error;
+    }
   ) {
     super(message);
     this.name = 'FetchError';
     this.url = options?.url;
     this.method = options?.method;
     this.statusCode = options?.statusCode;
+    this.body = options?.body;
     this.cause = options?.cause;
+  }
+}
+
+/** The host cancelled the run through `ExecutorConfig.signal`. Never retried. */
+export class ExecutionAbortedError extends Error {
+  constructor(readonly reason?: unknown) {
+    super(
+      reason instanceof Error && reason.name !== 'AbortError'
+        ? `Execution aborted: ${reason.message}`
+        : 'Execution aborted'
+    );
+    this.name = 'ExecutionAbortedError';
   }
 }
 

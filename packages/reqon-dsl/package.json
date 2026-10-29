@@ -1,6 +1,6 @@
 {
   "name": "reqon-dsl",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "A DSL framework for fetch, map, validate pipelines - built on Vague",
   "type": "module",
   "main": "dist/index.js",
@@ -90,8 +90,8 @@
     "@eslint/js": "^9.17.0",
     "@types/node": "^25.0.3",
     "@vitest/coverage-v8": "^4.0.16",
-    "better-sqlite3": "^12.11.1",
-    "eslint": "^10.8.0",
+    "better-sqlite3": "^13.0.3",
+    "eslint": "^10.13.0",
     "pg": "^8.22.0",
     "prettier": "^3.4.2",
     "typescript": "^5.9.3",
